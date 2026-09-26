@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AnswerDisclosure } from "@/components/answer-disclosure";
+import { LearningStatusControl } from "@/components/learning-status-control";
 import { QuestionBody } from "@/components/question-body";
 import {
   categoryLabels,
@@ -118,6 +119,7 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
               </div>
             )}
           </dl>
+          <LearningStatusControl questionId={frontmatter.id} />
         </aside>
       </div>
     </main>
