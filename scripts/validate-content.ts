@@ -17,7 +17,7 @@ const requiredHeadings = [
   "## 参考资料",
 ];
 const reviewHeadings = ["### 初级回答", "### 中级回答", "### 高级回答"];
-const incompleteMarkers = ["待编写", "TODO", "TBD"];
+const incompleteMarkerPattern = /待编写|\bTODO\b|\bTBD\b/iu;
 
 async function findQuestionFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -65,21 +65,45 @@ async function validateContent() {
       else values.set(value, relativeFile);
     }
 
+    let previousHeadingIndex = -1;
     for (const heading of requiredHeadings) {
-      if (!content.includes(heading))
+      const headingIndex = content.indexOf(heading);
+      if (headingIndex === -1) {
         errors.push(`${relativeFile}: 缺少章节“${heading}”`);
+        continue;
+      }
+
+      if (headingIndex < previousHeadingIndex)
+        errors.push(`${relativeFile}: 章节“${heading}”顺序不正确`);
+      previousHeadingIndex = headingIndex;
+    }
+
+    for (const reference of result.data.references) {
+      if (!content.includes(reference.url))
+        errors.push(
+          `${relativeFile}: 正文参考资料缺少 frontmatter URL (${reference.url})`,
+        );
     }
 
     if (result.data.status === "review" || result.data.status === "verified") {
+      let previousReviewHeadingIndex = -1;
       for (const heading of reviewHeadings) {
-        if (!content.includes(heading))
+        const headingIndex = content.indexOf(heading);
+        if (headingIndex === -1) {
           errors.push(`${relativeFile}: 缺少评分层级“${heading}”`);
+          continue;
+        }
+
+        if (headingIndex < previousReviewHeadingIndex)
+          errors.push(`${relativeFile}: 评分层级“${heading}”顺序不正确`);
+        previousReviewHeadingIndex = headingIndex;
       }
 
-      for (const marker of incompleteMarkers) {
-        if (content.includes(marker))
-          errors.push(`${relativeFile}: 待审核内容不能包含占位标记“${marker}”`);
-      }
+      const incompleteMarker = content.match(incompleteMarkerPattern)?.[0];
+      if (incompleteMarker)
+        errors.push(
+          `${relativeFile}: 待审核内容不能包含占位标记“${incompleteMarker}”`,
+        );
     }
   }
 

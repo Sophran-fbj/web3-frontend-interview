@@ -53,4 +53,51 @@ describe("questionFrontmatterSchema", () => {
 
     expect(result.success).toBe(true);
   });
+
+  it("rejects a review question without references", () => {
+    const result = questionFrontmatterSchema.safeParse({
+      ...validQuestion,
+      status: "review",
+      verifiedAt: undefined,
+      reviewers: [],
+      references: [],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects verification metadata before review is complete", () => {
+    const result = questionFrontmatterSchema.safeParse({
+      ...validQuestion,
+      status: "review",
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a verified question changed after its verification date", () => {
+    const result = questionFrontmatterSchema.safeParse({
+      ...validQuestion,
+      updatedAt: "2026-09-28",
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects insecure or duplicate reference URLs", () => {
+    const insecure = questionFrontmatterSchema.safeParse({
+      ...validQuestion,
+      references: [{ title: "Example", url: "http://example.com/docs" }],
+    });
+    const duplicate = questionFrontmatterSchema.safeParse({
+      ...validQuestion,
+      references: [
+        ...validQuestion.references,
+        { ...validQuestion.references[0], title: "Duplicate" },
+      ],
+    });
+
+    expect(insecure.success).toBe(false);
+    expect(duplicate.success).toBe(false);
+  });
 });

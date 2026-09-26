@@ -78,10 +78,53 @@ export const questionFrontmatterSchema = z
       )
       .default([]),
     references: z
-      .array(z.object({ title: z.string().min(1), url: z.url() }))
+      .array(
+        z.object({
+          title: z.string().min(1),
+          url: z.url().refine((url) => url.startsWith("https://"), {
+            message: "参考资料必须使用 HTTPS",
+          }),
+        }),
+      )
       .default([]),
   })
   .superRefine((question, context) => {
+    const requiresCompleteContent =
+      question.status === "review" || question.status === "verified";
+
+    if (requiresCompleteContent && question.references.length === 0)
+      context.addIssue({
+        code: "custom",
+        path: ["references"],
+        message: "待审核或已验证题目至少需要一个参考资料",
+      });
+
+    if (
+      new Set(question.references.map(({ url }) => url)).size !==
+      question.references.length
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["references"],
+        message: "同一道题不能包含重复的参考资料 URL",
+      });
+
+    if (question.status === "review") {
+      if (question.verifiedAt)
+        context.addIssue({
+          code: "custom",
+          path: ["verifiedAt"],
+          message: "待审核题目不能提前填写验证日期",
+        });
+
+      if (question.reviewers.length > 0)
+        context.addIssue({
+          code: "custom",
+          path: ["reviewers"],
+          message: "待审核题目不能提前填写审核者",
+        });
+    }
+
     if (question.status !== "verified") return;
 
     if (!question.verifiedAt)
@@ -98,11 +141,14 @@ export const questionFrontmatterSchema = z
         message: "已验证题目至少需要一名审核者",
       });
 
-    if (question.references.length === 0)
+    if (
+      question.verifiedAt &&
+      question.verifiedAt.localeCompare(question.updatedAt) < 0
+    )
       context.addIssue({
         code: "custom",
-        path: ["references"],
-        message: "已验证题目至少需要一个参考资料",
+        path: ["verifiedAt"],
+        message: "验证日期不能早于最近修改日期",
       });
   });
 
