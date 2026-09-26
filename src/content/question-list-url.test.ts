@@ -8,11 +8,10 @@ describe("createQuestionsHref", () => {
       createQuestionsHref({
         query: "钱包 连接",
         difficulty: "intermediate",
-        tag: "eip-1193",
         page: 2,
       }),
     ).toBe(
-      "/questions?q=%E9%92%B1%E5%8C%85+%E8%BF%9E%E6%8E%A5&difficulty=intermediate&tag=eip-1193&page=2",
+      "/questions?q=%E9%92%B1%E5%8C%85+%E8%BF%9E%E6%8E%A5&difficulty=intermediate&page=2",
     );
   });
 

@@ -21,24 +21,34 @@ const sectors: Array<{
   theme: Theme;
   path: string;
   fill: string;
+  accent: string;
+  hitArea: string;
   dot: { x: number; y: number };
 }> = [
   {
     theme: "cold-white",
     path: "M24 24 24 4a20 20 0 0 1 17.32 30Z",
     fill: "#eaf0fb",
+    accent: "#4169e1",
+    hitArea:
+      "polygon(50% 50%, 50% 0%, 75% 6.7%, 93.3% 25%, 100% 50%, 93.3% 75%)",
     dot: { x: 36.1, y: 17 },
   },
   {
     theme: "graphite",
     path: "M24 24 41.32 34a20 20 0 0 1-34.64 0Z",
     fill: "#172033",
+    accent: "#7668e8",
+    hitArea:
+      "polygon(50% 50%, 93.3% 75%, 75% 93.3%, 50% 100%, 25% 93.3%, 6.7% 75%)",
     dot: { x: 24, y: 38 },
   },
   {
     theme: "warm-sand",
     path: "M24 24 6.68 34A20 20 0 0 1 24 4Z",
     fill: "#d8bd95",
+    accent: "#a35d37",
+    hitArea: "polygon(50% 50%, 6.7% 75%, 0% 50%, 6.7% 25%, 25% 6.7%, 50% 0%)",
     dot: { x: 11.9, y: 17 },
   },
 ];
@@ -88,24 +98,20 @@ export function ThemeSwitcher() {
     getServerThemeSnapshot,
   );
 
-  function switchTheme() {
-    const currentIndex = themes.indexOf(theme);
-    const nextTheme = themes[(currentIndex + 1) % themes.length];
-    applyTheme(nextTheme);
-  }
-
   const label = themeLabels[theme];
   const activeSector = sectors.find((sector) => sector.theme === theme);
 
   return (
-    <button
-      type="button"
-      onClick={switchTheme}
-      aria-label={`切换主题，当前为${label}`}
-      title={`当前主题：${label}，点击切换`}
-      className="group relative inline-flex size-11 shrink-0 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+    <div
+      role="group"
+      aria-label={`阅读主题，当前为${label}`}
+      className="group relative size-11 shrink-0"
     >
-      <svg aria-hidden="true" viewBox="0 0 48 48" className="size-10">
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 48 48"
+        className="absolute inset-0 m-auto size-10"
+      >
         {sectors.map((sector) => {
           const active = sector.theme === theme;
 
@@ -114,12 +120,11 @@ export function ThemeSwitcher() {
               key={sector.theme}
               d={sector.path}
               fill={sector.fill}
-              stroke={
-                active ? "var(--theme-wheel-outline)" : "var(--line-strong)"
-              }
+              stroke={active ? sector.accent : "var(--line-strong)"}
               strokeWidth={active ? 3 : 1}
               strokeLinejoin="round"
               data-active={active ? "true" : undefined}
+              data-theme-sector={sector.theme}
             />
           );
         })}
@@ -128,15 +133,34 @@ export function ThemeSwitcher() {
             cx={activeSector.dot.x}
             cy={activeSector.dot.y}
             r="2.5"
-            fill="var(--theme-wheel-indicator)"
-            stroke="var(--canvas-raised)"
-            strokeWidth="1.25"
+            fill={activeSector.accent}
           />
         )}
       </svg>
-      <span className="pointer-events-none absolute top-[calc(100%+0.35rem)] right-0 z-40 hidden rounded-md border border-[var(--line)] bg-[var(--canvas-raised)] px-2 py-1 text-xs whitespace-nowrap text-[var(--text-muted)] shadow-[0_8px_24px_var(--shadow)] group-hover:block group-focus-visible:block">
+
+      <div className="absolute inset-0 m-auto size-10 overflow-hidden rounded-full">
+        {sectors.map((sector) => {
+          const active = sector.theme === theme;
+          const sectorLabel = themeLabels[sector.theme];
+
+          return (
+            <button
+              key={sector.theme}
+              type="button"
+              aria-label={`切换为${sectorLabel}主题`}
+              aria-pressed={active}
+              title={sectorLabel}
+              onClick={() => applyTheme(sector.theme)}
+              className="absolute inset-0 cursor-pointer bg-transparent focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--accent)]"
+              style={{ clipPath: sector.hitArea }}
+            />
+          );
+        })}
+      </div>
+
+      <span className="pointer-events-none absolute top-[calc(100%+0.35rem)] right-0 z-40 hidden rounded-md border border-[var(--line)] bg-[var(--canvas-raised)] px-2 py-1 text-xs whitespace-nowrap text-[var(--text-muted)] shadow-[0_8px_24px_var(--shadow)] group-focus-within:block group-hover:block">
         {label}
       </span>
-    </button>
+    </div>
   );
 }

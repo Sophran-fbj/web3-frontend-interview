@@ -73,16 +73,12 @@ export default async function QuestionsPage({
       ),
     ),
   ).sort((left, right) => left.localeCompare(right, "en"));
-  const tags = Array.from(
-    new Set(allQuestions.flatMap(({ frontmatter }) => frontmatter.tags)),
-  ).sort((left, right) => left.localeCompare(right, "en"));
   const filters: QuestionFilters = {
     query: firstParam(params.q)?.trim(),
     difficulty: findOption(firstParam(params.difficulty), difficulties),
     category: findOption(firstParam(params.category), categories),
     questionType: findOption(firstParam(params.type), questionTypes),
     stack: findOption(firstParam(params.stack), stacks),
-    tag: findOption(firstParam(params.tag), tags),
   };
   const filteredQuestions = filterQuestions(allQuestions, filters);
   const requestedPage = Number.parseInt(firstParam(params.page) ?? "1", 10);
@@ -96,8 +92,7 @@ export default async function QuestionsPage({
     filters.difficulty ||
     filters.category ||
     filters.questionType ||
-    filters.stack ||
-    filters.tag,
+    filters.stack,
   );
   const filterHref = (changes: Partial<QuestionFilters>) =>
     createQuestionsHref({ ...filters, ...changes, page: undefined });
@@ -121,7 +116,7 @@ export default async function QuestionsPage({
           aria-label="题目筛选"
           className="mt-12 rounded-2xl border border-[var(--line)] bg-[var(--canvas-raised)] p-4 shadow-[0_18px_48px_var(--shadow)] sm:p-5"
         >
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(14rem,1.35fr)_repeat(5,minmax(0,0.85fr))] lg:items-end">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(14rem,1.35fr)_repeat(4,minmax(0,0.85fr))] lg:items-end">
             <form action="/questions" method="get" className="min-w-0">
               {filters.difficulty && (
                 <input
@@ -138,9 +133,6 @@ export default async function QuestionsPage({
               )}
               {filters.stack && (
                 <input type="hidden" name="stack" value={filters.stack} />
-              )}
-              {filters.tag && (
-                <input type="hidden" name="tag" value={filters.tag} />
               )}
               <label className="block">
                 <span className="mb-2 block text-xs font-medium text-[var(--text-muted)]">
@@ -225,18 +217,6 @@ export default async function QuestionsPage({
                 value: stack,
                 label: stack,
                 href: filterHref({ stack }),
-              }))}
-            />
-
-            <QuestionFilterMenu
-              label="标签"
-              value={filters.tag}
-              allLabel="全部标签"
-              allHref={filterHref({ tag: undefined })}
-              options={tags.map((tag) => ({
-                value: tag,
-                label: `#${tag}`,
-                href: filterHref({ tag }),
               }))}
             />
           </div>
@@ -327,17 +307,6 @@ export default async function QuestionsPage({
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
                     {frontmatter.summary}
                   </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {frontmatter.tags.slice(0, 4).map((tag) => (
-                      <Link
-                        key={tag}
-                        href={createQuestionsHref({ tag })}
-                        className="inline-flex min-h-8 items-center rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 font-mono text-xs text-[var(--text-faint)] hover:border-[var(--accent)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-                      >
-                        #{tag}
-                      </Link>
-                    ))}
-                  </div>
                 </div>
                 <div className="flex gap-3 text-sm sm:flex-col sm:items-end sm:gap-1">
                   <span className="font-medium text-[var(--accent-bright)]">

@@ -9,17 +9,18 @@ beforeEach(() => {
   document.documentElement.dataset.theme = "graphite";
 });
 
-it("cycles themes and persists the selected theme", async () => {
+it("selects a theme from its own sector and persists it", async () => {
   const user = userEvent.setup();
-  render(<ThemeSwitcher />);
+  const { container } = render(<ThemeSwitcher />);
 
-  await user.click(
-    screen.getByRole("button", { name: "切换主题，当前为石墨" }),
-  );
+  await user.click(screen.getByRole("button", { name: "切换为冷白主题" }));
 
-  expect(document.documentElement.dataset.theme).toBe("warm-sand");
-  expect(localStorage.getItem("web3-interview-theme")).toBe("warm-sand");
+  expect(document.documentElement.dataset.theme).toBe("cold-white");
+  expect(localStorage.getItem("web3-interview-theme")).toBe("cold-white");
   expect(
-    screen.getByRole("button", { name: "切换主题，当前为暖砂" }),
-  ).toBeInTheDocument();
+    screen.getByRole("button", { name: "切换为冷白主题" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(
+    container.querySelector('[data-theme-sector="cold-white"]'),
+  ).toHaveAttribute("stroke", "#4169e1");
 });

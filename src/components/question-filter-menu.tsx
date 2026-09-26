@@ -87,7 +87,7 @@ export function QuestionFilterMenu({
       {open && (
         <ul
           id={listId}
-          className="absolute top-[calc(100%+0.5rem)] right-0 left-0 z-30 max-h-72 overflow-y-auto rounded-xl border border-[var(--line-strong)] bg-[var(--canvas-raised)] p-1.5 shadow-[0_18px_48px_var(--shadow)]"
+          className="filter-options absolute top-[calc(100%+0.5rem)] right-0 left-0 z-30 max-h-72 overflow-y-auto rounded-xl border border-[var(--line-strong)] bg-[var(--canvas-raised)] p-1.5 shadow-[0_18px_48px_var(--shadow)]"
         >
           <li>
             <Link

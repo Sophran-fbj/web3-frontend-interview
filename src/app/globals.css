@@ -24,8 +24,6 @@ html[data-theme="graphite"] {
   --code-block-text: #dbe2f2;
   --control-highlight: rgb(255 255 255 / 5%);
   --shadow: rgb(0 0 0 / 42%);
-  --theme-wheel-outline: #f3f5fa;
-  --theme-wheel-indicator: #a99fff;
 }
 
 html[data-theme="cold-white"] {
@@ -51,8 +49,6 @@ html[data-theme="cold-white"] {
   --code-block-text: #24314b;
   --control-highlight: rgb(255 255 255 / 72%);
   --shadow: rgb(37 51 76 / 18%);
-  --theme-wheel-outline: #182033;
-  --theme-wheel-indicator: #4169e1;
 }
 
 html[data-theme="warm-sand"] {
@@ -78,8 +74,6 @@ html[data-theme="warm-sand"] {
   --code-block-text: #3e332a;
   --control-highlight: rgb(255 255 255 / 56%);
   --shadow: rgb(67 50 34 / 20%);
-  --theme-wheel-outline: #322a22;
-  --theme-wheel-indicator: #a35d37;
 }
 
 :root {
@@ -117,6 +111,35 @@ button {
 ::selection {
   background: var(--selection);
   color: var(--text-strong);
+}
+
+.filter-options {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.filter-options::-webkit-scrollbar {
+  width: 0.55rem;
+}
+
+.filter-options::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.filter-options::-webkit-scrollbar-thumb {
+  border: 0.15rem solid transparent;
+  border-radius: 999px;
+  background: var(--line-strong);
+  background-clip: padding-box;
+}
+
+.filter-options::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+  background-clip: padding-box;
+}
+
+.filter-options::-webkit-scrollbar-button {
+  display: none;
 }
 
 .question-prose {

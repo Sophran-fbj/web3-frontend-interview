@@ -10,7 +10,6 @@ import {
   difficultyLabels,
   questionTypeLabels,
 } from "@/content/question-labels";
-import { createQuestionsHref } from "@/content/question-list-url";
 import {
   getVisibleQuestionBySlug,
   getVisibleQuestions,
@@ -87,17 +86,6 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
         <p className="mt-5 max-w-3xl text-base leading-7 text-[var(--text-muted)] sm:text-lg">
           {frontmatter.summary}
         </p>
-        <nav aria-label="题目标签" className="mt-6 flex flex-wrap gap-2">
-          {frontmatter.tags.map((tag) => (
-            <Link
-              key={tag}
-              href={createQuestionsHref({ tag })}
-              className="inline-flex min-h-8 items-center rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 font-mono text-xs text-[var(--text-faint)] hover:border-[var(--accent)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-            >
-              #{tag}
-            </Link>
-          ))}
-        </nav>
       </header>
 
       <div className="mt-10 grid gap-12 lg:grid-cols-[minmax(0,46rem)_12rem] lg:items-start lg:gap-20">

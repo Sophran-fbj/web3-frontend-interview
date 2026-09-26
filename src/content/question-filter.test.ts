@@ -4,7 +4,7 @@ import { filterQuestions } from "./question-filter";
 import { getAllQuestions } from "./question-repository";
 
 describe("filterQuestions", () => {
-  it("searches title, tags and question body", async () => {
+  it("searches the title and question body", async () => {
     const questions = await getAllQuestions();
 
     expect(
@@ -49,15 +49,6 @@ describe("filterQuestions", () => {
 
     expect(result.map(({ frontmatter }) => frontmatter.id)).toEqual([
       "transaction-001",
-    ]);
-  });
-
-  it("filters by an exact tag", async () => {
-    const questions = await getAllQuestions();
-    const result = filterQuestions(questions, { tag: "token-units" });
-
-    expect(result.map(({ frontmatter }) => frontmatter.id)).toEqual([
-      "web3-basics-001",
     ]);
   });
 });

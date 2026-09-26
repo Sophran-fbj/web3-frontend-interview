@@ -12,7 +12,6 @@ export function createQuestionsHref(state: QuestionListState) {
   if (state.category) params.set("category", state.category);
   if (state.questionType) params.set("type", state.questionType);
   if (state.stack) params.set("stack", state.stack);
-  if (state.tag) params.set("tag", state.tag);
   if (state.page && state.page > 1) params.set("page", String(state.page));
 
   const query = params.toString();
