@@ -39,4 +39,16 @@ describe("filterQuestions", () => {
 
     expect(result).toHaveLength(0);
   });
+
+  it("filters by a stack declared in frontmatter", async () => {
+    const questions = await getAllQuestions();
+    const result = filterQuestions(questions, {
+      difficulty: "advanced",
+      stack: "wagmi",
+    });
+
+    expect(result.map(({ frontmatter }) => frontmatter.id)).toEqual([
+      "transaction-001",
+    ]);
+  });
 });

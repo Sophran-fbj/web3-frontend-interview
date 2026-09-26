@@ -45,18 +45,27 @@ export default async function QuestionsPage({
 }: QuestionsPageProps) {
   const params = await searchParams;
   const allQuestions = await getVisibleQuestions();
+  const stacks = Array.from(
+    new Set(
+      allQuestions.flatMap(({ frontmatter }) =>
+        Object.keys(frontmatter.stacks),
+      ),
+    ),
+  ).sort((left, right) => left.localeCompare(right, "en"));
   const filters: QuestionFilters = {
     query: firstParam(params.q)?.trim(),
     difficulty: findOption(firstParam(params.difficulty), difficulties),
     category: findOption(firstParam(params.category), categories),
     questionType: findOption(firstParam(params.type), questionTypes),
+    stack: findOption(firstParam(params.stack), stacks),
   };
   const questions = filterQuestions(allQuestions, filters);
   const hasActiveFilters = Boolean(
     filters.query ||
     filters.difficulty ||
     filters.category ||
-    filters.questionType,
+    filters.questionType ||
+    filters.stack,
   );
 
   return (
@@ -77,7 +86,7 @@ export default async function QuestionsPage({
         <form
           action="/questions"
           method="get"
-          className="mt-12 grid gap-4 border-y border-[var(--line-strong)] py-6 sm:grid-cols-2 lg:grid-cols-[minmax(14rem,1fr)_10rem_11rem_10rem_auto] lg:items-end"
+          className="mt-12 grid gap-4 border-y border-[var(--line-strong)] py-6 sm:grid-cols-2 lg:grid-cols-[minmax(13rem,1fr)_8rem_10rem_9rem_9rem_auto] lg:items-end"
         >
           <label className="block sm:col-span-2 lg:col-span-1">
             <span className="mb-2 block text-sm font-medium text-[var(--text-strong)]">
@@ -142,6 +151,24 @@ export default async function QuestionsPage({
               {questionTypes.map((questionType) => (
                 <option key={questionType} value={questionType}>
                   {questionTypeLabels[questionType]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-[var(--text-strong)]">
+              技术栈
+            </span>
+            <select
+              name="stack"
+              defaultValue={filters.stack ?? ""}
+              className="min-h-11 w-full border border-[var(--line-strong)] bg-[var(--surface)] px-3 text-sm text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+            >
+              <option value="">全部技术栈</option>
+              {stacks.map((stack) => (
+                <option key={stack} value={stack}>
+                  {stack}
                 </option>
               ))}
             </select>
