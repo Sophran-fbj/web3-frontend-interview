@@ -1,0 +1,172 @@
+---
+id: data-003
+slug: rpc-indexer-and-third-party-data-source-selection
+title: 直接 RPC、索引器和第三方 API 应该如何选择？
+summary: 考察按数据语义选择来源、处理索引延迟与链重组，并建立可追踪的新鲜度和降级策略。
+status: review
+difficulty: intermediate
+category: data
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - rpc
+  - indexer
+  - subgraph
+  - data-consistency
+stacks:
+  ethereum-json-rpc: current
+  the-graph: current
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: Ethereum JSON-RPC API
+    url: https://ethereum.org/developers/docs/apis/json-rpc/
+  - title: The Graph Subgraphs Overview
+    url: https://thegraph.com/docs/en/subgraphs/overview/
+  - title: The Graph GraphQL API
+    url: https://thegraph.com/docs/en/subgraphs/querying/graphql-api/
+---
+
+## 题目
+
+一个资产页面需要展示当前余额、代币元数据、历史转账、NFT 图片、法币价格和协议排行榜。哪些数据适合直接从 RPC 读取，哪些适合索引器或第三方 API？如何处理不同数据源的延迟、错误和相互矛盾？
+
+## 考察目标
+
+- 是否会按实时性、查询形态、历史范围和信任成本选择数据源。
+- 是否理解索引器提供的是派生视图，可能落后、出错或受到 reorg 影响。
+- 是否能为每个字段定义来源、区块高度、新鲜度和降级策略。
+
+## 30 秒回答
+
+当前余额、allowance、交易 receipt 和关键写操作前校验适合直接读取目标链 RPC，因为它们需要接近链头并绑定明确的 chainId 与 block。历史列表、聚合统计和跨合约关系查询适合索引器，因为原始 RPC 不擅长分页和关系查询。NFT 媒体、代币图标、价格和风险标签通常来自链外或第三方 API，必须明确它们不是链上事实。前端不要把多个来源混成一个无来源的对象；每项数据都应携带 source、chainId、blockNumber 或 observedAt，显示同步延迟，并为关键字段提供 RPC 复核。来源冲突时按业务语义决定权威级别，而不是简单相信响应最快的服务。
+
+## 深入回答
+
+### 直接 RPC
+
+RPC 通过节点提供标准链数据和状态查询，适合：
+
+- 指定账户在某个区块的余额、nonce、allowance 和合约读取结果。
+- 交易、receipt、区块和近期日志。
+- 写操作前的模拟与最终确认。
+- 需要绑定 `latest`、`safe`、`finalized` 或明确区块号的判断。
+
+它的限制包括请求次数、限流、单次日志区间、历史状态能力和复杂聚合成本。普通节点未必保留任意历史状态；从创世块在浏览器中扫描日志也不现实。RPC 返回的是节点当前看到的链视图，不等于每个节点都处于完全相同高度。
+
+### 索引器或 Subgraph
+
+索引器消费区块、交易和事件，把它们转换成适合业务查询的实体。The Graph 的 Subgraph 通过 manifest 指定网络、合约和事件，再由映射逻辑写入 GraphQL 实体。
+
+它适合：
+
+- 可分页的历史活动流。
+- 多合约之间的关系与聚合。
+- 排行榜、累计量、持仓列表和协议级搜索。
+- 需要服务端持续扫描，而不适合由每个浏览器重复计算的数据。
+
+索引器不是链的替代品。它可能尚未同步到最新区块、映射代码存在 bug、部署版本切换失败，或在 reorg 后需要回滚重放。查询时应关注索引高度和错误状态；对“能否立即执行写操作”这类关键判断，最好再用 RPC 读取最新状态。
+
+### 第三方 API 与链外数据
+
+第三方 API 常用于：
+
+- 法币价格、交易所报价和市场统计。
+- NFT 图片、外部 metadata 与内容审核结果。
+- 聚合后的钱包资产、标签、风控与地址画像。
+- 多链统一历史和供应商特有的增强数据。
+
+这些数据可能有自己的采样时间、缓存、计价市场、清洗规则和服务条款。图片 URL 或 metadata 即使源自链上 URI，实际内容也可能托管在可变的 HTTP 服务上。UI 应区分“链上字段”“索引派生字段”和“链外估值”，不能用一个绿色对勾暗示它们具有相同确定性。
+
+### 为字段选择来源
+
+不要先选供应商再把所有问题塞进去，应先给字段定义契约：
+
+| 数据                | 主来源       | 复核或降级       | 关注点                   |
+| ------------------- | ------------ | ---------------- | ------------------------ |
+| 当前余额、allowance | RPC          | 备用 RPC         | chainId、block、节点高度 |
+| 交易最终状态        | RPC receipt  | 区块浏览器仅辅助 | confirmations、reorg     |
+| 历史活动列表        | 索引器       | 分段 getLogs     | 索引高度、分页、去重     |
+| NFT 媒体            | metadata/API | 占位图           | URL 安全、内容可用性     |
+| 法币价格            | 报价 API     | 隐藏估值或备用源 | 时间戳、市场、币种       |
+| 排行榜              | 索引器/后端  | 显示上次更新时间 | 聚合口径、重算成本       |
+
+不同来源冲突时先判断字段语义。例如余额用于提交交易时，以目标链最新 RPC 状态为准；历史页缺少一笔刚确认交易时，可以临时把本地交易记录与索引结果合并，并标记“同步中”，而不是篡改索引器返回值。
+
+### 一致性与可观测性
+
+一个可维护的数据层应记录：
+
+- `chainId` 和合约地址。
+- 数据来源和请求端点的逻辑名称。
+- 对应区块号、区块哈希或索引高度。
+- 获取时间与过期策略。
+- 是否为估算、暂定或已达到确认深度。
+
+同时监控 RPC 链头、索引器高度和两者差值。降级时宁可展示“数据暂不可用”或“同步到区块 N”，也不要把过期缓存伪装成实时值。
+
+## 示例代码
+
+```ts
+type DataEnvelope<T> = {
+  data: T;
+  chainId: number;
+  source: "rpc" | "indexer" | "third-party" | "local-pending";
+  blockNumber?: bigint;
+  observedAt: string;
+  isStale: boolean;
+};
+
+function canAuthorizeWrite(balance: DataEnvelope<bigint>) {
+  return (
+    balance.source === "rpc" &&
+    balance.chainId === expectedChainId &&
+    !balance.isStale
+  );
+}
+```
+
+这个结构不要求所有页面展示技术字段，但能阻止业务层把一个过期的第三方余额误当成写操作前的链上校验结果。
+
+## 常见错误
+
+- 为了减少开发量，让一个第三方 API 成为所有字段的隐式真相。
+- 每次打开历史页都从创世块扫描 `getLogs`。
+- 索引结果没有区块高度，却在刚发完交易后立即当作最新状态。
+- 用价格 API 或 token list 的 symbol 判断链上资产身份。
+- RPC 与索引器冲突时静默覆盖，用户看到列表和余额互相矛盾。
+- 备用源失败后继续展示旧缓存，但不标记更新时间或过期状态。
+
+## 面试官追问
+
+1. 为什么交易历史通常不适合只靠浏览器直接 RPC 查询？
+2. 一笔交易已确认但 Subgraph 尚未索引，列表应该怎样显示？
+3. 怎样判断索引器落后了多少个区块？
+4. 对余额和法币估值，为什么“权威来源”的定义不同？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 RPC 用于直接读取链上状态，索引器适合历史和聚合。
+- 知道价格、图片等数据往往来自链外服务。
+
+### 中级回答
+
+- 能按字段定义主来源、区块高度、新鲜度和降级方案。
+- 能处理索引延迟、本地 pending 记录与链上最终状态的合并。
+
+### 高级回答
+
+- 能设计来源可追踪的数据契约、reorg 处理和多供应商可观测性。
+- 能说明一致性、成本、延迟、隐私与供应商依赖之间的取舍。
+
+## 参考资料
+
+- [ethereum.org：JSON-RPC API](https://ethereum.org/developers/docs/apis/json-rpc/)
+- [The Graph：Subgraphs Overview](https://thegraph.com/docs/en/subgraphs/overview/)
+- [The Graph：GraphQL API](https://thegraph.com/docs/en/subgraphs/querying/graphql-api/)

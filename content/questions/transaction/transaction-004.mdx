@@ -1,0 +1,180 @@
+---
+id: transaction-004
+slug: transaction-simulation-and-revert-diagnosis
+title: 交易模拟失败和链上回滚应该如何诊断与提示？
+summary: 考察发送前模拟、自定义错误解码、失败 receipt 的信息边界以及稳定的前端错误分层。
+status: review
+difficulty: advanced
+category: transaction
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - simulation
+  - revert
+  - custom-error
+  - error-handling
+stacks:
+  viem: "2.x"
+  solidity-abi: latest
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: viem simulateContract
+    url: https://viem.sh/docs/contract/simulateContract
+  - title: Ethereum JSON-RPC API
+    url: https://ethereum.org/developers/docs/apis/json-rpc/
+  - title: Solidity ABI Specification - Errors
+    url: https://docs.soliditylang.org/en/latest/abi-spec.html#errors
+---
+
+## 题目
+
+用户提交一笔合约写交易时，有时在钱包弹窗前就报错，有时已经拿到交易哈希，最后 `receipt.status` 却是失败。前端应该怎样区分、诊断和提示这两类失败？为什么失败 receipt 通常不能直接给出 revert reason？发送前模拟能解决什么，又不能保证什么？
+
+## 考察目标
+
+- 是否能区分模拟、签名、广播和链上执行阶段的错误。
+- 是否会用完整 ABI 解码 Solidity 内置错误与 custom error。
+- 是否理解模拟只针对某一时刻和某组调用上下文，不能保证正式交易成功。
+
+## 30 秒回答
+
+前端先用与正式交易相同的 `account`、`to`、参数、`value` 和目标链执行模拟。viem 的 `simulateContract` 基于调用执行，成功时返回可直接交给 `writeContract` 的 request，失败时可从错误链中查找 `ContractFunctionRevertedError`；ABI 包含 custom error 定义时才能可靠解码其名称和参数。若交易已经广播并得到 hash，就必须以 receipt 为准：`status = reverted` 说明链上执行失败，但 receipt 主要记录状态、Gas 和日志，不保证携带 revert data。需要原因时优先保留发送前模拟结果，必要时在相同区块上下文重放调用或使用 trace 服务。模拟与上链之间状态、base fee、余额、nonce 和调用路径都可能变化，所以模拟是风险前置检查，不是成功承诺。
+
+## 深入回答
+
+### 先按阶段分类
+
+“交易失败”至少包含四类不同问题：
+
+1. **构建或模拟失败**：参数、ABI、余额、授权、业务前置条件或合约执行已经不满足。
+2. **签名阶段失败**：用户拒绝、钱包锁定、链不匹配或钱包不支持请求。
+3. **广播失败**：RPC 不可用、费用字段无效、nonce 冲突或节点拒绝交易。
+4. **链上执行回滚**：交易已经进块并消耗 Gas，但 receipt 状态为失败。
+
+它们的恢复动作不同。用户拒绝不应显示成“合约执行失败”，RPC 超时也不能直接断言交易未广播；链上回滚则不能简单重试，因为相同条件下很可能再次失败。
+
+### 模拟时必须复现真实上下文
+
+一次有意义的模拟需要尽量与正式请求一致：
+
+- 正确的 `chainId` 与目标合约地址。
+- 实际发起账户，因为 `msg.sender` 会影响权限和余额判断。
+- 完整函数参数、`value` 和必要的费用或状态覆盖。
+- 接近发送时刻的区块状态。
+
+`eth_call` 可以执行调用但不创建链上交易，也不实际消耗用户 Gas。`eth_estimateGas` 主要回答执行需要多少 Gas，节点也可能在估算时暴露回滚错误。viem 的 `simulateContract` 在 ABI 层封装调用，能够模拟写函数、返回函数结果，并构造类型安全的 write request。
+
+如果模拟成功后重新手写一套交易参数，模拟和真实请求仍可能漂移。更稳妥的方式是直接把返回的 `request` 交给 `writeContract`。
+
+### 解码 revert data
+
+Solidity 常见回滚数据包括：
+
+- `Error(string)`：传统字符串原因。
+- `Panic(uint256)`：断言失败、算术溢出等 Panic code。
+- 自定义错误：由错误选择器和 ABI 编码参数组成。
+
+要解码 custom error，前端 ABI 必须包含对应的 `error` 项。代理合约场景还可能需要实现合约的 ABI，而不只是代理表面 ABI。来自未知合约或外部调用的错误数据不能天然视为可信文案，应该映射为产品维护的安全提示，而不是把任意字符串直接当 HTML 渲染。
+
+### 为什么 receipt 通常没有原因
+
+交易 receipt 的职责是证明交易执行结果并记录 Gas、日志和区块位置。失败时状态为回滚，回滚产生的日志也不会保留；标准 receipt 并不要求附带完整 EVM revert data。
+
+需要进一步诊断时可以：
+
+1. 使用发送前保存的模拟错误。
+2. 以接近原交易的区块和调用参数重新执行 `eth_call`，但历史状态、交易顺序和同区块上下文可能无法完全复现。
+3. 在受控后端使用节点 trace API 或第三方调试服务；不同节点和服务支持能力不同。
+
+因此 UI 的错误体系不应依赖“交易失败后一定能还原精确原因”。
+
+### 模拟不能保证成功
+
+模拟与交易真正执行之间可能发生：
+
+- 价格、储备、allowance 或库存变化。
+- nonce 被其他页面或 DApp 消耗。
+- base fee 上升，余额不再覆盖费用上限。
+- 合约被升级、暂停或角色发生变化。
+- MEV、交易排序或同一区块内前序交易改变状态。
+- RPC 节点视图落后于实际链头。
+
+产品文案应是“模拟通过，可以发起交易”，不能写成“交易保证成功”。对滑点、deadline 等时间敏感参数，模拟后还要限制签名等待时间或在提交前重新计算。
+
+## 示例代码
+
+```ts
+import { BaseError, ContractFunctionRevertedError } from "viem";
+
+try {
+  const { request } = await publicClient.simulateContract({
+    account,
+    address: routerAddress,
+    abi: routerAbi,
+    functionName: "swap",
+    args: [amountIn, minAmountOut, deadline],
+  });
+
+  const hash = await walletClient.writeContract(request);
+  trackBroadcast(hash);
+} catch (error) {
+  if (error instanceof BaseError) {
+    const revertError = error.walk(
+      (cause) => cause instanceof ContractFunctionRevertedError,
+    );
+
+    if (revertError instanceof ContractFunctionRevertedError) {
+      showKnownContractError(revertError.data?.errorName);
+      return;
+    }
+  }
+
+  showStableError("TRANSACTION_PREPARATION_FAILED");
+}
+```
+
+示例只展示模拟阶段的错误提取。生产代码还应在钱包请求、广播和等待 receipt 的边界分别捕获错误，并把原始错误安全地发送到内部监控，而不是直接展示给用户。
+
+## 常见错误
+
+- 不传 `account` 就模拟依赖 `msg.sender` 的写操作。
+- ABI 缺少 custom error 定义，却期望库自动解码错误名称和参数。
+- 认为 `estimateGas` 或模拟成功就保证交易一定成功。
+- 拿到 hash 后仍把 RPC 超时直接标记为“交易失败”。
+- 只读取失败 receipt，期待其中必然包含 revert reason。
+- 把节点返回的完整内部错误、RPC URL 或原始堆栈直接展示给用户。
+
+## 面试官追问
+
+1. 为什么代理合约的错误有时无法用代理 ABI 解码？
+2. RPC 在广播请求后超时，前端应该如何判断交易是否已经进入网络？
+3. 怎样为已知 custom error 建立稳定、可本地化的用户提示？
+4. 为什么用最新区块重放失败交易不一定得到原来的 revert reason？
+
+## 评分标准
+
+### 初级回答
+
+- 知道发送前应该模拟或估算 Gas。
+- 能区分用户拒绝和链上执行失败。
+
+### 中级回答
+
+- 能按模拟、签名、广播和 receipt 阶段分类错误。
+- 知道 custom error 依赖 ABI，且模拟结果不能保证正式执行成功。
+
+### 高级回答
+
+- 能解释 receipt、revert data、历史重放与 trace 的边界。
+- 能设计稳定错误码、监控脱敏、重试策略和面向用户的恢复动作。
+
+## 参考资料
+
+- [viem：simulateContract](https://viem.sh/docs/contract/simulateContract)
+- [ethereum.org：JSON-RPC API](https://ethereum.org/developers/docs/apis/json-rpc/)
+- [Solidity ABI Specification：Errors](https://docs.soliditylang.org/en/latest/abi-spec.html#errors)

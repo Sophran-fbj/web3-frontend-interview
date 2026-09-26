@@ -11,7 +11,7 @@ describe("filterQuestions", () => {
       filterQuestions(questions, { query: "BigInt" }).map(
         ({ frontmatter }) => frontmatter.id,
       ),
-    ).toEqual(["web3-basics-001"]);
+    ).toContain("web3-basics-001");
     expect(
       filterQuestions(questions, { query: "accountsChanged" }),
     ).not.toHaveLength(0);

@@ -1,0 +1,188 @@
+---
+id: architecture-002
+slug: multi-chain-switch-add-and-wrong-network-ux
+title: 多链 DApp 如何设计切链、加链与错链状态？
+summary: 考察 wallet_switchEthereumChain、wallet_addEthereumChain 的完整流程以及链上下文隔离与用户拒绝处理。
+status: review
+difficulty: advanced
+category: architecture
+questionType: system-design
+ecosystems:
+  - evm
+tags:
+  - multi-chain
+  - chain-switch
+  - wrong-network
+  - wallet
+stacks:
+  eip-1193: final
+  eip-3085: wallet-implemented
+  eip-3326: stagnant
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: EIP-1193 Ethereum Provider JavaScript API
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: EIP-3085 wallet_addEthereumChain RPC Method
+    url: https://eips.ethereum.org/EIPS/eip-3085
+  - title: EIP-3326 wallet_switchEthereumChain RPC Method
+    url: https://eips.ethereum.org/EIPS/eip-3326
+---
+
+## 题目
+
+一个 DApp 同时支持 Ethereum Mainnet 和一条 L2。用户的钱包当前在错误网络，目标网络可能尚未加入钱包。请设计从检测、切链、加链到恢复页面数据的完整流程，并说明用户拒绝、钱包不支持、待处理交易和同构 EVM 地址分别怎样处理。
+
+## 考察目标
+
+- 是否能区分请求切换网络与请求添加网络，两者都不能绕过用户决定。
+- 是否能在 `chainChanged` 后使旧链数据、缓存、合约地址和待签名操作失效。
+- 是否理解同一个十六进制地址不足以唯一标识跨链资产、合约或业务记录。
+
+## 30 秒回答
+
+页面先从钱包读取实际 `chainId`，与当前业务目标链比较；读操作可以继续展示明确标注链来源的公共数据，但写按钮必须绑定目标链并在错链时阻止提交。用户点击切链后调用 `wallet_switchEthereumChain`。若钱包明确表示目标链未知，可以用受信配置调用 `wallet_addEthereumChain`，成功后再次切链，因为“添加成功”不保证已经成为活动链。任何一步都可能被拒绝或不支持，UI 应保留手动操作说明。收到 `chainChanged` 后，要原子地更新链上下文、取消或忽略旧请求、重建客户端并重新读取账户与数据。所有缓存键和业务主键至少包含 chainId；相同的 `0x` 地址在不同链上不能被当成同一个资产或合约。
+
+## 深入回答
+
+### 先定义目标链与当前链
+
+多链页面常同时存在两个概念：
+
+- **浏览上下文链**：用户正在查看哪条链的数据，可以来自 URL 或产品选择器。
+- **钱包活动链**：钱包当前把 RPC 与签名请求发送到哪条链。
+
+只读页面可以允许两者不同，例如用户在未连接钱包时浏览 L2 市场。但所有写操作必须在确认页再次校验钱包活动链、账户、合约地址和参数，不能因为列表最初加载于目标链就假设钱包仍在该链。
+
+### 切链与加链流程
+
+建议流程是：
+
+1. 用户主动点击需要目标链的操作。
+2. 若钱包链不匹配，展示目标链名称和风险说明，并让用户点击“切换网络”。
+3. 调用 `wallet_switchEthereumChain`，参数 `chainId` 使用 `0x` 前缀的十六进制字符串。
+4. 若 Provider 明确返回“未知链”类错误，再从应用内受信配置调用 `wallet_addEthereumChain`。
+5. 添加成功后重新请求切链，并最终读取 `eth_chainId` 验证结果。
+6. 验证成功后重新构建交易，而不是继续使用切链前缓存的 calldata、费用或余额判断。
+
+错误码 `4001` 通常表示用户拒绝。`4902` 常被钱包用作未知链提示，但它不是 EIP-1193 规定的通用 Provider 错误码，不能只靠这个数字覆盖所有钱包；连接器层应保留钱包差异，并为不支持自动加链的情况提供手动说明。
+
+EIP-3085 也不要求添加网络后自动切换，所以不能在 `wallet_addEthereumChain` 返回后立即假设操作环境已经正确。
+
+### 链配置的信任边界
+
+`wallet_addEthereumChain` 的 chainId、名称、原生币符号、RPC URL 和浏览器地址必须来自版本化的受信配置，不能直接采纳 URL 参数或普通业务 API 返回值。钱包应该自行验证元数据，但 DApp 不能把安全责任完全推给钱包。
+
+需要检查：
+
+- chainId 与 RPC 实际返回是否一致。
+- RPC 和浏览器 URL 是否使用安全协议与正确域名。
+- 原生资产 symbol 与 decimals 是否符合目标链定义。
+- 同一 chainId 是否出现相互冲突的配置。
+
+链配置变化应走发布审查，不应让客户端在运行时静默覆盖。
+
+### chainChanged 后的状态失效
+
+链切换不是只改导航栏标签。下列状态都带有链上下文：
+
+- 合约地址、ABI 版本和 token 元数据。
+- 余额、allowance、nonce、Gas 与价格。
+- 事件订阅、轮询、索引器端点和区块浏览器链接。
+- 正在构建、等待签名或刚广播的交易记录。
+
+收到 `chainChanged` 后应取消旧链请求或让其结果因 cache key 不匹配而失效，清理旧订阅，创建目标链客户端并重新读取。已经广播到旧链的交易不能丢失，应保留原 chainId 与 hash，在独立的交易中心继续跟踪；尚未签名的旧请求应作废并要求用户重新确认。
+
+### 地址必须与链绑定
+
+EVM 链可能使用相同的 20 字节地址格式，但这不代表该地址在不同链上对应同一个对象：
+
+- 同一私钥派生的 EOA 通常在多条 EVM 链上有相同地址，但余额和 nonce 独立。
+- 合约在另一条链的相同地址可能没有代码，也可能是完全不同的合约。
+- 同名、同 symbol 的代币不能只按地址或 symbol 合并。
+
+因此资产、合约、缓存和交易的标识至少使用 `(chainId, address)` 或 `(chainId, transactionHash)`。跨链映射必须由显式配置或桥协议关系提供，不能靠地址相等推断。
+
+## 示例代码
+
+```ts
+type Eip1193Provider = {
+  request(args: {
+    method: string;
+    params?: readonly unknown[];
+  }): Promise<unknown>;
+};
+
+async function ensureChain(
+  provider: Eip1193Provider,
+  chain: TrustedChainConfig,
+) {
+  const chainId = `0x${chain.id.toString(16)}`;
+
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId }],
+    });
+  } catch (error) {
+    if (!isUnknownChainError(error)) throw error;
+
+    await provider.request({
+      method: "wallet_addEthereumChain",
+      params: [{ ...chain.walletMetadata, chainId }],
+    });
+
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId }],
+    });
+  }
+
+  const actualChainId = await provider.request({ method: "eth_chainId" });
+  if (actualChainId !== chainId) throw new Error("CHAIN_SWITCH_NOT_APPLIED");
+}
+```
+
+示例中的 `TrustedChainConfig` 和 `isUnknownChainError` 需要由连接器层实现。产品还应单独识别用户拒绝与不支持的方法，不能把所有异常都进入自动加链分支。
+
+## 常见错误
+
+- 页面加载时自动反复弹出切链请求，不等待用户操作。
+- 只要切链调用返回就继续提交，不重新读取实际 chainId。
+- 把所有切链失败都当成未知链，然后无条件调用加链。
+- 认为 `wallet_addEthereumChain` 成功就等于已经切到该链。
+- 链切换后沿用旧余额、allowance、合约地址或交易模拟结果。
+- 缓存和资产 ID 只使用地址，导致不同链的数据互相污染。
+
+## 面试官追问
+
+1. 为什么浏览上下文链可以和钱包活动链不同，写操作却不能忽略差异？
+2. 用户拒绝切链后，页面哪些功能仍然可以安全使用？
+3. 切链时已经有一笔旧链交易 pending，交易中心应该怎样展示？
+4. 同一合约地址在两条链上都存在时，如何避免缓存串链？
+
+## 评分标准
+
+### 初级回答
+
+- 知道先切链，未知网络时可以请求加链。
+- 知道用户可以拒绝钱包请求。
+
+### 中级回答
+
+- 能设计切换、未知链、添加、再次切换和最终验证的完整流程。
+- 能在 chainChanged 后刷新链相关数据并阻止错链写入。
+
+### 高级回答
+
+- 能区分浏览链、钱包链和交易所属链，处理并发请求与 pending 交易。
+- 能建立可信链配置、复合缓存键、监控与钱包兼容层，并说明协议状态和错误码边界。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API](https://eips.ethereum.org/EIPS/eip-1193)
+- [EIP-3085：wallet_addEthereumChain](https://eips.ethereum.org/EIPS/eip-3085)
+- [EIP-3326：wallet_switchEthereumChain](https://eips.ethereum.org/EIPS/eip-3326)

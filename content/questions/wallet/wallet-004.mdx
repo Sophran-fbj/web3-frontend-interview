@@ -1,0 +1,159 @@
+---
+id: wallet-004
+slug: eip-6963-multi-wallet-discovery
+title: EIP-6963 如何解决多个浏览器钱包的发现与选择问题？
+summary: 考察多钱包 Provider 的事件发现流程、旧版 window.ethereum 回退以及钱包身份与安全边界。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-6963
+  - injected-wallet
+  - provider-discovery
+stacks:
+  eip-6963: final
+  eip-1193: final
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: EIP-6963 Multi Injected Provider Discovery
+    url: https://eips.ethereum.org/EIPS/eip-6963
+  - title: EIP-1193 Ethereum Provider JavaScript API
+    url: https://eips.ethereum.org/EIPS/eip-1193
+---
+
+## 题目
+
+用户同时安装了多个浏览器钱包扩展，DApp 只读取 `window.ethereum`，结果展示的钱包和用户想连接的不一致。EIP-6963 解决了什么问题？DApp 应怎样发现、展示和选择 Provider？不支持 EIP-6963 的旧钱包如何兼容？
+
+## 考察目标
+
+- 是否理解多个扩展争用 `window.ethereum` 时存在覆盖顺序和选择不确定性。
+- 是否能准确描述 `eip6963:announceProvider` 与 `eip6963:requestProvider` 的事件流程。
+- 是否知道 `uuid`、`rdns` 和钱包图标不能被当作已经验证的安全身份。
+
+## 30 秒回答
+
+传统注入方式只有一个 `window.ethereum` 槽位，多个钱包会竞争或覆盖它，DApp 无法稳定知道用户选择的是谁。EIP-6963 改为事件式发现：DApp 先监听 `eip6963:announceProvider`，再派发 `eip6963:requestProvider`；支持的钱包收到请求后，用包含 `info` 和 EIP-1193 `provider` 的事件逐个声明自己。DApp 将声明结果去重后展示钱包选择器，用户选中哪个就只把对应 Provider 交给连接流程。等待一小段发现窗口仍没有结果时，可以把 `window.ethereum` 作为旧钱包回退，但不能假设它代表某个确定钱包。
+
+## 深入回答
+
+### 为什么不能只读取 window.ethereum
+
+`window.ethereum` 适合只有一个注入钱包的早期环境。多个扩展都想写入同一个全局属性时，最终值可能受安装顺序、加载时机或钱包自己的兼容策略影响：
+
+- DApp 可能只看到最后注入的钱包。
+- 钱包可能挂载非标准的多 Provider 数组，DApp 需要写品牌特判。
+- 用户点击某个钱包品牌，实际收到的却是另一个 Provider。
+- 页面刷新后覆盖顺序变化，持久化的“上次钱包”也可能指向错误对象。
+
+EIP-6963 不要求移除 `window.ethereum`，而是在其旁边建立统一的多钱包发现通道。
+
+### 发现流程
+
+一个稳妥的 DApp 流程是：
+
+1. 页面进入客户端环境后，先注册 `eip6963:announceProvider` 监听器。
+2. 派发 `eip6963:requestProvider`，通知已经加载的钱包重新声明。
+3. 钱包派发 `eip6963:announceProvider`，事件 `detail` 包含 `info` 与 `provider`。
+4. DApp 按本次页面生命周期内的 `uuid` 去重，并保留 Provider 对象本身。
+5. UI 展示候选钱包，只有用户选择后才请求账户授权。
+6. 组件卸载时移除监听器；发现超时或没有声明时再考虑旧版回退。
+
+先监听再请求很重要，否则同步响应较快的钱包可能在监听器注册前就已经声明。钱包也可以在自身初始化时主动声明，所以监听器应能接收多次事件并幂等更新列表。
+
+### 元数据不是安全证明
+
+`info` 通常包含：
+
+- `uuid`：本次会话中区分 Provider 声明的标识。
+- `name`：用于展示的钱包名称。
+- `icon`：钱包提供的数据 URI 图标。
+- `rdns`：钱包自报的反向域名标识。
+
+这些字段改善发现与展示，但不是可信注册表。规范明确指出 `rdns` 是自我声明的，不应单独用于能力探测或品牌验证；恶意扩展也可以伪造名称和图标。因此：
+
+- 不要仅凭 `name` 或 `rdns` 自动连接、授予信任或跳过用户选择。
+- 图标只能作为不可信图片资源渲染，不能把其中内容注入 HTML。
+- 持久化时记录连接器线索，重载后仍要重新发现 Provider 和读取授权状态。
+- 同一钱包的多个安装或上下文可能产生不同 `uuid`，不要把它当长期账号 ID。
+
+### 兼容旧钱包
+
+如果没有收到 EIP-6963 声明，但存在 `window.ethereum`，可以显示“浏览器钱包”兼容项。这个回退项不应伪装成具体品牌，也不能与已经通过 EIP-6963 发现的同一 Provider 重复展示。
+
+连接成功后，账户和链状态仍由 EIP-1193 请求与事件维护。EIP-6963 只解决“发现哪一个 Provider”，不负责账户授权、网络切换或会话恢复。
+
+## 示例代码
+
+```ts
+type ProviderDetail = {
+  info: {
+    uuid: string;
+    name: string;
+    icon: string;
+    rdns: string;
+  };
+  provider: EIP1193Provider;
+};
+
+const providers = new Map<string, ProviderDetail>();
+
+function onAnnounce(event: Event) {
+  const detail = (event as CustomEvent<ProviderDetail>).detail;
+  providers.set(detail.info.uuid, detail);
+  renderWalletChoices([...providers.values()]);
+}
+
+window.addEventListener("eip6963:announceProvider", onAnnounce);
+window.dispatchEvent(new Event("eip6963:requestProvider"));
+
+// 页面卸载时：
+window.removeEventListener("eip6963:announceProvider", onAnnounce);
+```
+
+示例省略了 `EIP1193Provider` 类型定义、旧钱包回退和 UI 生命周期封装。实际 React 组件应在 effect 中注册与清理事件，并保证同一个监听器不会重复注册。
+
+## 常见错误
+
+- 先派发请求事件，再注册声明监听器。
+- 发现第一个钱包后立即自动连接，不给用户选择。
+- 同时使用 EIP-6963 和 `window.ethereum`，却不去重，导致同一钱包出现两次。
+- 把 `rdns`、名称或图标当作已认证的钱包品牌。
+- 把 `uuid` 当成跨刷新、跨设备稳定的钱包身份。
+- 认为发现 Provider 就等于用户已经授权账户。
+
+## 面试官追问
+
+1. 为什么 EIP-6963 仍然保留 `window.ethereum` 兼容空间？
+2. DApp 应该在什么时候调用 `eth_requestAccounts`？
+3. 如何避免钱包事件在 React Strict Mode 下被重复监听？
+4. 如果两个 Provider 声明相同的 `rdns`，你会怎样展示和处理？
+
+## 评分标准
+
+### 初级回答
+
+- 知道多个扩展可能争用 `window.ethereum`。
+- 知道 EIP-6963 能列出多个钱包供用户选择。
+
+### 中级回答
+
+- 能完整说明先监听、再请求、钱包声明、DApp 去重和用户选择的流程。
+- 能区分 Provider 发现、账户授权和链状态管理。
+
+### 高级回答
+
+- 能处理旧钱包回退、事件生命周期、重复声明和持久化重连。
+- 能说明自报元数据的信任边界，并设计不依赖品牌特判的连接架构。
+
+## 参考资料
+
+- [EIP-6963：Multi Injected Provider Discovery](https://eips.ethereum.org/EIPS/eip-6963)
+- [EIP-1193：Ethereum Provider JavaScript API](https://eips.ethereum.org/EIPS/eip-1193)

@@ -1,0 +1,182 @@
+---
+id: performance-ux-001
+slug: rpc-rate-limit-key-exposure-and-fallback
+title: RPC 限流或不可用时前端如何降级并避免泄露 Key？
+summary: 考察浏览器 RPC 凭据的真实边界、端点限制、错误脱敏以及读写请求不同的故障恢复策略。
+status: review
+difficulty: intermediate
+category: performance-ux
+questionType: code-review
+ecosystems:
+  - evm
+tags:
+  - rpc
+  - rate-limit
+  - api-key
+  - error-redaction
+  - fallback
+stacks:
+  nextjs: "16.x"
+  viem: "2.x"
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: Next.js Environment Variables
+    url: https://nextjs.org/docs/app/guides/environment-variables
+  - title: Alchemy App Allowlists
+    url: https://www.alchemy.com/docs/docs/how-to-add-allowlists-to-your-apps-for-enhanced-security
+  - title: viem Fallback Transport
+    url: https://viem.sh/docs/clients/transports/fallback
+  - title: Ethereum JSON-RPC API
+    url: https://ethereum.org/developers/docs/apis/json-rpc/
+---
+
+## 题目
+
+审查下面的 Next.js 客户端代码。生产环境偶尔遇到 429，监控平台里还能看到带完整 API Key 的 RPC URL。代码有哪些问题？应该如何区分可公开的浏览器端 RPC 标识、真正的服务端密钥，并为读取、交易提交和错误上报设计降级策略？
+
+```ts
+const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL!;
+
+export async function rpc(method: string, params: unknown[]) {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`RPC ${rpcUrl} failed: ${await response.text()}`);
+  }
+
+  return response.json();
+}
+```
+
+## 考察目标
+
+- 是否知道进入浏览器 bundle 或网络请求的 Key 无法被当作秘密。
+- 是否能用供应商限制、代理限流、缓存与备用端点分层降低滥用和故障影响。
+- 是否会区分可安全重试的读取与需要谨慎处理的签名、广播流程。
+
+## 30 秒回答
+
+`NEXT_PUBLIC_RPC_URL` 会在构建时进入客户端 bundle，URL 中的 Key 也会出现在浏览器网络面板，所以它只能被视为公开标识。若业务允许浏览器直连，就要为该 Key 单独配额并设置域名、方法或地址等供应商限制；真正高权限的 Key 必须留在服务端。示例还把完整 URL 和上游响应写入错误，可能经日志与监控二次泄露，应改为稳定错误码，只记录脱敏后的端点 ID、状态和 request ID。读取请求可以超时、退避、缓存并切换备用 RPC；钱包授权不能自动重试，交易广播超时也不能立刻让用户重新签名，必须先按 hash、nonce 和账户状态确认结果，避免重复操作。
+
+## 深入回答
+
+### 浏览器里的 Key 不是秘密
+
+Next.js 会把 `NEXT_PUBLIC_` 变量内联进发送给浏览器的 JavaScript。即使不使用这个前缀，只要最终 RPC URL 被客户端代码使用，它仍会出现在网络请求、Source Map、错误堆栈或浏览器扩展可见范围内。
+
+因此需要区分两类凭据：
+
+- **浏览器端项目标识**：允许暴露，但权限、配额和来源必须受限，泄露后影响可控。
+- **服务端密钥**：用于更高配额、管理 API、trace 或付费能力，只能在 Server Component、Route Handler 或后端服务中读取。
+
+把公开 Key 放进 `.env` 只能避免提交到 Git，不能让它在浏览器里变成秘密。
+
+### 直连还是代理
+
+浏览器直连 RPC 延迟低、架构简单，也不会让自己的服务端承担全部流量；但 Key 可见，供应商策略和 CORS 能力会限制防护手段。适合公开读取时，应：
+
+- 为前端单独创建低权限 Key，不与服务端或其他环境共用。
+- 配置供应商支持的域名、地址、网络或方法 allowlist。
+- 设置独立配额、费用告警和快速轮换能力。
+- 对高成本方法和大范围日志查询设置额外限制。
+
+服务端代理可以隐藏上游凭据并统一缓存、批量、限流和审计，但代理本身必须验证输入、限制允许的方法和区块范围。一个接受任意 `method` 与 `params` 的公开 Route Handler 只是把供应商 Key 包装成了新的开放代理。
+
+### 读取的降级策略
+
+对于幂等读取，可以组合：
+
+1. 合理超时与少量指数退避，并尊重 429 或供应商的重试提示。
+2. 对相同区块的结果做短时缓存与请求去重。
+3. 将大范围 `getLogs` 拆分，避免单请求拖垮端点。
+4. 使用备用 RPC；返回结果时记录实际来源与区块高度。
+5. 全部失败时显示可恢复空态和“重试”，不要把旧数据伪装成实时值。
+
+viem 的 fallback transport 可以按顺序或排名选择多个 transport，但它解决的是请求可用性，不会自动消除不同节点高度、历史能力和供应商实现差异。
+
+### 写入不能照搬读取重试
+
+需要用户确认的钱包请求不应因超时自动再次调用，否则可能弹出多个授权或签名窗口。交易提交还要区分：
+
+- DApp 通过钱包请求签名并发送：超时后先检查钱包状态和已知 hash，不要立即要求再次签名。
+- 已经拥有同一笔 raw transaction：向另一节点重新广播相同字节通常不会产生不同交易 hash，但仍要记录每次结果并处理“已知交易”等响应。
+- 不确定钱包是否已经发送：按发送账户、nonce、本地记录和链上查询恢复，避免构造一笔新的业务交易。
+
+### 错误脱敏
+
+监控需要保留诊断价值，但不应上传：
+
+- 完整 RPC URL、查询参数、Authorization header 或 Cookie。
+- 原始供应商响应中可能回显的凭据。
+- 未经评估的签名载荷、用户敏感地址组合或内部堆栈。
+
+可以保留逻辑端点名、链、RPC method、HTTP 状态、供应商 request ID、延迟和重试次数。用户界面展示稳定错误码和恢复动作，内部日志再通过受控映射定位供应商。
+
+## 示例代码
+
+```ts
+type RpcFailure = {
+  code: "RPC_RATE_LIMITED" | "RPC_UNAVAILABLE" | "RPC_BAD_RESPONSE";
+  endpoint: "primary" | "fallback";
+  status?: number;
+  requestId?: string;
+};
+
+function toSafeRpcFailure(response: Response): RpcFailure {
+  return {
+    code: response.status === 429 ? "RPC_RATE_LIMITED" : "RPC_UNAVAILABLE",
+    endpoint: "primary",
+    status: response.status,
+    requestId: response.headers.get("x-request-id") ?? undefined,
+  };
+}
+```
+
+真实实现还应验证 JSON-RPC 响应中的 `error`，为每次请求生成唯一 `id`，设置 `Content-Type`、超时与 abort signal，并把允许的方法限制在业务所需范围内。
+
+## 常见错误
+
+- 认为 Key 放在 `.env.local` 就不会出现在浏览器中。
+- 把管理权限 Key 和浏览器读取 Key 共用。
+- 用服务端代理隐藏 URL，却允许任意 JSON-RPC 方法和无限区块范围。
+- 把包含 Key 的完整 URL拼入 Error、埋点和用户截图。
+- 对 429 无限并发重试，进一步放大故障。
+- 把读取的自动 fallback 策略原样用于钱包授权和交易发送。
+
+## 面试官追问
+
+1. 域名 allowlist 为什么不能让浏览器 Key 变成真正的秘密？
+2. 哪些 RPC 方法适合缓存，缓存键必须包含哪些链和区块信息？
+3. 广播接口超时但没有返回 hash 时，你会怎样恢复？
+4. 如何验证备用 RPC 没有明显落后或返回错误链的数据？
+
+## 评分标准
+
+### 初级回答
+
+- 知道前端可见的环境变量和网络 URL 无法保密。
+- 知道遇到限流需要提示、退避或切换备用端点。
+
+### 中级回答
+
+- 能设计公开 Key、服务端密钥、allowlist、配额和代理方法白名单。
+- 能区分读取重试、钱包请求和交易广播的不同恢复策略。
+
+### 高级回答
+
+- 能覆盖多 RPC 一致性、缓存、观测、脱敏、成本控制和故障演练。
+- 能解释代理边界与重复交易风险，并设计端到端的稳定错误体系。
+
+## 参考资料
+
+- [Next.js：Environment Variables](https://nextjs.org/docs/app/guides/environment-variables)
+- [Alchemy：App Allowlists](https://www.alchemy.com/docs/docs/how-to-add-allowlists-to-your-apps-for-enhanced-security)
+- [viem：Fallback Transport](https://viem.sh/docs/clients/transports/fallback)
+- [ethereum.org：JSON-RPC API](https://ethereum.org/developers/docs/apis/json-rpc/)
