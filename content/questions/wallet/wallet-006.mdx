@@ -1,0 +1,143 @@
+---
+id: wallet-006
+slug: wallet-reconnect-session-and-authorization
+title: 页面刷新后的钱包“自动重连”究竟恢复了什么？
+summary: 考察连接器线索、Provider 会话、账户授权与服务端身份之间的边界和恢复顺序。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - reconnect
+  - authorization
+  - session
+  - persistence
+stacks:
+  wagmi: "3.x"
+  eip-1193: final
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: wagmi reconnect Action
+    url: https://wagmi.sh/core/api/actions/reconnect
+  - title: EIP-1193 Ethereum Provider JavaScript API
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: WalletConnect Sign Namespaces
+    url: https://github.com/WalletConnect/walletconnect-specs/blob/main/docs/specs/clients/sign/namespaces.md
+---
+
+## 题目
+
+DApp 把上次使用的钱包、地址和 chainId 存进 localStorage，刷新后立即显示“已连接”，但钱包已经锁定、撤销授权或切换账户。所谓自动重连应该恢复哪些信息？为什么连接器恢复、账户授权和站内登录是三件不同的事？
+
+## 考察目标
+
+- 是否能区分缓存线索、可用 Provider、钱包账户授权和服务端登录会话。
+- 是否能设计不主动弹窗的启动恢复流程。
+- 是否会在账户、链或连接变化后使签名、缓存和服务端身份失效。
+
+## 30 秒回答
+
+localStorage 只能保存“上次用哪个 connector、可能的 Session 标识和 UI 偏好”，不能证明当前地址仍获授权。启动时先恢复连接器实例：注入钱包用静默的 `eth_accounts` 和 `eth_chainId` 读取当前可见状态，不能自动调用会弹窗的 `eth_requestAccounts`；WalletConnect 则检查已有 Session 是否未过期且 namespaces 仍覆盖需要的账户、链和方法。拿到当前账户后才能进入钱包已连接态。站内登录还要单独验证服务端 cookie 或重新执行带 nonce 的签名认证。若地址或链变化，应让相关链上缓存、待签名操作和绑定旧地址的服务端身份失效。
+
+## 深入回答
+
+### 三层状态
+
+1. **连接器线索**：上次选择 injected、WalletConnect 或其他连接器，以及恢复它所需的非敏感标识。
+2. **钱包连接与授权**：当前 Provider 是否可用、暴露哪些 accounts、在哪条 chain，以及远程 Session 是否有效。
+3. **应用身份**：服务端是否存在仍有效且绑定正确 domain、address、chain 和会话策略的登录凭证。
+
+三者可以独立失效。浏览器记住上次选了 MetaMask，不代表扩展仍安装；WalletConnect topic 存在不代表 Session 未过期；钱包仍连接也不代表站内登录 cookie 有效。
+
+### 启动恢复顺序
+
+页面启动时可以先渲染“正在恢复连接”，然后：
+
+1. 读取上次连接器类型，不直接相信缓存地址。
+2. 重新发现并实例化对应 Provider。
+3. 用静默方法读取当前账户和 chain；没有账户就回到未连接。
+4. 订阅 `accountsChanged`、`chainChanged` 和 `disconnect`。
+5. 用新的 `(connector, account, chainId)` 重建客户端和缓存键。
+6. 独立请求服务端 session，判断是否仍登录。
+
+自动恢复不应该在页面加载时触发授权弹窗。`eth_requestAccounts` 应由用户动作触发；否则浏览器可能拦截，也会造成侵入式体验。
+
+### 变化后的失效
+
+账户变化后，应清理或隔离：
+
+- 旧账户余额、allowance、签名草稿和个性化数据。
+- 尚未提交的交易构建结果。
+- 绑定旧地址的服务端认证状态。
+
+链变化后，应重建 RPC/合约上下文并让链相关查询失效。已经广播的交易仍属于原 chainId，应继续按原链跟踪，不能因为钱包切链就改写归属。
+
+### 服务端身份不能靠地址缓存
+
+地址是公开标识，不是登录凭证。即使缓存地址与钱包当前账户相同，也不能用它直接恢复认证。服务端要么验证仍有效的安全会话 cookie，要么下发一次性 nonce 让用户重新签名，并校验 domain、URI、chainId、时间和 nonce 等上下文。
+
+## 示例代码
+
+```ts
+async function restoreInjected(provider: Eip1193Provider) {
+  const accounts = await provider.request({ method: "eth_accounts" });
+  const chainId = await provider.request({ method: "eth_chainId" });
+
+  if (!Array.isArray(accounts) || accounts.length === 0) {
+    return { status: "disconnected" } as const;
+  }
+
+  return {
+    status: "connected",
+    account: accounts[0],
+    chainId,
+  } as const;
+}
+```
+
+示例刻意不调用 `eth_requestAccounts`，其中 `Eip1193Provider` 表示项目对 `request` 接口的类型定义。实际代码还应验证返回值、注册事件并在卸载时清理监听器。
+
+## 常见错误
+
+- 刷新后直接把 localStorage 中的地址显示为已连接。
+- 页面加载时自动调用 `eth_requestAccounts`。
+- 只恢复 connector，不重新检查 WalletConnect Session 的 expiry 与权限。
+- 账户变化后继续使用绑定旧地址的服务端登录。
+- 把钱包连接成功当作 SIWE 或其他站内登录成功。
+- 切链后把原链 pending 交易改挂到新链。
+
+## 面试官追问
+
+1. 为什么 `eth_accounts` 适合静默恢复而 `eth_requestAccounts` 不适合？
+2. 钱包仍连接但服务端 session 失效，导航栏应该显示什么？
+3. 多标签页如何同步断开和账户变化？
+4. 哪些本地字段可以持久化，哪些必须每次重新读取？
+
+## 评分标准
+
+### 初级回答
+
+- 知道缓存地址不能证明钱包仍连接。
+- 知道刷新后需要重新读取账户和链。
+
+### 中级回答
+
+- 能区分连接器、钱包授权与应用登录。
+- 能设计静默恢复、事件监听和账户/链变化后的失效流程。
+
+### 高级回答
+
+- 能处理多标签页、远程 Session、SSR 水合、旧链交易跟踪和身份重新验证。
+- 能给出稳定的恢复状态机与隐私、弹窗体验之间的权衡。
+
+## 参考资料
+
+- [wagmi：reconnect Action](https://wagmi.sh/core/api/actions/reconnect)
+- [EIP-1193：Ethereum Provider JavaScript API](https://eips.ethereum.org/EIPS/eip-1193)
+- [WalletConnect：Sign Namespaces](https://github.com/WalletConnect/walletconnect-specs/blob/main/docs/specs/clients/sign/namespaces.md)

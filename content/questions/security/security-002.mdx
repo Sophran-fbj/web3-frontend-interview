@@ -1,0 +1,140 @@
+---
+id: security-002
+slug: dapp-frontend-supply-chain-security
+title: Web3 前端如何降低依赖与构建供应链风险？
+summary: 考察恶意依赖、安装脚本、构建产物和第三方脚本的资产风险，以及分层控制而非单点工具。
+status: review
+difficulty: advanced
+category: security
+questionType: code-review
+ecosystems:
+  - chain-agnostic
+tags:
+  - supply-chain
+  - dependency-security
+  - build-security
+  - csp
+stacks:
+  pnpm: "11.x"
+  github-actions: current
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: GitHub Dependency Review
+    url: https://docs.github.com/en/code-security/concepts/supply-chain-security/dependency-review
+  - title: GitHub Best Practices for Maintaining Dependencies
+    url: https://docs.github.com/en/code-security/concepts/supply-chain-security/best-practices-for-maintaining-dependencies
+  - title: npm Audit Documentation
+    url: https://docs.npmjs.com/cli/v11/commands/npm-audit/
+  - title: pnpm Settings - Lifecycle Scripts
+    url: https://pnpm.io/settings#lifecycle-script-settings
+---
+
+## 题目
+
+一个 DApp 新增了钱包 UI 包、分析 SDK 和若干小工具依赖，CI 会执行所有依赖安装脚本，生产页还从多个 CDN 动态加载脚本。即使智能合约完全安全，攻击者可能怎样盗取资产？请审查这套方案，并说明 lockfile、依赖审查、限制 lifecycle scripts、构建隔离和 CSP 分别解决哪一层问题。
+
+## 考察目标
+
+- 是否理解恶意前端代码可以篡改地址、签名参数和交易请求，而不需要拿到私钥。
+- 是否能区分版本锁定、已知漏洞扫描、安装期执行控制、构建完整性和运行时浏览器策略。
+- 是否避免把任一工具宣传成完整的供应链解决方案。
+
+## 30 秒回答
+
+Web3 前端依赖一旦在安装、构建或运行期执行恶意代码，就能替换收款地址、修改 typed data、诱导无限授权、读取页面可见数据并把请求发往攻击者。lockfile 固定依赖解析结果，不能证明被锁版本安全；依赖审查和 audit 能发现依赖变化与部分已知漏洞，不能发现所有定向后门；限制 lifecycle scripts 能减少安装期任意代码执行，但会影响确实依赖构建脚本的包；隔离且最小权限的 CI、可复现构建、产物审查和来源证明保护构建链；CSP 与第三方脚本限制降低运行时注入面。还需要最小依赖、分环境密钥、人工审查高风险更新和快速回滚，形成多层防线。
+
+## 深入回答
+
+### 为什么 Web3 前端后果更严重
+
+恶意脚本即使拿不到钱包私钥，也可以：
+
+- 在确认页与钱包请求之间替换 `to`、spender、金额或 chainId。
+- 构造恶意 EIP-712、Permit 或 operator 授权。
+- 监听账户、余额与交互时机，选择高价值用户攻击。
+- 替换 RPC、合约 ABI 或链配置，伪造读取结果。
+- 把用户导向仿冒钱包或下载页面。
+
+钱包确认是最后防线，但复杂 calldata 或签名内容可能难以理解，不能把被污染前端的风险完全转嫁给钱包。
+
+### 每一层控制什么
+
+- **最小依赖**：减少可被接管的维护者、包和传递依赖数量。
+- **lockfile 与 frozen install**：保证 CI 使用评审过的解析图，阻止安装时静默漂移；不判断版本是否恶意。
+- **依赖 diff/review**：在 PR 中暴露新增和升级的直接、间接依赖、许可证与已知漏洞。
+- **audit/告警**：匹配公开漏洞数据库；对零日、定向后门和业务滥用能力有限。
+- **lifecycle script 策略**：默认不让所有依赖在安装时执行脚本，只对白名单包开放；需要验证原生模块等合法用例。
+- **构建隔离**：CI 使用短期凭据、只读权限、受限网络和干净 runner，避免恶意构建窃取长期发布密钥。
+- **产物控制**：构建产物哈希、签名或来源证明，部署审批与可回滚版本降低被替换风险。
+- **运行时策略**：严格 CSP、减少第三方脚本、固定资源来源和使用 SRI（适用时），限制浏览器中的代码与网络出口。
+
+### 更新流程
+
+高风险包包括钱包连接、签名、ABI 编解码、交易构造、埋点和远程配置 SDK。它们的升级不应与大量无关改动混在一起。PR 至少检查：
+
+1. manifest 与 lockfile 是否只发生预期变化。
+2. 新版本的发布者、仓库、发布时间和变更说明是否异常。
+3. 是否新增 install script、二进制下载或网络请求。
+4. bundle 中是否出现新的外部域名、动态代码执行或钱包方法。
+5. 构建和关键签名/交易用例是否在隔离环境通过。
+
+自动升级机器人可以创建 PR，但不应自动越过高风险依赖的人工审核。
+
+### 事故响应
+
+发现依赖或 CDN 被污染时，应立即冻结部署、撤销发布与 CI 凭据、回滚到已知产物，并确认受影响时间窗和页面。若恶意前端可能诱导授权，需要公开受影响合约、spender、链和撤销步骤，而不是只发布“已修复”。同时保留日志证据，但避免继续加载受污染资源。
+
+## 示例代码
+
+```yaml
+# 示例策略，具体字段以当前 pnpm 版本为准
+strictDepBuilds: true
+onlyBuiltDependencies:
+  - esbuild
+```
+
+核心思想是显式审核哪些依赖允许执行构建脚本。不能直接复制白名单；项目应根据真实依赖生成并审查。
+
+## 常见错误
+
+- 认为使用 lockfile 就能阻止恶意版本或被接管的包。
+- 看到 audit 为 0 就宣布供应链安全。
+- 全局关闭脚本后不验证构建产物是否缺失或退化。
+- 给 fork PR 的 CI 提供生产部署密钥和不受限网络。
+- 动态加载分析脚本，却允许它访问整个钱包与交易页面。
+- 只保护私钥，忽略前端篡改签名和交易意图。
+
+## 面试官追问
+
+1. lockfile 能防版本漂移，为什么防不了已经被污染的锁定版本？
+2. 哪些依赖更新应该触发额外人工审核？
+3. 如果必须使用第三方分析脚本，怎样缩小它能接触的页面和数据？
+4. 供应链事故发生后，为什么可能需要引导用户撤销授权？
+
+## 评分标准
+
+### 初级回答
+
+- 知道依赖和第三方脚本可能篡改 DApp 交易。
+- 能提出锁版本、扫描漏洞和减少依赖。
+
+### 中级回答
+
+- 能区分 lockfile、audit、脚本限制、CI 权限和 CSP 的作用边界。
+- 能建立依赖升级审查与生产回滚流程。
+
+### 高级回答
+
+- 能设计从源码、注册表、安装、构建、制品、部署到浏览器运行时的完整信任链。
+- 能结合凭据轮换、网络出口、来源证明、监控和用户资产响应设计事故预案。
+
+## 参考资料
+
+- [GitHub：Dependency Review](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependency-review)
+- [GitHub：Best Practices for Maintaining Dependencies](https://docs.github.com/en/code-security/concepts/supply-chain-security/best-practices-for-maintaining-dependencies)
+- [npm：npm audit](https://docs.npmjs.com/cli/v11/commands/npm-audit/)
+- [pnpm：Lifecycle Script Settings](https://pnpm.io/settings#lifecycle-script-settings)

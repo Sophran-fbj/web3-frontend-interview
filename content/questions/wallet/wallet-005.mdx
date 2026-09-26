@@ -1,0 +1,146 @@
+---
+id: wallet-005
+slug: walletconnect-vs-injected-wallet
+title: WalletConnect 与浏览器注入钱包的连接模型有什么不同？
+summary: 考察本地 Provider 与远程会话在发现、授权、消息传输、移动端恢复和故障边界上的差异。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - walletconnect
+  - injected-wallet
+  - session
+  - mobile-wallet
+stacks:
+  walletconnect-sign: "2.x"
+  eip-1193: final
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: WalletConnect Sign Client Specification
+    url: https://specs.walletconnect.com/2.0/specs/clients/sign/
+  - title: WalletConnect Sign Namespaces
+    url: https://github.com/WalletConnect/walletconnect-specs/blob/main/docs/specs/clients/sign/namespaces.md
+  - title: EIP-1193 Ethereum Provider JavaScript API
+    url: https://eips.ethereum.org/EIPS/eip-1193
+---
+
+## 题目
+
+浏览器扩展钱包直连与 WalletConnect 分别怎样建立连接和发送签名请求？二维码、深链、Relay、Session 与 Provider 各自扮演什么角色？移动端返回失败、会话过期或 Relay 暂时不可用时，前端应该怎样处理？
+
+## 考察目标
+
+- 是否理解注入钱包是页面内 Provider，而 WalletConnect 是经配对和授权建立的远程会话。
+- 是否能区分 Pairing、Session、命名空间权限和单次 JSON-RPC 请求。
+- 是否能准确说明 Relay 的可用性与元数据风险，而不声称它能直接读取端到端加密的签名内容。
+
+## 30 秒回答
+
+注入钱包把 EIP-1193 Provider 放进浏览器上下文，DApp 直接调用 `request`，扩展负责弹窗和签名。WalletConnect 则由 DApp 生成配对 URI，通过二维码或深链交给另一个钱包；钱包批准 Session proposal 后，双方用 session topic 通信，Session 明确允许的链、账户、方法和事件。Relay 负责转发消息并带来网络依赖和流量元数据，但协议消息内容由双方密钥保护，不能简单说 Relay 能读取签名请求明文。前端必须处理深链无法返回、Session 过期或被删除、请求超时和 Relay 断线；恢复时先校验已有 Session 是否仍有效及权限是否满足，不要把本地缓存等同于钱包仍在线或仍授权。
+
+## 深入回答
+
+### 注入钱包
+
+扩展钱包与页面运行在同一浏览器设备，通过注入的 EIP-1193 Provider 暴露统一 `request` 接口和账户、链、断开事件。它的优点是调用路径短、桌面体验直接；限制是依赖扩展环境，多钱包发现需要 EIP-6963，移动浏览器中也不一定存在注入 Provider。
+
+### WalletConnect
+
+WalletConnect 将 DApp 和钱包视为两个客户端，它们可以位于不同应用或设备：
+
+1. DApp 生成配对 URI。
+2. 用户用钱包扫码，或在移动端通过深链/通用链接打开钱包。
+3. DApp 提出 Session proposal，声明需要的 chain、method 和 event。
+4. 钱包让用户批准或拒绝，并返回实际授权的 accounts 与 namespaces。
+5. 后续签名、交易和事件都绑定 session topic 传递。
+
+Pairing 用于建立双方通信入口，Session 才包含 DApp 实际获批的能力。一个已存在的 Pairing 不代表某个 Session 仍有效，也不代表钱包批准了所有链和方法。
+
+### Relay 与安全边界
+
+Relay 帮助两个通常无法直接互联的客户端路由消息，所以会引入：
+
+- Relay 服务不可用或网络受限导致的延迟与失败。
+- 连接时间、topic 流量等元数据暴露面。
+- 项目配置、SDK 版本和基础设施供应商依赖。
+
+这不等于 Relay 可以直接读取端到端加密的请求内容。另一方面，加密传输也不证明对端 DApp 一定可信；钱包仍要展示来源、权限和签名内容，DApp 也要验证实际批准的 Session。
+
+### 移动端与恢复
+
+移动端需要同时处理浏览器、钱包 App 和系统链接：
+
+- 只在用户动作后打开深链，避免浏览器拦截。
+- 发起请求前保存可恢复的 UI 状态，切到钱包后页面可能被系统挂起。
+- 返回 DApp 时按 request ID 或 session topic 恢复等待状态，不能重复发送同一签名请求。
+- 超时只表示未收到响应，不代表用户一定拒绝或交易一定未发送。
+- Session 过期、删除或权限不再满足时，清理本地连接态并重新提案。
+
+钱包断网、Relay 断线和 Session 被删除是不同状态。UI 可以提示“等待钱包上线”“连接已过期”或“钱包已断开”，不要全部归为未知错误。
+
+## 示例代码
+
+```ts
+const { uri, approval } = await signClient.connect({
+  requiredNamespaces: {
+    eip155: {
+      chains: ["eip155:1"],
+      methods: ["personal_sign", "eth_sendTransaction"],
+      events: ["accountsChanged", "chainChanged"],
+    },
+  },
+});
+
+if (uri) openWalletChooser(uri);
+
+const session = await approval();
+validateApprovedNamespaces(session.namespaces);
+```
+
+示例省略了 SDK 初始化、可选 namespaces、请求超时和 Session 持久化。实际权限应最小化申请，并以钱包最终批准的 namespaces 为准。
+
+## 常见错误
+
+- 把二维码本身称为已建立的钱包连接。
+- 把 Pairing、Session 和单次签名请求混为一谈。
+- 声称 Relay 可以直接读取端到端加密的签名内容。
+- 页面从后台恢复后立刻重复发送尚未确认结果的请求。
+- 只持久化地址和 topic，却不检查 Session expiry、账户和权限。
+- 为兼容所有场景一次申请所有链和方法。
+
+## 面试官追问
+
+1. Pairing 仍存在但 Session 已过期时应该怎样处理？
+2. 为什么 WalletConnect 的“连接成功”不等于钱包 App 当前在线？
+3. 深链返回 DApp 后，怎样避免重复提交交易请求？
+4. Session namespaces 为什么应该最小化？
+
+## 评分标准
+
+### 初级回答
+
+- 知道注入钱包来自浏览器扩展，WalletConnect 常通过二维码或深链连接。
+- 知道实际签名仍由钱包完成。
+
+### 中级回答
+
+- 能说明 Pairing、Session、namespaces、Relay 和请求的完整关系。
+- 能处理用户拒绝、会话过期、移动端返回和断线状态。
+
+### 高级回答
+
+- 能设计会话持久化、请求幂等、最小权限、故障观测和多连接器统一状态机。
+- 能准确区分传输加密、来源验证、Relay 元数据和钱包确认的安全边界。
+
+## 参考资料
+
+- [WalletConnect：Sign Client Specification](https://specs.walletconnect.com/2.0/specs/clients/sign/)
+- [WalletConnect：Sign Namespaces](https://github.com/WalletConnect/walletconnect-specs/blob/main/docs/specs/clients/sign/namespaces.md)
+- [EIP-1193：Ethereum Provider JavaScript API](https://eips.ethereum.org/EIPS/eip-1193)

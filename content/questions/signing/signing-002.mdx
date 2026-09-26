@@ -1,0 +1,150 @@
+---
+id: signing-002
+slug: blind-signing-and-clear-signing-boundaries
+title: 什么是盲签，EIP-712 为什么不能彻底消除它？
+summary: 考察原始签名数据、结构化展示、domain 校验、钱包解析能力以及签名授权的产品防线。
+status: review
+difficulty: intermediate
+category: signing
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - blind-signing
+  - eip-712
+  - permit
+  - clear-signing
+stacks:
+  eip-712: final
+  eip-191: final
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: EIP-712 Typed Structured Data Hashing and Signing
+    url: https://eips.ethereum.org/EIPS/eip-712
+  - title: EIP-191 Signed Data Standard
+    url: https://eips.ethereum.org/EIPS/eip-191
+  - title: Draft ERC-7730 Structured Data Clear Signing Format
+    url: https://eips.ethereum.org/EIPS/eip-7730
+---
+
+## 题目
+
+用户在钱包里看到一串十六进制数据，DApp 却告诉他“只是登录”；另一个页面使用 EIP-712，钱包能显示字段名，但签名仍可能授权转走资产。什么是盲签？EIP-712 改善了什么，为什么它本身不等于安全？前端应怎样降低误签风险？
+
+## 考察目标
+
+- 是否理解签名对象是确定字节及其语义，而不是 DApp 按钮上的自然语言。
+- 是否能说明 EIP-712 的结构化数据和 domain separation 价值。
+- 是否知道钱包缺少协议语义、类型命名误导或用户不核对时，结构化签名仍可能近似盲签。
+
+## 30 秒回答
+
+盲签是用户无法从钱包确认界面理解自己实际签署的字节或授权后果，只能相信 DApp 描述。EIP-712 把消息定义成带类型的结构，并用 domain 中的 name、version、chainId、verifyingContract 等信息隔离签名场景，让钱包有机会展示字段并检查上下文；但字段名和类型仍由请求方提供，钱包未必理解 Permit、订单或自定义协议的真实效果，也不能阻止恶意 DApp 构造“看起来正常”的授权。前端要在发起签名前展示用途、目标合约、链、金额、spender、有效期与 nonce，使用最小权限和短有效期，并让这些文案与实际 typed data 一一对应；钱包无法清晰展示时应升级警告或停止高风险操作。
+
+## 深入回答
+
+### 用户真正签的是什么
+
+钱包签名不是对按钮文字或网页截图背书，而是对经过编码和哈希的消息产生密码学签名。`personal_sign` 通常只能展示字符串或原始字节，复杂授权被编码后用户很难理解；如果钱包只显示 hash 或 hex，用户无法独立确认接收方、额度和期限，这就是典型盲签。
+
+### EIP-712 的改进
+
+EIP-712 定义类型、消息和 domain separator。合理的 domain 可以绑定：
+
+- DApp 或协议名称与版本。
+- chainId。
+- verifyingContract。
+- 需要时使用 salt 进一步区分。
+
+钱包因此能把 `spender`、`value`、`deadline` 等字段结构化展示，也能发现活动链与 domain chainId 不一致。domain separation 还减少相同结构在不同协议、合约或版本间被重放的风险。
+
+### 为什么仍可能盲签
+
+EIP-712 只标准化编码，不自动解释业务后果：
+
+- 字段名可以模糊或刻意误导。
+- 钱包不知道某个自定义合约会如何消费签名。
+- `value` 的单位、token 地址和 spender 可能没有友好解释。
+- 某些钱包只显示部分字段，或不支持对应类型。
+- 即使展示完整，用户也可能被 DApp 文案诱导忽略危险字段。
+- 防重放仍需要应用使用 nonce、deadline、chain 和 verifying contract 等约束；标准本身不消费 nonce。
+
+清晰签名格式与协议注册表可以帮助钱包展示更接近人类语义的信息，但最终仍需钱包实现、协议描述和用户确认共同配合。
+
+### DApp 的产品责任
+
+签名前的确认页必须从即将发送的真实 typed data 派生，而不是维护另一套可能漂移的文案。高风险签名至少展示完整目标地址、链、资产、额度、spender、有效期和用途；无限额度、任意 operator、长期订单或未知合约应使用阻断式提示。
+
+签名完成后也不应只显示“成功”，而要记录它授权了什么、何时到期、怎样撤销或使 nonce 失效。前端不得把签名描述为“免费所以安全”。签名不上链、不花用户 Gas，但后续可能被任何持有者提交并产生资产影响。
+
+## 示例代码
+
+```ts
+const typedData = buildPermitTypedData({
+  chainId,
+  token,
+  owner: account,
+  spender,
+  value,
+  nonce,
+  deadline,
+});
+
+renderSigningSummary({
+  chainId: typedData.domain.chainId,
+  verifyingContract: typedData.domain.verifyingContract,
+  spender: typedData.message.spender,
+  value: typedData.message.value,
+  deadline: typedData.message.deadline,
+});
+
+const signature = await walletClient.signTypedData({
+  account,
+  ...typedData,
+});
+```
+
+关键不是 API 调用，而是确认页和钱包收到的数据来自同一个对象，避免展示内容与真实签名参数不一致。
+
+## 常见错误
+
+- 把“不上链、不花 Gas”说成“没有安全风险”。
+- 使用 EIP-712 后就省略 DApp 自己的签名前确认。
+- 只展示 token symbol，不展示 token 与 spender 地址。
+- domain 缺少 chainId 或 verifyingContract，却声称可以防所有重放。
+- 签名页文案与实际 typed data 分别拼装，导致参数漂移。
+- 钱包只能显示 raw data 时仍用普通提示继续高价值授权。
+
+## 面试官追问
+
+1. domain separator 能防哪些重放，不能防哪些重放？
+2. 为什么 Permit 签名可能比一次普通登录签名风险高？
+3. 钱包完整显示了所有字段，为什么仍不能保证用户理解业务后果？
+4. 如何测试确认页展示内容与真实 typed data 永远一致？
+
+## 评分标准
+
+### 初级回答
+
+- 知道盲签是用户看不懂实际签名内容。
+- 知道 EIP-712 能结构化展示字段。
+
+### 中级回答
+
+- 能解释 domain、nonce、deadline、chainId 与 verifyingContract 的作用。
+- 能设计金额、spender、期限和目标合约的签名前确认。
+
+### 高级回答
+
+- 能说明协议语义、钱包解析、重放、前置交易和撤销机制的边界。
+- 能建立 typed data 单一来源、风险分级、可观测性和签名授权管理体系。
+
+## 参考资料
+
+- [EIP-712：Typed Structured Data Hashing and Signing](https://eips.ethereum.org/EIPS/eip-712)
+- [EIP-191：Signed Data Standard](https://eips.ethereum.org/EIPS/eip-191)
+- [Draft ERC-7730：Structured Data Clear Signing Format](https://eips.ethereum.org/EIPS/eip-7730)

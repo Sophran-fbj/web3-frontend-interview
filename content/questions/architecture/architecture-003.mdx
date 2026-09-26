@@ -1,0 +1,141 @@
+---
+id: architecture-003
+slug: multicall-rpc-batch-and-wallet-call-batch
+title: Multicall、JSON-RPC Batch 和钱包批量调用有什么区别？
+summary: 考察三种批量机制发生的层级、原子性、失败语义、链上成本和钱包能力边界。
+status: review
+difficulty: advanced
+category: architecture
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - multicall
+  - json-rpc-batch
+  - eip-5792
+  - performance
+stacks:
+  viem: "2.x"
+  eip-5792: final
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: viem multicall
+    url: https://viem.sh/docs/contract/multicall
+  - title: viem HTTP Transport Batch
+    url: https://viem.sh/docs/clients/transports/http#batch-json-rpc
+  - title: EIP-5792 Wallet Call API
+    url: https://eips.ethereum.org/EIPS/eip-5792
+---
+
+## 题目
+
+一个页面要同时读取 20 个合约状态，另一个操作要让用户一次完成 approve 和 swap。团队有人说“开 batch 就行”。请区分合约 Multicall、JSON-RPC Batch 和钱包批量调用：它们分别减少了什么、在哪里执行、是否原子、如何返回失败，以及为什么不能互相替代？
+
+## 考察目标
+
+- 是否能区分链上聚合调用、HTTP 层批量请求和钱包账户执行能力。
+- 是否理解请求数量减少不等于链上操作合并或原子执行。
+- 是否会按链、RPC、合约部署和钱包能力做检测与回退。
+
+## 30 秒回答
+
+JSON-RPC Batch 只把多个独立 RPC 请求放进一次 HTTP payload，减少网络往返；节点仍分别执行，响应顺序也应按 id 关联，没有跨请求原子性。合约 Multicall 把多个读调用编码进一次 `eth_call`，由已部署的聚合合约在同一 EVM 调用与区块上下文中执行，可按配置允许部分失败；它需要目标链有可用 Multicall 合约，并受 calldata、Gas 和返回数据大小限制。钱包批量调用则请求账户一次授权并执行多笔 call，可能依赖智能账户或钱包能力，状态要通过 batch id 跟踪；其原子性和能力必须看钱包返回与标准定义，不能把它等同于 RPC batch。读 20 个状态可选前两者，approve + swap 则需要协议合约本身、Permit 或钱包批量能力，不能靠 HTTP batch 实现。
+
+## 深入回答
+
+### JSON-RPC Batch
+
+它发生在传输层：客户端发送一个 JSON 数组，里面包含多个带不同 `id` 的 RPC 请求。优点是减少 HTTP 建连与往返开销；限制是：
+
+- 供应商可能禁用、限量或按子请求计费。
+- 每个请求仍有独立结果和错误。
+- 响应顺序不应被假设与请求数组一致，应按 `id` 匹配。
+- 两次 `eth_call` 可能没有绑定同一明确区块，除非调用参数指定相同 block。
+- 它不会让两笔交易原子执行，也不会减少链上 Gas。
+
+### 合约 Multicall
+
+Multicall 把多个合约读取编码为一次对 Multicall 合约的 `eth_call`。所有子调用共享该次调用的区块上下文，适合余额、元数据和协议面板。viem `multicall` 默认可以为每个结果返回成功或失败状态；关闭 `allowFailure` 时，一个失败会让整体按库语义抛错。
+
+需要考虑：
+
+- 目标链是否部署了可信的 Multicall3 地址。
+- 单次 calldata、返回数据、Gas 与 RPC 限制。
+- 子调用是否依赖 `msg.sender`；经过 Multicall 合约调用时，目标看到的 sender 可能不是最终用户。
+- 大批量需要分片，不能把数千调用塞进一个请求。
+
+### 钱包批量调用
+
+钱包调用 API 让 DApp 提交多个 call，并获得一个批次标识，后续查询整体状态。它面向需要账户授权的操作，可能由智能账户、钱包合约或钱包自己的执行机制支持。
+
+前端必须先检测 capability，明确展示每个 call 的目标和影响，并根据钱包返回的状态与 receipts 更新 UI。不是每个 EOA 钱包、链或连接器都支持；不支持时要回退为协议级合约入口、Permit + 单笔交易，或明确的多步流程。
+
+“一次确认”也不能自动推导“全部原子”：不同钱包能力、执行账户和批次配置可能有不同失败语义，产品必须按实际 capability 与结果建模。
+
+### 如何选择
+
+- 多个普通 RPC 方法：优先评估 JSON-RPC batch。
+- 同一链上多个合约只读，并需要相同区块视图：Multicall。
+- 用户要执行多个写 call：协议合约、Permit 或钱包批量能力。
+- 对关键读取：无论怎样批量，都要保留单项错误和降级路径。
+
+## 示例代码
+
+```ts
+const results = await publicClient.multicall({
+  contracts: calls,
+  allowFailure: true,
+  blockNumber,
+});
+
+for (const result of results) {
+  if (result.status === "failure") {
+    markFieldUnavailable(result.error);
+  }
+}
+```
+
+这里固定 `blockNumber` 是为了让页面快照具有一致语义。生产代码还应限制 batch 大小并记录失败的具体子调用。
+
+## 常见错误
+
+- 把 JSON-RPC batch 说成链上一笔原子交易。
+- 认为 Multicall 一定比并发 RPC 更快，不考虑 calldata 和节点限制。
+- 忽略 Multicall 改变 `msg.sender` 对某些读取函数的影响。
+- 按响应数组位置匹配 JSON-RPC batch，而不是使用 id。
+- 看到钱包支持批量就默认所有链、账户和连接器都支持。
+- 把“一次钱包确认”与“全部 call 原子成功”画等号。
+
+## 面试官追问
+
+1. 为什么 Multicall 更容易得到同一区块视图？
+2. JSON-RPC batch 中一个请求失败，其他请求会怎样？
+3. approve + swap 有哪些比两次独立交易更好的产品方案？
+4. 钱包批量能力不可用时，UI 应怎样回退而不误导用户？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 JSON-RPC batch 减少网络请求，Multicall 聚合合约读取。
+- 知道钱包批量调用涉及用户写操作。
+
+### 中级回答
+
+- 能比较执行层级、区块上下文、失败结果、限制和回退。
+- 不会把网络批量误认为链上原子性。
+
+### 高级回答
+
+- 能覆盖 sender 语义、能力检测、智能账户、批次状态、分片和可观测性。
+- 能根据数据一致性、成本、钱包兼容和 UX 选择组合方案。
+
+## 参考资料
+
+- [viem：multicall](https://viem.sh/docs/contract/multicall)
+- [viem：HTTP Transport Batch](https://viem.sh/docs/clients/transports/http#batch-json-rpc)
+- [EIP-5792：Wallet Call API](https://eips.ethereum.org/EIPS/eip-5792)
