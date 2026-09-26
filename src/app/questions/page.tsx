@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { AutoSubmitSelect } from "@/components/auto-submit-select";
 import { RandomQuestionButton } from "@/components/random-question-button";
 import {
   categoryLabels,
@@ -116,85 +117,51 @@ export default async function QuestionsPage({
             />
           </label>
 
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-[var(--text-strong)]">
-              难度
-            </span>
-            <select
-              name="difficulty"
-              defaultValue={filters.difficulty ?? ""}
-              className="min-h-11 w-full border border-[var(--line-strong)] bg-[var(--surface)] px-3 text-sm text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-            >
-              <option value="">全部难度</option>
-              {difficulties.map((difficulty) => (
-                <option key={difficulty} value={difficulty}>
-                  {difficultyLabels[difficulty]}
-                </option>
-              ))}
-            </select>
-          </label>
+          <AutoSubmitSelect
+            label="难度"
+            name="difficulty"
+            defaultValue={filters.difficulty}
+            allLabel="全部难度"
+            options={difficulties.map((difficulty) => ({
+              value: difficulty,
+              label: difficultyLabels[difficulty],
+            }))}
+          />
 
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-[var(--text-strong)]">
-              分类
-            </span>
-            <select
-              name="category"
-              defaultValue={filters.category ?? ""}
-              className="min-h-11 w-full border border-[var(--line-strong)] bg-[var(--surface)] px-3 text-sm text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-            >
-              <option value="">全部分类</option>
-              {categories.map((category) => (
-                <option key={category} value={category}>
-                  {categoryLabels[category]}
-                </option>
-              ))}
-            </select>
-          </label>
+          <AutoSubmitSelect
+            label="分类"
+            name="category"
+            defaultValue={filters.category}
+            allLabel="全部分类"
+            options={categories.map((category) => ({
+              value: category,
+              label: categoryLabels[category],
+            }))}
+          />
 
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-[var(--text-strong)]">
-              题型
-            </span>
-            <select
-              name="type"
-              defaultValue={filters.questionType ?? ""}
-              className="min-h-11 w-full border border-[var(--line-strong)] bg-[var(--surface)] px-3 text-sm text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-            >
-              <option value="">全部题型</option>
-              {questionTypes.map((questionType) => (
-                <option key={questionType} value={questionType}>
-                  {questionTypeLabels[questionType]}
-                </option>
-              ))}
-            </select>
-          </label>
+          <AutoSubmitSelect
+            label="题型"
+            name="type"
+            defaultValue={filters.questionType}
+            allLabel="全部题型"
+            options={questionTypes.map((questionType) => ({
+              value: questionType,
+              label: questionTypeLabels[questionType],
+            }))}
+          />
 
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-[var(--text-strong)]">
-              技术栈
-            </span>
-            <select
-              name="stack"
-              defaultValue={filters.stack ?? ""}
-              className="min-h-11 w-full border border-[var(--line-strong)] bg-[var(--surface)] px-3 text-sm text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-            >
-              <option value="">全部技术栈</option>
-              {stacks.map((stack) => (
-                <option key={stack} value={stack}>
-                  {stack}
-                </option>
-              ))}
-            </select>
-          </label>
+          <AutoSubmitSelect
+            label="技术栈"
+            name="stack"
+            defaultValue={filters.stack}
+            allLabel="全部技术栈"
+            options={stacks.map((stack) => ({
+              value: stack,
+              label: stack,
+            }))}
+          />
 
-          <div className="flex min-h-11 items-center gap-4">
-            <button
-              type="submit"
-              className="min-h-11 bg-[var(--accent)] px-5 text-sm font-semibold text-white hover:bg-[var(--accent-bright)] hover:text-[var(--canvas)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent-bright)]"
-            >
-              查看结果
-            </button>
+          <div className="flex min-h-11 items-center lg:justify-end">
             {hasActiveFilters && (
               <Link
                 href="/questions"
