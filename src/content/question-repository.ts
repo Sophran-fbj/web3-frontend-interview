@@ -78,12 +78,16 @@ function contentPreviewEnabled() {
   );
 }
 
+export function isPublicQuestionStatus(status: QuestionFrontmatter["status"]) {
+  return status === "review" || status === "verified";
+}
+
 export async function getVisibleQuestions(): Promise<QuestionDocument[]> {
   const questions = await getAllQuestions();
 
   if (contentPreviewEnabled()) return questions;
-  return questions.filter(
-    ({ frontmatter }) => frontmatter.status === "verified",
+  return questions.filter(({ frontmatter }) =>
+    isPublicQuestionStatus(frontmatter.status),
   );
 }
 

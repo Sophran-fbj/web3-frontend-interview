@@ -231,10 +231,10 @@ export default async function QuestionsPage({
       {allQuestions.length === 0 ? (
         <div className="border-b border-[var(--line)] py-14">
           <p className="text-lg font-medium text-[var(--text-strong)]">
-            题目正在完成最终校验
+            暂无可公开题目
           </p>
           <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--text-muted)]">
-            通过人工确认的题目会在这里公开。当前可以先了解项目目标，稍后再回来查看。
+            内容完整的题目会在这里公开。当前可以先了解项目目标，稍后再回来查看。
           </p>
         </div>
       ) : questions.length === 0 ? (

@@ -4,6 +4,7 @@ import {
   getAllQuestions,
   getQuestionBySlug,
   getVisibleQuestions,
+  isPublicQuestionStatus,
 } from "./question-repository";
 
 describe("question repository", () => {
@@ -26,7 +27,7 @@ describe("question repository", () => {
     expect(question?.body).toContain("## 30 秒回答");
   });
 
-  it("does not publish review content outside preview mode", async () => {
+  it("publishes complete review content outside preview mode", async () => {
     let questions: Awaited<ReturnType<typeof getVisibleQuestions>> | undefined;
 
     try {
@@ -38,6 +39,17 @@ describe("question repository", () => {
       vi.unstubAllEnvs();
     }
 
-    expect(questions).toHaveLength(0);
+    expect(questions).toHaveLength(25);
+  });
+
+  it.each([
+    ["review", true],
+    ["verified", true],
+    ["draft", false],
+    ["needs-review", false],
+    ["deprecated", false],
+    ["archived", false],
+  ] as const)("maps %s to public=%s", (status, expected) => {
+    expect(isPublicQuestionStatus(status)).toBe(expected);
   });
 });
