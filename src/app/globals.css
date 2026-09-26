@@ -151,6 +151,16 @@ button {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 
+.answer-disclosure > summary span[aria-hidden="true"] {
+  transition: transform 160ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .answer-disclosure > summary span[aria-hidden="true"] {
+    transition: none;
+  }
+}
+
 @media (max-width: 40rem) {
   .question-prose h2 {
     margin-top: 3.5rem;

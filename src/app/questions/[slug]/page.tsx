@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { AnswerDisclosure } from "@/components/answer-disclosure";
 import { QuestionBody } from "@/components/question-body";
 import {
   categoryLabels,
@@ -12,6 +13,7 @@ import {
   getVisibleQuestionBySlug,
   getVisibleQuestions,
 } from "@/content/question-repository";
+import { splitQuestionSections } from "@/content/question-sections";
 
 type QuestionPageProps = {
   params: Promise<{ slug: string }>;
@@ -45,6 +47,7 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
   if (!question) notFound();
 
   const { frontmatter, body } = question;
+  const sections = splitQuestionSections(body);
 
   return (
     <main
@@ -84,7 +87,14 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
       </header>
 
       <div className="mt-10 grid gap-12 lg:grid-cols-[minmax(0,46rem)_12rem] lg:items-start lg:gap-20">
-        <QuestionBody source={body} />
+        <div className="min-w-0">
+          <QuestionBody source={sections.prompt} />
+          {sections.answer && (
+            <AnswerDisclosure>
+              <QuestionBody source={sections.answer} />
+            </AnswerDisclosure>
+          )}
+        </div>
         <aside className="order-first border-l border-[var(--line)] pl-5 text-sm lg:sticky lg:top-8 lg:order-last">
           <p className="font-medium text-[var(--text-strong)]">阅读建议</p>
           <p className="mt-2 leading-6 text-[var(--text-faint)]">
