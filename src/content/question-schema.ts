@@ -18,6 +18,15 @@ export const questionStatusSchema = z.enum([
   "archived",
 ]);
 
+export const questionSourceTypeSchema = z.enum([
+  "real-interview",
+  "job-description",
+  "official-docs",
+  "production-case",
+  "security-incident",
+  "maintainer-interview",
+]);
+
 export const questionFrontmatterSchema = z
   .object({
     id: z
@@ -55,21 +64,46 @@ export const questionFrontmatterSchema = z
     ecosystems: z.array(z.string().min(1)).min(1),
     tags: z.array(z.string().min(1)).min(1),
     stacks: z.record(z.string(), z.string()).default({}),
-    sourceTypes: z.array(z.string().min(1)).min(1),
-    verifiedAt: dateStringSchema,
-    reviewers: z.array(z.string().min(1)).min(1),
+    sourceTypes: z.array(questionSourceTypeSchema).min(1),
+    updatedAt: dateStringSchema,
+    verifiedAt: dateStringSchema.optional(),
+    reviewers: z.array(z.string().min(1)).default([]),
+    changeLog: z
+      .array(
+        z.object({
+          date: dateStringSchema,
+          summary: z.string().min(1),
+          author: z.string().min(1).optional(),
+        }),
+      )
+      .default([]),
     references: z
       .array(z.object({ title: z.string().min(1), url: z.url() }))
       .default([]),
   })
   .superRefine((question, context) => {
-    if (question.status === "verified" && question.references.length === 0) {
+    if (question.status !== "verified") return;
+
+    if (!question.verifiedAt)
+      context.addIssue({
+        code: "custom",
+        path: ["verifiedAt"],
+        message: "已验证题目必须填写验证日期",
+      });
+
+    if (question.reviewers.length === 0)
+      context.addIssue({
+        code: "custom",
+        path: ["reviewers"],
+        message: "已验证题目至少需要一名审核者",
+      });
+
+    if (question.references.length === 0)
       context.addIssue({
         code: "custom",
         path: ["references"],
         message: "已验证题目至少需要一个参考资料",
       });
-    }
   });
 
 export type QuestionFrontmatter = z.infer<typeof questionFrontmatterSchema>;

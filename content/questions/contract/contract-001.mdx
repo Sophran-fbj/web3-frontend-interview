@@ -1,0 +1,215 @@
+---
+id: contract-001
+slug: review-erc20-approval-flow
+title: 如何审查一个 ERC-20 Approve 前端授权流程？
+summary: 考察 spender 校验、最小授权、allowance 竞态、特殊代币、Permit 和交易状态处理。
+status: review
+difficulty: advanced
+category: contract
+questionType: code-review
+ecosystems:
+  - evm
+tags:
+  - erc-20
+  - approve
+  - allowance
+  - permit
+  - code-review
+stacks:
+  viem: "2.x"
+  erc-20: final
+  erc-2612: final
+sourceTypes:
+  - official-docs
+  - production-case
+  - security-incident
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: ERC-20 Token Standard
+    url: https://eips.ethereum.org/EIPS/eip-20
+  - title: ERC-2612 Permit Extension
+    url: https://eips.ethereum.org/EIPS/eip-2612
+  - title: OpenZeppelin ERC-20 Documentation
+    url: https://docs.openzeppelin.com/contracts/5.x/api/token/erc20
+  - title: Viem simulateContract
+    url: https://viem.sh/docs/contract/simulateContract
+---
+
+## 题目
+
+请审查下面的授权逻辑，指出安全、兼容性和用户体验问题，并设计一个更稳妥的 ERC-20 Approve 流程。
+
+```ts
+async function approve(token: Address, spender: Address) {
+  const hash = await walletClient.writeContract({
+    address: token,
+    abi: erc20Abi,
+    functionName: "approve",
+    args: [spender, maxUint256],
+    account,
+  });
+
+  toast.success("授权成功");
+  return hash;
+}
+```
+
+假设 `token` 和 `spender` 可能来自路由参数，业务实际只需要消费用户输入的某个数量。
+
+## 考察目标
+
+- 是否理解 allowance 是 spender 持续拥有的代币支配额度，而不是一次交易确认。
+- 是否会验证链、token、spender、数量和当前 allowance。
+- 是否知道修改非零 allowance 的竞态以及部分代币需要先归零的兼容问题。
+- 是否能正确处理模拟、钱包确认、交易回执和 Permit 的边界。
+
+## 30 秒回答
+
+这段代码把不可信地址直接用于无限授权，并在只拿到 hash 时宣告成功。应从可信配置解析 token 和 spender，确认链与合约，使用整数计算业务所需数量，读取当前 allowance，默认只授权精确额度；发送前模拟，拿到 hash 后等待回执再更新状态。修改已有非零 allowance 时要考虑 ERC-20 的授权竞态和要求先归零的特殊代币。Permit 可以减少一次授权交易，但仍需 nonce、deadline、domain 和兼容回退，不能把签名本身当成业务执行授权。
+
+## 深入回答
+
+### 原代码的问题
+
+1. `token` 和 `spender` 来自路由参数，攻击者可以构造链接诱导用户把额度授予恶意地址。
+2. 无论业务金额多少都申请 `maxUint256`，一旦 spender 合约被攻击或配置错误，风险覆盖用户全部余额和未来收到的代币。
+3. 未确认钱包当前 chainId，可能在另一条链上对同地址授权。
+4. 未读取 decimals，业务层如果从 JavaScript 浮点数转换数量可能产生精度错误。
+5. 未读取当前 allowance，无法区分无需授权、需要补足或需要变更额度。
+6. 未模拟交易，不能提前解析常见 revert。
+7. 钱包返回 hash 只表示交易已提交或准备广播，不代表链上执行成功。
+8. 未处理用户拒绝、交易替换、回滚和长时间 Pending。
+
+### 地址和意图校验
+
+token、spender 和目标链应该来自经过审核的部署配置，并与当前业务动作绑定。即使 URL 中需要携带某个标识，也应映射到可信配置，而不是把任意地址直接传给 `approve`。
+
+授权确认界面至少展示：
+
+- 代币名称、符号和合约地址。
+- spender 的业务名称和完整地址。
+- 目标链。
+- 精确额度或无限额度及其风险。
+- 为什么需要授权，以及后续哪个动作会消费额度。
+
+代币元数据也来自合约，不能单独作为可信身份。攻击者可以部署同名同符号代币。
+
+### 最小授权与当前 allowance
+
+默认策略应是授权本次业务所需的精确数量。只有确实存在高频交互、用户理解风险且产品给出明确选择时，才提供无限授权。
+
+先读取 `allowance(owner, spender)`：
+
+- 当前额度已经足够：不再发起授权。
+- 当前额度为零：直接申请目标额度。
+- 当前额度非零但需要改变：根据代币兼容策略决定是否先归零。
+
+ERC-20 规范提醒客户端在把同一 spender 的 allowance 从一个非零值改成另一个值时，先设为零，以降低交易排序竞态。它不能从根本上消除 spender 在旧授权有效期间消费额度的可能，因此 UI 仍应解释风险，并尽量使用精确额度。
+
+有些历史代币要求先把 allowance 设为零，才允许设置新的非零额度。前端不能假设所有代币行为完全一致，应对已支持资产维护兼容策略，而不是对未知代币静默尝试多笔交易。
+
+### 交易状态
+
+发送 `approve` 前先模拟。用户确认后记录 hash，等待回执并检查 `receipt.status`。只有回执成功后，才把授权步骤标记为完成并继续后续业务操作。
+
+如果需要“授权后立即存款”，流程应明确分成两笔交易：
+
+1. 授权交易确认。
+2. 重新读取 allowance 或至少确认成功回执。
+3. 再模拟和发送存款交易。
+
+不要在第一笔刚返回 hash 时自动弹出第二次签名。
+
+### Permit 的边界
+
+ERC-2612 Permit 允许用户签署 EIP-712 授权，由其他账户提交上链，可以减少用户单独发送 `approve` 的需要。但需要注意：
+
+- 并非所有代币都实现相同 Permit 接口。
+- 签名包含 owner、spender、value、nonce 和 deadline，并受 domain 约束。
+- Permit 表达的是 allowance，不代表用户一定希望执行某个后续业务动作。
+- 签名可由任何人提交，合约流程需要容忍 Permit 已被抢先提交。
+- 智能合约钱包或部分硬件钱包可能无法完成预期的 Permit 签名，必须保留普通授权路径。
+
+## 示例代码
+
+```ts
+const requiredAmount = parseUnits(userInput, tokenDecimals);
+const currentAllowance = await publicClient.readContract({
+  address: tokenAddress,
+  abi: erc20Abi,
+  functionName: "allowance",
+  args: [account, trustedSpender],
+});
+
+if (currentAllowance < requiredAmount) {
+  // 对需要先归零的已知代币，先完成并确认 approve(spender, 0)。
+  await applyTokenSpecificResetPolicy({
+    account,
+    currentAllowance,
+    spender: trustedSpender,
+    token: tokenAddress,
+  });
+
+  const { request } = await publicClient.simulateContract({
+    account,
+    address: tokenAddress,
+    abi: erc20Abi,
+    functionName: "approve",
+    args: [trustedSpender, requiredAmount],
+  });
+
+  const hash = await walletClient.writeContract(request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+
+  if (receipt.status !== "success") {
+    throw new Error("授权交易已回滚");
+  }
+}
+```
+
+代码中的地址必须来自当前 chainId 对应的可信部署配置。示例中的归零策略也应只针对已验证需要该行为的代币，避免未经提示自动要求用户签署额外交易。
+
+## 常见错误
+
+- 默认无限授权，并用“只是连接钱包”等模糊文案弱化风险。
+- spender 或 token 地址直接来自 URL、接口响应或未经签名的远端配置。
+- 只比较代币 symbol，不检查 chainId 和合约地址。
+- 使用 JavaScript `number` 计算代币最小单位。
+- 钱包返回 hash 就显示授权成功并立即发送下一笔交易。
+- 把“先归零再设置”描述成能完全消除 allowance 竞态。
+- 假设所有代币都支持 ERC-2612，或假设 Permit 签名等于用户同意后续任意操作。
+
+## 面试官追问
+
+1. 精确授权也有风险吗？spender 在什么时间范围内可以使用它？
+2. 为什么 `approve(spender, 0)` 不能保证彻底避免竞态？
+3. 授权交易成功，但随后存款交易模拟失败，产品应如何处理？
+4. Permit 签名被第三方提前提交，业务交易还能否继续？
+5. 如何为用户提供授权管理和撤销能力？
+
+## 评分标准
+
+### 初级回答
+
+- 能发现无限授权和未等待回执的问题。
+- 知道应检查 spender、token 和目标链。
+
+### 中级回答
+
+- 会读取 allowance、使用精确额度、模拟交易并等待成功回执。
+- 知道非零 allowance 修改竞态和部分代币先归零的兼容要求。
+- 能区分 Approve 与后续业务交易。
+
+### 高级回答
+
+- 能从可信配置、钓鱼风险、资产兼容矩阵和交易状态机角度设计完整流程。
+- 能准确说明 ERC-2612 的 nonce、deadline、domain、抢先提交和智能合约钱包边界。
+- 能在安全、Gas、交互次数和高频使用体验之间给出可解释的产品策略。
+
+## 参考资料
+
+- [ERC-20：Token Standard](https://eips.ethereum.org/EIPS/eip-20)
+- [ERC-2612：Permit Extension](https://eips.ethereum.org/EIPS/eip-2612)
+- [OpenZeppelin Contracts：ERC-20](https://docs.openzeppelin.com/contracts/5.x/api/token/erc20)
+- [viem：simulateContract](https://viem.sh/docs/contract/simulateContract)

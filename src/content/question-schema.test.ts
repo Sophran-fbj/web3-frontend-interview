@@ -15,6 +15,7 @@ const validQuestion = {
   tags: ["provider", "rpc"],
   stacks: { viem: "2" },
   sourceTypes: ["official-docs"],
+  updatedAt: "2026-09-27",
   verifiedAt: "2026-09-27",
   reviewers: ["maintainer"],
   references: [
@@ -29,11 +30,27 @@ describe("questionFrontmatterSchema", () => {
     );
   });
 
-  it("rejects a verified question without references", () => {
+  it.each([
+    ["references", { references: [] }],
+    ["verifiedAt", { verifiedAt: undefined }],
+    ["reviewers", { reviewers: [] }],
+  ])("rejects a verified question without %s", (_, missingMetadata) => {
     const result = questionFrontmatterSchema.safeParse({
       ...validQuestion,
-      references: [],
+      ...missingMetadata,
     });
+
     expect(result.success).toBe(false);
+  });
+
+  it("allows a review question without verification metadata", () => {
+    const result = questionFrontmatterSchema.safeParse({
+      ...validQuestion,
+      status: "review",
+      verifiedAt: undefined,
+      reviewers: [],
+    });
+
+    expect(result.success).toBe(true);
   });
 });

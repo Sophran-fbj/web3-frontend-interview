@@ -1,0 +1,160 @@
+---
+id: wallet-001
+slug: wallet-provider-and-public-rpc-responsibilities
+title: 浏览器钱包 Provider 和公共 RPC 应该如何分工？
+summary: 考察 EIP-1193 Provider、公共 RPC、Public Client 和 Wallet Client 的职责边界。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-1193
+  - provider
+  - rpc
+  - client
+stacks:
+  viem: "2.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: EIP-1193 Ethereum Provider JavaScript API
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: Viem Introduction to Clients and Transports
+    url: https://viem.sh/docs/clients/intro
+  - title: Viem Public Client
+    url: https://viem.sh/docs/clients/public
+  - title: Viem Wallet Client
+    url: https://viem.sh/docs/clients/wallet
+---
+
+## 题目
+
+一个 DApp 已经通过浏览器钱包拿到了 `window.ethereum`。为什么还需要单独配置公共 RPC？请说明 EIP-1193 Provider、viem Public Client 和 Wallet Client 各自负责什么，并给出生产环境中的分工方案。
+
+## 考察目标
+
+- 是否理解钱包 Provider 是受用户控制的能力入口，而不等于稳定的公共节点服务。
+- 是否能区分只读请求与需要用户授权的签名、交易请求。
+- 是否考虑隐私、RPC 限流、链一致性、故障降级和钱包断开等生产问题。
+
+## 30 秒回答
+
+EIP-1193 Provider 是钱包暴露给 DApp 的最小请求与事件接口，主要用于访问用户授权的账户、签名、切链和发送交易。公共 RPC 用于区块、余额、日志、合约读取和交易回执等无需用户授权的链上查询。生产环境通常用独立 Public Client 连接可信 RPC 做读取，用 Wallet Client 通过钱包 Provider 做签名和写入，并在写操作前确认账户与链一致。
+
+## 深入回答
+
+### EIP-1193 Provider
+
+EIP-1193 只规定一个通用的 `request` 方法以及 `connect`、`disconnect`、`chainChanged`、`accountsChanged`、`message` 等事件。它是 DApp 与钱包或客户端之间的边界，不负责保证某个钱包实现了所有节点 RPC 方法。
+
+浏览器钱包 Provider 具有以下特点：
+
+- 用户决定暴露哪些账户以及何时授权。
+- 签名和交易请求需要经过钱包确认。
+- 当前链会随用户操作变化。
+- 钱包可能只代理维持钱包功能所需的一部分 RPC。
+- Provider 位于不可信网页环境中，应用不能把它当成自己的安全边界或稳定基础设施。
+
+### Public Client
+
+Public Client 面向公共 JSON-RPC 方法，适合完成：
+
+- 读取区块、余额、nonce 和交易。
+- 调用只读合约方法。
+- 查询日志和事件。
+- 模拟交易、估算 Gas。
+- 等待交易回执和确认数。
+
+公共读取不应依赖用户先连接钱包。否则未连接用户无法浏览页面，钱包切链也可能让整个站点的读取数据突然切换到另一条链。
+
+### Wallet Client
+
+Wallet Client 持有或访问账户能力，负责：
+
+- 请求账户访问。
+- 签名普通消息和 EIP-712 Typed Data。
+- 签名并发送交易。
+- 执行切链、加链等钱包动作。
+
+浏览器钱包场景下，Wallet Client 通常使用 EIP-1193 Provider 作为自定义 Transport，把签名操作委托给钱包，而不是把私钥交给前端。
+
+### 推荐分工
+
+1. 每条受支持链配置独立 Public Client，使用有配额和监控的 RPC URL。
+2. 页面初始读取直接走 Public Client，不要求连接钱包。
+3. 用户需要签名或发送交易时，再取得 Wallet Client。
+4. 写操作前校验钱包账户、钱包链、目标合约地址和 Public Client 所在链。
+5. 广播后可以用独立 Public Client 追踪回执，避免钱包 RPC 不支持完整查询或状态不稳定。
+6. 对关键读取配置超时、重试和备用 RPC，但不要对写请求进行无条件自动重放。
+
+这种分工也有利于隐私控制：应用可以在不读取用户地址的情况下展示公共数据，只在用户主动连接后加载账户相关信息。
+
+## 示例代码
+
+```ts
+import { createPublicClient, createWalletClient, custom, http } from "viem";
+import { mainnet } from "viem/chains";
+
+// 公共读取不依赖钱包连接。
+const publicClient = createPublicClient({
+  chain: mainnet,
+  transport: http(process.env.NEXT_PUBLIC_MAINNET_RPC_URL),
+});
+
+const blockNumber = await publicClient.getBlockNumber();
+
+// 只有签名或写操作需要钱包 Provider。
+const walletClient = createWalletClient({
+  chain: mainnet,
+  transport: custom(window.ethereum),
+});
+
+const [account] = await walletClient.requestAddresses();
+```
+
+实际项目还应检查 `account` 是否存在、钱包是否在目标链，并对环境变量缺失和 RPC 失败提供明确反馈。
+
+## 常见错误
+
+- 把 `window.ethereum` 当成高可用公共 RPC，所有读取都依赖用户钱包。
+- 页面加载时自动请求账户，造成隐私泄露和打扰式弹窗。
+- 只检查“已连接”，不检查钱包链与目标合约所在链是否一致。
+- RPC 请求失败后把它解释为链上交易失败。
+- 把前端配置中的 RPC URL 当成秘密；浏览器可见的 URL 和密钥只能依赖域名、额度等服务端策略限制滥用。
+
+## 面试官追问
+
+1. 钱包切到另一条链后，公共读取是否也应该自动切链？为什么？
+2. 钱包 Provider 不支持 `eth_getLogs` 时，你会怎样处理？
+3. 多个公共 RPC 返回的最新区块高度不一致时，缓存应该怎样设计？
+4. 为什么不能对 `eth_sendTransaction` 像普通 GET 请求一样自动重试？
+
+## 评分标准
+
+### 初级回答
+
+- 知道公共 RPC 用于读取，钱包用于签名和发送交易。
+- 知道连接钱包不是浏览公共数据的前置条件。
+
+### 中级回答
+
+- 能解释 EIP-1193、Public Client 和 Wallet Client 的职责。
+- 会在写操作前检查账户、链和合约地址。
+- 能区分 RPC 故障、用户拒绝和链上执行失败。
+
+### 高级回答
+
+- 能设计多链 Public Client、RPC 降级、缓存和监控方案。
+- 能说明钱包 Provider 的能力不完整、隐私边界和不可信环境。
+- 能处理不同 RPC 视图、重复广播和交易追踪的一致性问题。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API](https://eips.ethereum.org/EIPS/eip-1193)
+- [viem：Clients 与 Transports](https://viem.sh/docs/clients/intro)
+- [viem：Public Client](https://viem.sh/docs/clients/public)
+- [viem：Wallet Client](https://viem.sh/docs/clients/wallet)

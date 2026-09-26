@@ -2,68 +2,211 @@
 id: transaction-001
 slug: transaction-lifecycle-state-management
 title: 如何设计一笔链上交易的完整状态管理？
-summary: 考察交易模拟、签名、广播、确认、替换、失败和链重组处理。
-status: draft
-difficulty: intermediate
+summary: 考察模拟、签名、广播、确认、替换、取消、失败、链重组和页面恢复。
+status: review
+difficulty: advanced
 category: transaction
-questionType: scenario
+questionType: system-design
 ecosystems:
   - evm
 tags:
+  - simulation
   - pending
   - confirmation
   - replacement
   - reorg
 stacks:
-  wagmi: "3"
-  viem: "2"
+  viem: "2.x"
+  wagmi: "3.x"
 sourceTypes:
-  - production-case
   - official-docs
-verifiedAt: 2026-09-27
-reviewers:
-  - maintainer
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
 references:
-  - title: Viem documentation
-    url: https://viem.sh/
+  - title: Ethereum.org Transactions
+    url: https://ethereum.org/developers/docs/transactions/
+  - title: Viem simulateContract
+    url: https://viem.sh/docs/contract/simulateContract
+  - title: Viem waitForTransactionReceipt
+    url: https://viem.sh/docs/actions/public/waitForTransactionReceipt
+  - title: EIP-1559 Fee Market Change
+    url: https://eips.ethereum.org/EIPS/eip-1559
 ---
 
 ## 题目
 
-这是用于验证内容结构的首道草稿题。正式答案将在技术审核后补充。
+请为一笔合约写入交易设计前端状态模型。要求覆盖交易模拟、等待签名、用户拒绝、广播、长时间 Pending、提速、取消、链上回滚、确认数、短链重组、RPC 故障和页面刷新恢复。哪些状态可以由前端确定，哪些只能表达为“暂时未知”？
 
 ## 考察目标
 
-识别交易从准备到最终确认之间的状态、异常和用户反馈需求。
+- 是否理解“钱包返回 hash”“交易进块”“执行成功”和“达到业务确认数”是不同阶段。
+- 是否能处理相同 nonce 的替换交易，而不是永远追踪旧 hash。
+- 是否区分用户拒绝、RPC 失败、链上 revert、超时和未知状态。
+- 是否能设计刷新可恢复、可观测且不会重复提交的状态模型。
 
 ## 30 秒回答
 
-待编写。
+把交易建模为有持久化标识的状态机：准备参数并模拟，等待钱包签名，拿到 hash 后记录 chainId、account、nonce 和 hash，再由独立 Public Client 等待回执。回执 `success` 才代表执行成功，`reverted` 是链上失败；达到产品要求的确认数后再标记完成。监听相同 nonce 的替换，更新为新 hash 并区分提速、取消和替换。RPC 超时只能标记为未知或继续查询，不能直接宣告失败。页面刷新后根据持久化记录恢复追踪，绝不自动重发写请求。
 
 ## 深入回答
 
-待编写。
+### 推荐状态模型
+
+可以把一次用户意图和实际链上交易分开：
+
+```text
+idle
+→ preparing
+→ simulation-failed | awaiting-signature
+→ rejected | broadcast
+→ pending
+→ replaced | cancelled | confirmed | reverted | unknown
+```
+
+其中 `replaced` 不是简单终态：如果属于提速或重新提交，应该保存新 hash 并继续追踪；如果替换交易是给自己转 0 的取消交易，则原业务意图进入 `cancelled`。
+
+建议持久化：
+
+- 本地生成的 operationId。
+- 业务动作类型和用于恢复展示的最小摘要。
+- chainId、account、目标合约。
+- 原始 hash、当前有效 hash 和历史 hash。
+- nonce（能够取得时）。
+- 当前阶段、创建时间、最后检查时间。
+- receipt 的 blockNumber、status 和确认数。
+
+不要持久化私钥、签名原文中的敏感数据或未经处理的完整业务表单。
+
+### 发送前
+
+1. 校验账户、目标链、合约地址、参数和余额。
+2. 用整数处理代币数量，避免浮点精度问题。
+3. 使用 `simulateContract` 或等价调用预执行，解析 revert 原因。
+4. 向用户展示即将调用的动作、资产、数量和目标地址。
+
+模拟成功不保证交易最终成功。模拟与实际执行之间，余额、授权、价格、nonce 和合约状态都可能变化。
+
+### 钱包交互与广播
+
+等待钱包期间是 `awaiting-signature`，此时还没有链上 hash。用户拒绝属于明确的本地终止，不应该显示为“交易失败”。钱包返回 hash 后，立即把最小追踪信息持久化；即使页面关闭，也可以恢复查询。
+
+不要因为接口超时就再次调用写方法。第一次请求可能已经广播，盲目重试会产生第二笔用户意图或重复钱包弹窗。
+
+### Pending、替换和取消
+
+Ethereum 账户交易按 nonce 排序。相同账户、相同 nonce 的另一笔交易可以替换原交易，常见原因包括：
+
+- 提高费用进行加速。
+- 发送给自己的取消交易。
+- 钱包重新构造了交易参数。
+
+前端要维护原始 hash 与有效 hash 的映射。发现替换后，界面应说明原因并继续追踪替换交易，不能让旧 hash 永久停留在 Pending。
+
+长时间 Pending 也不等于失败。可能是费用不足、前序 nonce 阻塞、节点 mempool 视图不同或交易已经从部分节点的池中丢弃。此时可以提供区块浏览器链接、刷新查询和钱包提速入口，但状态应表达为“仍在等待”或“当前无法确认”。
+
+### 回执、确认数和重组
+
+回执出现后检查 `status`：
+
+- `success`：交易已在该区块执行成功。
+- `reverted`：交易已上链但执行回滚，Gas 仍可能被消耗。
+
+一份回执不等于业务上的最终确定。高价值操作可以等待多个确认，或者依据链提供的安全/最终区块标签。短链重组可能让回执暂时消失或改变所在区块，因此追踪层应能回到 Pending 并重新确认。
+
+业务数据刷新应以确认后的链上状态为准。交易成功提示和索引服务的数据可见性也要分开：索引器可能尚未同步，不能因此把成功交易改成失败。
+
+### RPC 故障与未知状态
+
+以下情况不能直接归类为链上失败：
+
+- `waitForTransactionReceipt` 超时。
+- 某个 RPC 返回未找到交易。
+- 浏览器离线或请求被限流。
+- 不同 RPC 的最新区块高度不一致。
+
+这时使用 `unknown` 或“查询中断”，保留 hash 并允许换 RPC 继续查询。只有拿到明确 revert 回执，或业务有可靠证据证明交易永远不会生效时，才能给出确定失败结论。
 
 ## 示例代码
 
-待编写。
+```ts
+const { request } = await publicClient.simulateContract({
+  account,
+  address: contractAddress,
+  abi,
+  functionName: "deposit",
+  args: [amount],
+});
+
+const originalHash = await walletClient.writeContract(request);
+savePendingOperation({
+  operationId,
+  account,
+  chainId: publicClient.chain.id,
+  currentHash: originalHash,
+});
+
+const receipt = await publicClient.waitForTransactionReceipt({
+  hash: originalHash,
+  confirmations: 2,
+  onReplaced(replacement) {
+    saveReplacement({
+      operationId,
+      reason: replacement.reason,
+      currentHash: replacement.transaction.hash,
+    });
+  },
+});
+
+if (receipt.status === "reverted") {
+  markOperationReverted(operationId, receipt);
+} else {
+  markOperationConfirmed(operationId, receipt);
+}
+```
+
+示例省略了错误分类、请求取消、重组检测和存储实现。`simulateContract` 产生的 request 应与实际使用的 account、chain 和合约配置保持一致。
 
 ## 常见错误
 
-待编写。
+- 钱包返回 hash 后立即显示“交易成功”。
+- 把用户拒绝签名、RPC 超时和链上 revert 都显示成同一种失败。
+- 只保存一个 hash，不处理相同 nonce 的提速或取消交易。
+- 页面刷新后丢失 Pending 交易，或者自动重新发送。
+- 模拟成功后认为交易一定成功。
+- 收到一次回执就永久完成状态，不考虑确认数和短链重组。
+- 交易成功后等待索引器数据，索引器延迟时错误地回退交易状态。
 
 ## 面试官追问
 
-待编写。
+1. 没有拿到 nonce，只拿到 hash，如何识别替换交易？
+2. 用户在钱包里点击取消后，为什么取消也可能失败？
+3. 交易回执成功，但业务查询仍显示旧数据，应该怎样向用户解释？
+4. 多个标签页同时追踪同一 operationId，如何避免重复通知？
+5. L2 的“确认”和最终性与以太坊主网有什么不同？
 
 ## 评分标准
 
-待编写。
+### 初级回答
+
+- 能区分等待签名、Pending、成功和失败。
+- 知道检查交易回执，而不是只依赖 hash。
+
+### 中级回答
+
+- 能处理模拟失败、用户拒绝、链上 revert、确认数和页面恢复。
+- 知道提速与取消是相同 nonce 的替换交易，并继续追踪新 hash。
+- 不会把 RPC 超时直接判定为失败。
+
+### 高级回答
+
+- 能设计用户意图与链上交易分离的可恢复状态机。
+- 能处理重组、不同 RPC 视图、索引延迟、跨标签页同步和幂等通知。
+- 能根据资产风险和不同链的最终性制定确认策略，并说明可观测性指标。
 
 ## 参考资料
 
-- [Viem documentation](https://viem.sh/)
-
-## 更新记录
-
-- 2026-09-27：建立内容结构草稿。
+- [Ethereum.org：Transactions](https://ethereum.org/developers/docs/transactions/)
+- [viem：simulateContract](https://viem.sh/docs/contract/simulateContract)
+- [viem：waitForTransactionReceipt](https://viem.sh/docs/actions/public/waitForTransactionReceipt)
+- [EIP-1559：Fee Market Change](https://eips.ethereum.org/EIPS/eip-1559)

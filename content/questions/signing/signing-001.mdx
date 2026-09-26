@@ -1,0 +1,181 @@
+---
+id: signing-001
+slug: personal-sign-vs-eip-712-typed-data
+title: personal_sign 和 EIP-712 分别适合什么场景？
+summary: 考察消息签名的可读性、域隔离、重放防护、链上验证和钱包兼容性。
+status: review
+difficulty: intermediate
+category: signing
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - personal-sign
+  - eip-712
+  - replay-protection
+  - signature
+stacks:
+  viem: "2.x"
+  eip-712: final
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: EIP-712 Typed Structured Data Hashing and Signing
+    url: https://eips.ethereum.org/EIPS/eip-712
+  - title: ERC-191 Signed Data Standard
+    url: https://eips.ethereum.org/EIPS/eip-191
+  - title: ERC-4361 Sign-In with Ethereum
+    url: https://eips.ethereum.org/EIPS/eip-4361
+  - title: ERC-1271 Standard Signature Validation Method for Contracts
+    url: https://eips.ethereum.org/EIPS/eip-1271
+  - title: MetaMask Sign Data Guide
+    url: https://docs.metamask.io/metamask-connect/evm/guides/sign-data/
+---
+
+## 题目
+
+设计登录签名、订单授权或代币 Permit 时，应该选择 `personal_sign` 还是 EIP-712 Typed Data？两者在用户可读性、域隔离、重放防护、链上验证和钱包兼容性方面有什么差异？
+
+## 考察目标
+
+- 是否理解“签名证明控制私钥”不等于“签名天然只能使用一次”。
+- 是否能根据业务语义选择普通文本签名或结构化签名。
+- 是否知道 EIP-712 本身不提供完整重放防护。
+- 是否考虑智能合约钱包和硬件钱包的验证、兼容性差异。
+
+## 30 秒回答
+
+`personal_sign` 适合用户能直接阅读的简单文本挑战，例如 SIWE 登录；EIP-712 适合订单、授权和 Permit 等结构化业务数据，钱包可以分字段展示，并通过 `name`、`version`、`chainId`、`verifyingContract` 等 domain 字段隔离签名用途。两者都必须由业务加入 nonce、有效期和消费记录来防重放。需要上链验证或表达复杂权限时优先 EIP-712，但仍要考虑硬件钱包和智能合约钱包兼容性。
+
+## 深入回答
+
+### personal_sign
+
+`personal_sign` 通常对 EIP-191 前缀后的消息签名。它适合一段可以完整展示给用户的文本，例如：
+
+- 登录挑战。
+- 同意服务条款。
+- 对简单声明进行签名。
+
+优点是格式简单、钱包支持广，很多硬件钱包也能处理。缺点是文本没有标准化字段类型，服务端和前端必须对字符编码、换行、字段顺序保持完全一致；如果把二进制或难以理解的十六进制塞进消息，用户几乎无法判断自己授权了什么。
+
+登录场景不应只签一个固定字符串。类似 SIWE 的挑战应包含 domain、URI、chain ID、nonce、签发时间和可选过期时间，并由服务端一次性消费 nonce。
+
+### EIP-712 Typed Data
+
+EIP-712 为结构化数据定义类型、消息和 domain。适合：
+
+- 链上订单和报价。
+- ERC-20 Permit 等签名授权。
+- 元交易或委托操作。
+- 需要合约高效验证的业务消息。
+
+它的主要价值不是“签名更强”，而是让结构和语义更明确。钱包可以展示字段，合约和后端也可以按相同类型计算摘要。
+
+domain 常见字段包括：
+
+- `name`：协议或应用名称。
+- `version`：签名域版本。
+- `chainId`：目标链。
+- `verifyingContract`：预期验证签名的合约。
+
+这些字段降低签名在不同链、不同合约或不同协议版本间被误用的风险，但只有业务正确填写并验证时才有效。
+
+### 重放防护属于业务协议
+
+EIP-712 规范明确不自动提供重放保护。业务消息通常还需要：
+
+- 每个账户单调递增或一次性的 nonce。
+- `deadline` 或 `expirationTime`。
+- 明确的 action、spender、recipient、amount 等授权范围。
+- 服务端或合约记录 nonce 已被使用。
+- 验证 domain 与当前环境一致。
+
+仅加入时间戳但不检查有效期，或加入 nonce 但不记录消费状态，都不能阻止重放。
+
+### 兼容性与验证
+
+- EOA 签名通常通过地址恢复验证。
+- 智能合约钱包没有普通 EOA 私钥恢复语义，需要考虑 ERC-1271 等合约签名验证方式。
+- 部分硬件钱包只支持 `personal_sign`，产品需要兼容方案或清晰提示。
+- 不应使用已被钱包弃用的 `eth_sign` 请求用户签任意摘要。
+
+## 示例代码
+
+```ts
+const signature = await walletClient.signTypedData({
+  account,
+  domain: {
+    name: "Example Orderbook",
+    version: "1",
+    chainId: 1,
+    verifyingContract: orderbookAddress,
+  },
+  types: {
+    Order: [
+      { name: "maker", type: "address" },
+      { name: "token", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "nonce", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+    ],
+  },
+  primaryType: "Order",
+  message: {
+    maker: account,
+    token,
+    amount,
+    nonce,
+    deadline,
+  },
+});
+```
+
+服务端或合约仍需检查 maker、chainId、verifyingContract、nonce 和 deadline，不能因为前端使用了 `signTypedData` 就省略验证。
+
+## 常见错误
+
+- 认为 EIP-712 自动解决了所有重放攻击。
+- domain 缺少 `chainId` 或 `verifyingContract`，使授权范围过宽。
+- 让用户签不可读的十六进制内容，却在界面上用另一段文案解释。
+- `personal_sign` 登录挑战使用固定字符串，nonce 可重复使用。
+- 只用前端传来的地址验证签名，没有从签名结果恢复或验证真正的 signer。
+- 默认所有账户都是 EOA，忽略智能合约钱包验证。
+- 使用 `eth_sign` 签任意摘要。
+
+## 面试官追问
+
+1. EIP-712 已经包含 `chainId`，为什么仍然需要 nonce？
+2. SIWE 登录消息为什么需要 domain 和 URI？
+3. 合约升级后，EIP-712 domain 的 `version` 应该怎样处理？
+4. Safe 等智能合约钱包的签名为什么不能只用 `ecrecover` 验证？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 `personal_sign` 用于简单文本，EIP-712 用于结构化消息。
+- 知道不要让用户签无法理解的内容。
+
+### 中级回答
+
+- 能解释 EIP-712 domain、类型定义和链上验证优势。
+- 会使用 nonce、deadline 和消费记录防止重放。
+- 知道登录挑战与订单授权需要不同的数据结构。
+
+### 高级回答
+
+- 能分析跨链、跨合约、跨版本重放和前置交易风险。
+- 能设计 EOA、硬件钱包与 ERC-1271 智能合约钱包的兼容验证流程。
+- 能把签名内容视为安全界面，讨论字段可读性、最小权限和协议升级策略。
+
+## 参考资料
+
+- [EIP-712：Typed Structured Data Hashing and Signing](https://eips.ethereum.org/EIPS/eip-712)
+- [ERC-191：Signed Data Standard](https://eips.ethereum.org/EIPS/eip-191)
+- [ERC-4361：Sign-In with Ethereum](https://eips.ethereum.org/EIPS/eip-4361)
+- [ERC-1271：Standard Signature Validation Method for Contracts](https://eips.ethereum.org/EIPS/eip-1271)
+- [MetaMask：Sign Data](https://docs.metamask.io/metamask-connect/evm/guides/sign-data/)

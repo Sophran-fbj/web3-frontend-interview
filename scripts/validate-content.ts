@@ -15,8 +15,9 @@ const requiredHeadings = [
   "## 面试官追问",
   "## 评分标准",
   "## 参考资料",
-  "## 更新记录",
 ];
+const reviewHeadings = ["### 初级回答", "### 中级回答", "### 高级回答"];
+const incompleteMarkers = ["待编写", "TODO", "TBD"];
 
 async function findQuestionFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -67,6 +68,18 @@ async function validateContent() {
     for (const heading of requiredHeadings) {
       if (!content.includes(heading))
         errors.push(`${relativeFile}: 缺少章节“${heading}”`);
+    }
+
+    if (result.data.status === "review" || result.data.status === "verified") {
+      for (const heading of reviewHeadings) {
+        if (!content.includes(heading))
+          errors.push(`${relativeFile}: 缺少评分层级“${heading}”`);
+      }
+
+      for (const marker of incompleteMarkers) {
+        if (content.includes(marker))
+          errors.push(`${relativeFile}: 待审核内容不能包含占位标记“${marker}”`);
+      }
     }
   }
 

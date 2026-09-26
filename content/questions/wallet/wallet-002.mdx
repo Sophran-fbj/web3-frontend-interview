@@ -1,0 +1,201 @@
+---
+id: wallet-002
+slug: wallet-connection-account-and-chain-state
+title: 如何处理钱包连接、账户变化和链切换的完整状态？
+summary: 考察连接恢复、多钱包发现、账户与链变化、错误分类以及界面状态设计。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - wallet-connection
+  - accounts-changed
+  - chain-changed
+  - eip-6963
+stacks:
+  wagmi: "3.x"
+  eip-1193: final
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: Wagmi Connect Wallet Guide
+    url: https://wagmi.sh/react/guides/connect-wallet
+  - title: EIP-1193 Ethereum Provider JavaScript API
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: EIP-6963 Multi Injected Provider Discovery
+    url: https://eips.ethereum.org/EIPS/eip-6963
+  - title: EIP-2255 Wallet Permissions System
+    url: https://eips.ethereum.org/EIPS/eip-2255
+---
+
+## 题目
+
+你需要为一个支持浏览器扩展钱包和 WalletConnect 的多链 DApp 设计连接模块。它应如何处理首次连接、刷新恢复、连接失败、账户切换、账户清空、链切换、错误网络、多个注入钱包和主动断开？
+
+## 考察目标
+
+- 是否把连接器、连接状态、账户和链建模为不同概念。
+- 是否理解 EIP-1193 事件和 EIP-6963 多钱包发现机制。
+- 是否能避免刷新闪烁、旧请求污染新账户以及错误网络下发送交易。
+- 是否能设计对用户可解释的失败状态。
+
+## 30 秒回答
+
+连接模块不应只有一个 `isConnected`。至少要区分正在恢复、等待用户授权、已连接、断开和失败，并分别保存 connector、address 与 chainId。使用 wagmi 统一管理连接器和 EIP-1193 事件；账户或链变化时，使旧账户查询失效并重新校验目标链。多注入钱包通过 EIP-6963 发现。用户拒绝、未授权、钱包断网和错误网络需要不同提示，断开 DApp 会话也不能假设已经撤销钱包权限。
+
+## 深入回答
+
+### 连接状态不是一个布尔值
+
+推荐至少表达以下阶段：
+
+- `disconnected`：没有活动连接。
+- `reconnecting`：页面加载后尝试恢复曾经的 connector。
+- `connecting`：已经由用户触发，正在等待钱包或 WalletConnect。
+- `connected`：存在活动 connector、账户和链。
+- `error`：连接流程失败，但需要保留具体错误原因。
+
+页面刷新时，持久化记录只能说明“上次使用过哪个 connector”，不能直接证明钱包当前仍授权该账户。因此在恢复完成前，不应短暂显示“已连接”或允许发送交易。
+
+### 分开保存 connector、address 和 chainId
+
+- connector 表示当前通过哪个钱包通道交互。
+- address 表示钱包当前暴露给站点的账户。
+- chainId 表示钱包当前选择的链。
+- DApp 的目标链是业务上下文，不一定等于钱包当前链。
+
+交易按钮是否可用，应同时由连接状态、账户、目标链、业务参数和模拟结果决定。
+
+### 账户与链变化
+
+EIP-1193 要求账户变化时触发 `accountsChanged`，链变化时触发 `chainChanged`。使用 wagmi 时应优先订阅其连接状态，而不是在多个组件中重复注册原始事件。
+
+账户变化后需要：
+
+1. 取消或忽略旧账户的异步请求结果。
+2. 用新账户重新加载余额、授权额度、仓位和个性化数据。
+3. 清空只属于旧账户的临时表单或签名挑战。
+4. 如果账户数组为空，将状态视为当前站点没有可用账户。
+
+链变化后需要：
+
+1. 重新选择对应链的 Public Client 和合约地址。
+2. 使旧链查询缓存失效或按 chainId 隔离缓存键。
+3. 阻止在错误网络下签名或发送交易。
+4. 明确提示用户切链；只有用户操作触发切链请求，避免页面加载时反复弹窗。
+
+### 多钱包发现
+
+只读取 `window.ethereum` 会遇到多个扩展争抢同一个全局对象的问题。EIP-6963 使用窗口事件发现多个 EIP-1193 Provider，并让用户明确选择钱包。生产项目通常通过支持 EIP-6963 的 connector 或连接组件完成发现，不应依赖扩展加载顺序。
+
+钱包提供的名称、图标和 `rdns` 仍属于自声明信息。尤其是 SVG 图标，需要按规范通过安全方式渲染，不能直接把不可信 SVG 注入 DOM。
+
+### 错误与断开
+
+至少区分：
+
+- `4001`：用户拒绝请求，允许用户再次主动尝试。
+- `4100`：当前方法或账户未授权。
+- `4900`：Provider 与所有链断开。
+- `4901`：Provider 没有连接目标链。
+- connector 配置错误、WalletConnect 会话失效和普通网络超时。
+
+DApp 中的“断开”通常首先清理应用自己的连接状态和会话。钱包权限属于钱包侧能力，除非钱包明确支持相应权限管理方法，否则不能向用户承诺已经撤销授权。
+
+## 示例代码
+
+```tsx
+"use client";
+
+import {
+  useConnect,
+  useConnection,
+  useConnectors,
+  useDisconnect,
+  useSwitchChain,
+} from "wagmi";
+
+export function WalletConnection() {
+  const connection = useConnection();
+  const connectors = useConnectors();
+  const { connect, error: connectError } = useConnect();
+  const { disconnect } = useDisconnect();
+  const { switchChain, isPending: isSwitching } = useSwitchChain();
+
+  if (!connection.isConnected) {
+    return connectors.map((connector) => (
+      <button key={connector.uid} onClick={() => connect({ connector })}>
+        连接 {connector.name}
+      </button>
+    ));
+  }
+
+  const isWrongChain = connection.chainId !== 1;
+
+  return (
+    <section>
+      <p>{connection.address}</p>
+      {isWrongChain && (
+        <button
+          disabled={isSwitching}
+          onClick={() => switchChain({ chainId: 1 })}
+        >
+          切换到以太坊主网
+        </button>
+      )}
+      <button onClick={() => disconnect()}>断开</button>
+      {connectError && <p role="alert">{connectError.message}</p>}
+    </section>
+  );
+}
+```
+
+示例只展示状态关系。实际产品还需处理恢复阶段、错误翻译、请求竞态和目标链配置。
+
+## 常见错误
+
+- 用一个布尔值表示全部连接状态，刷新时出现错误按钮或闪烁。
+- 直接使用第一个 `window.ethereum`，让多个扩展的选择结果不可预测。
+- 账户改变后仍展示旧账户余额或继续提交旧账户创建的签名挑战。
+- 把“钱包已连接某条链”和“业务允许在该链操作”混为一谈。
+- 页面加载时自动弹出连接或切链请求。
+- 手工监听 Provider 事件却没有清理监听器，或者与 wagmi 的状态管理重复。
+- 把 DApp 的 `disconnect()` 描述成撤销钱包中的全部授权。
+
+## 面试官追问
+
+1. 页面 SSR 时，如何避免服务端状态与浏览器恢复状态不一致？
+2. 用户切换账户时，正在等待的余额请求返回了旧账户结果，如何避免覆盖新状态？
+3. 为什么 EIP-6963 的 `rdns` 不能作为绝对可信的钱包身份？
+4. WalletConnect 会话存在但账户已不可用时，界面应该显示什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道需要处理连接、断开、账户变化和链变化。
+- 能在错误网络下禁用交易按钮并提示切链。
+
+### 中级回答
+
+- 能区分 connector、address、chainId 与目标链。
+- 能处理刷新恢复、用户拒绝和旧账户请求竞态。
+- 知道使用 EIP-6963 或成熟 connector 支持多个注入钱包。
+
+### 高级回答
+
+- 能设计完整状态机、缓存隔离和异步请求取消策略。
+- 能解释 EIP-1193 错误码、权限边界以及 DApp 断开与钱包撤权的差异。
+- 能覆盖 SSR、水合、多标签页、WalletConnect 会话和恶意钱包元数据等边界。
+
+## 参考资料
+
+- [wagmi：Connect Wallet](https://wagmi.sh/react/guides/connect-wallet)
+- [EIP-1193：Ethereum Provider JavaScript API](https://eips.ethereum.org/EIPS/eip-1193)
+- [EIP-6963：Multi Injected Provider Discovery](https://eips.ethereum.org/EIPS/eip-6963)
+- [EIP-2255：Wallet Permissions System](https://eips.ethereum.org/EIPS/eip-2255)
