@@ -1,0 +1,112 @@
+---
+id: security-001
+slug: dapp-phishing-defense-and-boundaries
+title: DApp 前端能为钱包钓鱼防护做什么，边界在哪里？
+summary: 考察域名、链与合约校验、交易确认信息、授权最小化以及私钥安全边界。
+status: review
+difficulty: intermediate
+category: security
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - phishing
+  - wallet-security
+  - transaction-confirmation
+  - approval
+stacks:
+  eip-1193: final
+sourceTypes:
+  - official-docs
+  - security-incident
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: Ethereum Security and Scam Prevention
+    url: https://ethereum.org/security/
+  - title: Ethereum Scam Help and Reporting
+    url: https://ethereum.org/community/support/scams/
+  - title: EIP-1193 Ethereum Provider JavaScript API
+    url: https://eips.ethereum.org/EIPS/eip-1193
+---
+
+## 题目
+
+一个 DeFi DApp 担心用户通过仿冒域名进入钓鱼站点，或在正确站点上误签错误链、错误合约和无限授权。前端可以增加哪些防线？哪些风险不是 DApp 前端能够彻底解决的？
+
+## 考察目标
+
+- 是否把域名、chainId、合约地址、spender 和签名内容视为同一条安全链路。
+- 是否知道网页永远不应索取助记词或私钥。
+- 是否能区分前端可降低的风险与钱包、浏览器、DNS、依赖和用户设备边界。
+
+## 30 秒回答
+
+前端应从可信部署配置解析 chainId、合约和 spender，写操作前再次校验钱包链与账户，确认页展示完整地址、资产、金额、授权范围和预期结果；默认精确授权，对高风险或未知目标阻止或强提示。站点还应保护域名、发布流程和依赖，并提供官方入口验证方式。但 DApp 无法阻止用户进入完全仿冒的网站，也不能保证被攻陷的钱包或设备安全。助记词和私钥永远不应进入网页，DApp 最多获得钱包明确授予的账户、签名和交易能力。
+
+## 深入回答
+
+### 前端可建立的防线
+
+1. **可信配置**：合约地址、spender、支持链和关键参数来自版本化部署配置，不直接相信 URL 或普通接口响应。
+2. **链与地址校验**：发起写操作前核对 wallet chainId、目标链、合约代码和业务配置，切链后让旧数据失效。
+3. **可理解的确认信息**：展示资产、金额、接收方、spender、授权额度、目标链和预期状态变化，地址不能只显示首尾几个字符。
+4. **最小权限**：默认精确授权，明确区分单次授权、无限授权和 operator 全量授权。
+5. **模拟与风险提示**：发送前模拟；对未知合约、异常金额、域名或链不匹配给出阻断式提示，而不是普通 toast。
+6. **站点与供应链保护**：保护 DNS、部署账号和 CI，锁定依赖并审查第三方脚本，使用内容安全策略降低脚本注入面。
+7. **官方入口**：文档和社交渠道提供可核对的正式域名，提醒用户收藏；不要通过搜索广告引导高价值操作。
+
+### 私钥边界
+
+正常 EIP-1193 Provider 让网页请求账户访问、签名和发送交易，但私钥留在钱包中。DApp 页面不得要求用户输入、上传或“验证”助记词、私钥、Keystore 密码。
+
+“网页拿不到私钥”不等于没有风险。诱导用户签署 Permit、无限 Approve、恶意 Typed Data 或交易，仍可能让攻击者获得资产控制权。因此前端必须让意图可见，钱包确认也不能替代 DApp 自己的参数校验。
+
+### 无法彻底解决的风险
+
+- 用户访问了视觉完全相同的仿冒域名。
+- DNS、浏览器扩展、钱包、操作系统或设备已经被攻陷。
+- 用户忽略钱包和 DApp 的明确警告。
+- 钱包无法解析某种签名或合约调用，只能显示原始数据。
+- 已经授权的 spender 后续被攻击或升级为恶意实现。
+
+前端的目标是减少错误、提高可验证性和限制损失上限，而不是承诺“绝对防钓鱼”。
+
+## 常见错误
+
+- 在网页中提供“导入助记词以连接钱包”的输入框。
+- 只校验 address 格式，不校验 chainId 和地址来源。
+- 确认页只显示代币 symbol，不显示合约与 spender。
+- 把钱包弹窗当成唯一安全检查。
+- 所有风险都用相同颜色的非阻断 toast 提示。
+- 宣称前端能阻止用户访问外部仿冒站或保护已被攻陷的设备。
+
+## 面试官追问
+
+1. DApp 通过 EIP-1193 最多能获得哪些能力？
+2. 为什么展示 symbol 和缩略地址不足以确认资产？
+3. 哪些操作应该使用阻断提示，而不是普通提醒？
+4. 如果官方前端被入侵，链上合约没问题，用户仍可能损失什么？
+
+## 评分标准
+
+### 初级回答
+
+- 明确知道助记词和私钥永远不进入网页。
+- 会检查链、合约地址和交易金额。
+
+### 中级回答
+
+- 能设计可信配置、确认信息、最小授权和风险分级。
+- 能准确说明 Provider 权限与前端防护边界。
+
+### 高级回答
+
+- 能覆盖 DNS、部署、供应链、钱包解析、合约升级和既有授权风险。
+- 能建立阻断、告警、监控和事故响应的分层体系。
+
+## 参考资料
+
+- [ethereum.org：Security and Scam Prevention](https://ethereum.org/security/)
+- [ethereum.org：Scam Help and Reporting](https://ethereum.org/community/support/scams/)
+- [EIP-1193：Ethereum Provider JavaScript API](https://eips.ethereum.org/EIPS/eip-1193)

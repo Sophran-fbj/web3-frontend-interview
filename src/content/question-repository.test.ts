@@ -12,7 +12,7 @@ describe("question repository", () => {
     const ids = questions.map(({ frontmatter }) => frontmatter.id);
     const slugs = questions.map(({ frontmatter }) => frontmatter.slug);
 
-    expect(questions).toHaveLength(10);
+    expect(questions).toHaveLength(15);
     expect(new Set(ids)).toHaveLength(ids.length);
     expect(new Set(slugs)).toHaveLength(slugs.length);
   });

@@ -1,0 +1,150 @@
+---
+id: data-002
+slug: contract-events-reconnect-and-reorg
+title: 合约事件监听断线和 reorg 后如何保证数据完整？
+summary: 考察轮询与 WebSocket 取舍、补块游标、日志去重以及链重组回滚策略。
+status: review
+difficulty: intermediate
+category: data
+questionType: system-design
+ecosystems:
+  - evm
+tags:
+  - event-log
+  - websocket
+  - polling
+  - reorg
+stacks:
+  viem: "2.x"
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: Ethereum JSON-RPC API
+    url: https://ethereum.org/developers/docs/apis/json-rpc/
+  - title: viem watchContractEvent
+    url: https://viem.sh/docs/contract/watchContractEvent
+  - title: viem getLogs
+    url: https://viem.sh/docs/actions/public/getLogs
+  - title: viem WebSocket Transport
+    url: https://viem.sh/docs/clients/transports/websocket
+---
+
+## 题目
+
+一个页面通过合约事件实时更新订单列表。WebSocket 断线 30 秒后自动重连，随后又发生了短链 reorg。如何设计事件同步，避免漏数据、重复数据和已经回滚的记录继续显示？
+
+## 考察目标
+
+- 是否理解 WebSocket 只改善实时性，不自动保证断线期间的完整性。
+- 是否会使用区块游标、`getLogs` 补块和稳定去重键。
+- 是否考虑 reorg、确认深度、回滚和最终一致性。
+
+## 30 秒回答
+
+不能把 WebSocket 回调当成唯一数据源。应用应持久化最后确认的区块游标，重连后从安全的较早区块用 `getLogs` 补扫到最新块，再切回实时监听；日志用 chainId、blockHash、transactionHash 和 logIndex 等字段幂等处理。对可能 reorg 的近期区块保持可回滚状态，收到 removed log、发现 blockHash 改变或补扫结果变化时撤销旧记录并重放。重要业务应等待一定确认数再标记最终完成。
+
+## 深入回答
+
+### 轮询与 WebSocket
+
+轮询的优点是恢复逻辑直观，可以明确查询 `[fromBlock, toBlock]`；缺点是存在延迟并消耗更多 RPC 请求。WebSocket 延迟低，但会遇到连接中断、代理超时、供应商限制和订阅丢失。
+
+viem 的 `watchContractEvent` 会根据 Transport 和配置使用订阅或轮询；RPC 不支持 filter 时还可以回退到 `getLogs`。这不等于业务可以忽略自己的游标和幂等逻辑，因为应用进程、浏览器标签页和网络仍会中断。
+
+### 补块流程
+
+一种稳妥流程是：
+
+1. 保存最后完成处理的区块号和区块哈希。
+2. 启动或重连时，从 `lastProcessedBlock - lookback` 开始补扫。
+3. 将查询区间切成 RPC 可接受的块范围，处理限流和超时。
+4. 按 blockNumber、transactionIndex、logIndex 排序处理。
+5. 补到当前观察到的链头后，再继续实时监听。
+6. 定期用轮询校准 WebSocket 收到的数据。
+
+向前回看几个区块可以覆盖游标落盘与事件处理之间的崩溃窗口，也能帮助发现浅 reorg；代价是必须幂等。
+
+### 去重与 reorg
+
+只用 transactionHash 去重不够，因为一笔交易可以发出多个同类日志。常见唯一标识会包含 chainId、blockHash、transactionHash 和 logIndex。
+
+但 reorg 后 blockHash 会变化，旧日志可能不再属于 canonical chain。因此数据层还要能：
+
+- 标记近期日志为暂定状态。
+- 按原 blockHash 撤销派生状态。
+- 对新 canonical 区块重新拉取和重放。
+- 在达到产品定义的确认数后再显示为最终确认。
+
+如果 RPC 订阅提供 removed 标记，可以把它作为回滚信号之一，但不能只依赖单一连接收到该通知。重连补扫和区块哈希校验仍是恢复基础。
+
+### 前端职责边界
+
+单个页面可以用这套方案刷新当前 UI，但交易历史、排行榜等需要长期完整性的功能更适合由后端索引器维护。前端不能假设用户一直开着页面，也不应该从创世块扫描大型事件集。
+
+## 示例代码
+
+```ts
+const fromBlock = lastProcessedBlock > 6n ? lastProcessedBlock - 6n : 0n;
+const latestBlock = await publicClient.getBlockNumber();
+
+const logs = await publicClient.getLogs({
+  address: contractAddress,
+  event: orderCreatedEvent,
+  fromBlock,
+  toBlock: latestBlock,
+});
+
+await applyLogsIdempotently(logs);
+
+const unwatch = publicClient.watchContractEvent({
+  address: contractAddress,
+  abi,
+  eventName: "OrderCreated",
+  onLogs: applyLogsIdempotently,
+});
+```
+
+实际代码还应对长区间分片，并在组件卸载或连接切换时调用 `unwatch`。
+
+## 常见错误
+
+- 认为用了 WebSocket 就不会漏事件。
+- 重连后只从“当前最新块”继续，忽略断线区间。
+- 只用 transactionHash 去重一笔交易里的多个日志。
+- 只向 UI 追加记录，没有撤销 reorg 数据的能力。
+- 从创世块在浏览器中扫描所有历史日志。
+- 忘记取消旧订阅，导致切链后重复监听。
+
+## 面试官追问
+
+1. lookback 区间为什么会产生重复，如何安全处理？
+2. 为什么 transactionHash 不能唯一标识一条日志？
+3. 页面关闭期间的数据由谁保证完整？
+4. 多少个确认才算最终，应该由技术还是产品决定？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 WebSocket 断线可能漏事件，重连后要补数据。
+- 知道需要去重。
+
+### 中级回答
+
+- 能设计区块游标、回看补扫、排序和幂等处理。
+- 能说明 reorg 时需要撤销和重放近期日志。
+
+### 高级回答
+
+- 能设计前端、索引器、确认深度、RPC 限流和故障恢复的完整边界。
+- 能处理跨链、深 reorg、供应商视图差异与可观测性。
+
+## 参考资料
+
+- [ethereum.org：JSON-RPC API](https://ethereum.org/developers/docs/apis/json-rpc/)
+- [viem：watchContractEvent](https://viem.sh/docs/contract/watchContractEvent)
+- [viem：getLogs](https://viem.sh/docs/actions/public/getLogs)
+- [viem：WebSocket Transport](https://viem.sh/docs/clients/transports/websocket)

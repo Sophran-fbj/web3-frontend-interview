@@ -1,0 +1,141 @@
+---
+id: transaction-002
+slug: eip-1559-gas-fee-fields
+title: EIP-1559 的 Gas 字段应该如何计算和展示？
+summary: 考察 gasLimit、gasUsed、base fee、priority fee 和 max fee 的区别与费用展示。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-1559
+  - gas
+  - transaction-fee
+stacks:
+  eip-1559: final
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: EIP-1559 Fee Market Change
+    url: https://eips.ethereum.org/EIPS/eip-1559
+  - title: Ethereum Gas and Fees
+    url: https://ethereum.org/developers/docs/gas/
+  - title: Ethereum Transactions
+    url: https://ethereum.org/developers/docs/transactions/
+---
+
+## 题目
+
+一个交易确认页同时拿到了 `gasLimit`、`maxFeePerGas` 和 `maxPriorityFeePerGas`。它们分别表示什么？用户最终支付的费用怎样确定？交易发送前和确认后，前端各应该展示哪个数值？
+
+## 考察目标
+
+- 是否能区分 Gas 数量上限与每单位 Gas 的价格上限。
+- 是否理解 EIP-1559 的 base fee、priority fee、max fee 和实际成交价格。
+- 是否会区分发送前最大成本、预估成本和 receipt 中的实际成本。
+
+## 30 秒回答
+
+`gasLimit` 是本次交易最多允许消耗的 Gas 数量，`gasUsed` 才是执行后实际消耗量。EIP-1559 中，区块给出 `baseFeePerGas`，交易用 `maxPriorityFeePerGas` 限制小费，用 `maxFeePerGas` 限制 base fee 与小费之和。实际每单位价格不会直接等于 max fee，而是受当前 base fee 和两个上限共同约束。发送前应展示预估费用和明确标注的最大费用；确认后用 receipt 的 `gasUsed × effectiveGasPrice` 展示实际费用。
+
+## 深入回答
+
+### Gas 数量与 Gas 单价
+
+`gasLimit` 限制交易最多可以执行多少计算。合约调用在执行完成后会得到 `gasUsed`：
+
+- 未使用的 Gas 不会按 `gasLimit` 全额收费。
+- 如果执行耗尽 Gas，状态会回滚，但已经消耗的计算仍需付费。
+- 即使交易因合约 revert 失败，通常也要为已执行的计算支付费用。
+
+因此，`gasLimit × maxFeePerGas` 是余额校验时需要考虑的最坏上限之一，不是用户最终必然支付的金额。
+
+### EIP-1559 价格字段
+
+- `baseFeePerGas`：协议根据前一区块使用情况调整的基础费，交易被打包时必须覆盖，支付后被销毁。
+- `maxPriorityFeePerGas`：发送者愿意支付给验证者的小费上限。
+- `maxFeePerGas`：发送者愿意为每单位 Gas 支付的总价上限，必须能够覆盖 base fee。
+
+概念上，实际 priority fee 会同时受小费上限和 `maxFeePerGas - baseFeePerGas` 限制。实际单价可理解为：
+
+```text
+effectiveGasPrice = min(
+  maxFeePerGas,
+  baseFeePerGas + maxPriorityFeePerGas
+)
+```
+
+最终执行费为：
+
+```text
+gasUsed × effectiveGasPrice
+```
+
+如果 max fee 高于实际 base fee 与小费之和，差额不会被收走。前端不能把 `maxFeePerGas × gasLimit` 标成“预计实际支出”。
+
+### 展示策略
+
+发送前建议同时展示：
+
+- 预计 Gas 数量与预计费用。
+- 钱包或节点建议的费用档位。
+- 最大可能网络费，并明确它是上限。
+- 交易发送的资产金额与网络费分开显示。
+
+交易确认后应使用 receipt 的 `gasUsed` 和 `effectiveGasPrice` 计算实际网络费。若产品支持多条 EVM 链，还应使用目标链的原生资产符号和 decimals，不能固定写成 ETH。
+
+费用预估不是保证。模拟与正式执行之间 base fee、合约状态和执行路径都可能改变，钱包也可能让用户编辑费用字段。
+
+## 示例代码
+
+```ts
+const estimatedMaximumFee = gasLimit * maxFeePerGas;
+
+const receipt = await publicClient.waitForTransactionReceipt({ hash });
+const actualFee = receipt.gasUsed * receipt.effectiveGasPrice;
+```
+
+界面应把 `estimatedMaximumFee` 标成“最高网络费”，把 `actualFee` 标成“实际网络费”。
+
+## 常见错误
+
+- 把 `gasLimit` 当成一定会消耗的 Gas。
+- 把 `maxFeePerGas` 当成实际成交单价。
+- 认为失败交易不收 Gas。
+- 把 base fee 和 priority fee 都描述成验证者收入。
+- 发送前只展示一个没有“预计”或“最高”语义的费用数字。
+- 在所有 EVM 链上都把网络费单位写成 ETH。
+
+## 面试官追问
+
+1. 为什么钱包设置较高的 max fee 不代表用户一定会支付这个价格？
+2. Gas 估算成功后，正式交易为什么仍可能 out of gas？
+3. receipt 中应该用哪些字段计算实际费用？
+4. 用户余额至少要覆盖哪些组成部分？
+
+## 评分标准
+
+### 初级回答
+
+- 能区分 Gas 数量和 Gas 单价。
+- 知道未使用的 Gas 不会按上限收费。
+
+### 中级回答
+
+- 能准确解释 base fee、priority fee、max fee 和实际费用公式。
+- 会区分发送前预估、最大费用与确认后实际费用。
+
+### 高级回答
+
+- 能说明状态变化、费用波动、失败交易和多链原生资产的边界。
+- 能设计余额校验、费用档位和异常费用提示策略。
+
+## 参考资料
+
+- [EIP-1559：Fee Market Change](https://eips.ethereum.org/EIPS/eip-1559)
+- [ethereum.org：Gas and Fees](https://ethereum.org/developers/docs/gas/)
+- [ethereum.org：Transactions](https://ethereum.org/developers/docs/transactions/)

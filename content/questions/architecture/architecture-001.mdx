@@ -1,0 +1,150 @@
+---
+id: architecture-001
+slug: nextjs-wallet-ssr-hydration
+title: Next.js 中的钱包状态为什么会造成 hydration mismatch？
+summary: 考察服务端环境、浏览器钱包、客户端外部存储与首屏一致性的处理方式。
+status: review
+difficulty: intermediate
+category: architecture
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - nextjs
+  - ssr
+  - hydration
+  - wagmi
+stacks:
+  nextjs: "16.x"
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: wagmi SSR Guide
+    url: https://wagmi.sh/react/guides/ssr
+  - title: Next.js Server and Client Components
+    url: https://nextjs.org/docs/app/getting-started/server-and-client-components
+  - title: Next.js Lazy Loading and Skipping SSR
+    url: https://nextjs.org/docs/app/guides/lazy-loading#skipping-ssr
+---
+
+## 题目
+
+一个 Next.js 页面在服务端渲染“连接钱包”，浏览器首次渲染时却立即从 localStorage 和注入钱包读到“0x123… 已连接”，控制台出现 hydration mismatch。为什么会发生？怎样修复，而不是简单给整个页面关闭 SSR？
+
+## 考察目标
+
+- 是否理解服务端没有 `window`、注入 Provider 和浏览器 localStorage。
+- 是否知道 hydration 要求客户端首次渲染与服务端 HTML 一致。
+- 是否会划分 Server/Client Component，并正确处理 wagmi 外部存储水合。
+
+## 30 秒回答
+
+服务端看不到 `window.ethereum` 和 localStorage，只能渲染未连接；如果客户端第一次 render 立刻使用浏览器持久化状态输出已连接，HTML 就不一致。钱包交互应放在 Client Component，浏览器 API 在 effect 或事件中访问。wagmi 可开启 `ssr: true`，让外部存储在挂载后水合；若要减少未连接闪烁，可使用 cookie storage，并在服务端通过 `cookieToInitialState` 把一致的 initialState 传给 WagmiProvider。不要为解决一个钱包组件而关闭整页 SSR。
+
+## 深入回答
+
+### mismatch 的来源
+
+Server Component 和服务端预渲染阶段没有以下浏览器能力：
+
+- `window`、`document` 和注入的 EIP-1193 Provider。
+- localStorage 中的 connector/session 线索。
+- 浏览器扩展实际暴露的账户和 chainId。
+
+React hydration 会在浏览器中复用服务端 HTML。客户端的第一次渲染必须与服务端可见状态一致；如果模块顶层直接读取 `window.ethereum`，不仅可能在服务端报错，也可能让首次客户端输出发生变化。
+
+### 组件边界
+
+页面标题、公共链上数据和静态内容可以继续使用 Server Component。只有连接按钮、账户菜单和依赖钱包 hooks 的小范围组件需要成为 Client Component。
+
+浏览器 API 应在以下位置使用：
+
+- 用户点击连接等事件处理器。
+- 确认组件已经挂载后的 effect。
+- 已声明为 Client Component 的钱包 Provider 树中。
+
+`"use client"` 代表客户端边界，不代表组件完全不会参与服务端预渲染。因此仍要保证首次输出一致。
+
+### wagmi 的 SSR 策略
+
+wagmi 使用 localStorage、MIPD 等客户端外部存储。官方 SSR 指南建议开启 `ssr: true`，使这些存储在首次挂载后再水合，从而避免服务端与首次客户端输出直接冲突。
+
+这种方式可能短暂显示未连接状态。如果产品需要更稳定的首屏，可以：
+
+1. 使用 wagmi `cookieStorage`。
+2. 在 Next.js Server Component 中读取 cookie。
+3. 通过 `cookieToInitialState` 计算 initialState。
+4. 把 initialState 传入客户端的 WagmiProvider。
+
+Cookie 只用于恢复连接状态线索，不应存放私钥，也不能替代重新读取钱包账户和链。
+
+### 何时跳过 SSR
+
+对于强依赖浏览器且没有有意义服务端占位的局部组件，可以在 Client Component 中使用动态导入并关闭该组件 SSR。Next.js 不允许在 Server Component 中直接用 `ssr: false` 规避边界。即使局部跳过 SSR，也应提供尺寸稳定的占位，避免布局跳动。
+
+## 示例代码
+
+```ts
+export const config = createConfig({
+  chains: [mainnet],
+  ssr: true,
+  transports: {
+    [mainnet.id]: http(),
+  },
+});
+```
+
+```tsx
+"use client";
+
+export function WalletControls() {
+  const connection = useConnection();
+
+  return connection.isConnected ? <AccountMenu /> : <ConnectButton />;
+}
+```
+
+完整应用还需要在顶层 Client Provider 中创建稳定的 config 与 QueryClient，避免每次渲染重新实例化。
+
+## 常见错误
+
+- 在模块顶层访问 `window.ethereum`。
+- 用 `typeof window !== "undefined"` 让首次客户端输出与服务端完全不同。
+- 给整个页面关闭 SSR，牺牲静态内容与公共数据的服务端能力。
+- 认为加上 `"use client"` 后就不会发生服务端预渲染或 hydration。
+- 使用 cookie 保存私钥、签名或把缓存地址当成仍获授权的事实。
+- 用 `suppressHydrationWarning` 隐藏真实状态设计错误。
+
+## 面试官追问
+
+1. `"use client"` 为什么不能自动消除 hydration mismatch？
+2. `ssr: true` 为什么可能带来短暂的未连接闪烁？
+3. cookie initialState 能证明钱包仍授权该账户吗？
+4. 哪些页面内容应该继续留在 Server Component？
+
+## 评分标准
+
+### 初级回答
+
+- 知道服务端没有 window 和注入钱包。
+- 知道浏览器钱包逻辑需要 Client Component。
+
+### 中级回答
+
+- 能解释首次渲染一致性、wagmi `ssr: true` 和水合时机。
+- 能划分 Server/Client Component，而不是关闭整页 SSR。
+
+### 高级回答
+
+- 能设计 cookie initialState、稳定 Provider、加载占位和重新授权流程。
+- 能权衡首屏一致性、隐私、缓存、静态渲染和客户端交互范围。
+
+## 参考资料
+
+- [wagmi：SSR Guide](https://wagmi.sh/react/guides/ssr)
+- [Next.js：Server and Client Components](https://nextjs.org/docs/app/getting-started/server-and-client-components)
+- [Next.js：Lazy Loading and Skipping SSR](https://nextjs.org/docs/app/guides/lazy-loading#skipping-ssr)

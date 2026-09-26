@@ -1,0 +1,137 @@
+---
+id: transaction-003
+slug: nonce-pending-and-transaction-replacement
+title: nonce 如何导致交易排队，前端怎样处理加速与取消？
+summary: 考察账户交易顺序、pending nonce、同 nonce 替换以及前端交易状态更新。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - nonce
+  - pending-transaction
+  - transaction-replacement
+stacks:
+  viem: "2.x"
+sourceTypes:
+  - official-docs
+  - production-case
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: Ethereum Transactions
+    url: https://ethereum.org/developers/docs/transactions/
+  - title: Ethereum JSON-RPC eth_getTransactionCount
+    url: https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactioncount
+  - title: viem waitForTransactionReceipt
+    url: https://viem.sh/docs/actions/public/waitForTransactionReceipt
+---
+
+## 题目
+
+用户连续发送两笔交易，第一笔长时间 pending，第二笔也迟迟不确认。钱包提供“加速”和“取消”按钮。请解释 nonce 在这里起什么作用，以及前端应该如何跟踪被替换的交易。
+
+## 考察目标
+
+- 是否理解外部账户的交易按 nonce 顺序执行。
+- 是否知道加速和取消本质上都是发送同 nonce、费用更高的替代交易。
+- 是否能在 UI 中处理原 hash 被替换、替代交易失败和竞争打包。
+
+## 30 秒回答
+
+nonce 是发送账户的顺序号。同一账户的较高 nonce 交易通常要等待前面的 nonce 被处理，所以第一笔卡住会阻塞后续交易。加速是用相同 nonce、相同意图或等价交易提高费用；取消通常是用同 nonce 给自己发送零金额交易并提高费用。它们都只是竞争替换，不能保证原交易不会先被打包。前端要把原 hash 与替代 hash 关联，并继续追踪最终进入 canonical chain 的那一笔。
+
+## 深入回答
+
+### nonce 与排队
+
+外部账户每发送一笔有效交易都会消费一个 nonce。节点和钱包常同时关注：
+
+- `latest`：已进入最新链上状态的交易计数。
+- `pending`：节点已知 pending 交易也计算在内的下一个 nonce。
+
+如果 nonce 10 仍在 pending，nonce 11 即使费用很高，也通常不能先让账户状态越过 nonce 10。因此 DApp 不应只看到第二笔 pending 就建议继续发送更多交易。
+
+多数浏览器钱包会替 DApp 管理 nonce。普通前端不应随意手动指定，否则多个标签页、其他 DApp 和钱包自身都可能同时发送交易，导致 nonce 冲突。
+
+### 加速与取消
+
+交易替换要求同一发送者使用相同 nonce，并提供足以被节点接受的更高费用。
+
+- 加速：保留原业务意图，提高费用字段。
+- 取消：常见做法是同 nonce、给自己转零金额、提高费用。
+
+“取消”不是协议级撤销。原交易和取消交易在网络中竞争，如果原交易先被打包，原业务仍会执行。前端文案应写成“尝试取消”，而不是“保证撤销”。
+
+替换交易还必须重新检查当前链、余额和费用。原交易的 `maxFeePerGas` 在 base fee 上涨后可能已不足，简单只提高 priority fee 也未必能被快速打包。
+
+### 前端状态
+
+前端不能永远只轮询原 hash。交易追踪层应处理：
+
+1. 原交易正常确认。
+2. 原交易被同 nonce 的新交易替换。
+3. 替代交易是重新定价、改变业务内容或取消尝试。
+4. 替代交易最终成功或回滚。
+5. 超时只表示当前未观察到 receipt，不等于交易永久失败。
+
+viem 的 `waitForTransactionReceipt` 支持替换检测和 `onReplaced` 回调。产品状态中应保留原 hash、当前有效 hash、替换原因和完整时间线，区块浏览器链接也要更新到当前交易。
+
+## 示例代码
+
+```ts
+const receipt = await publicClient.waitForTransactionReceipt({
+  hash: originalHash,
+  confirmations: 2,
+  onReplaced(replacement) {
+    updateTransaction({
+      originalHash,
+      currentHash: replacement.transaction.hash,
+      reason: replacement.reason,
+    });
+  },
+});
+```
+
+具体回调对象字段应以当前 viem 类型定义为准；业务重点是保存替换关系，而不是只覆盖原 hash。
+
+## 常见错误
+
+- 认为 nonce 是全网统一序号，而不是按发送账户递增。
+- 看到高 nonce 交易费用更高，就认为它可以绕过低 nonce 交易。
+- 把取消按钮描述为已经撤销链上交易。
+- 替换发生后继续永远轮询旧 hash。
+- DApp 在浏览器钱包场景下无条件手动分配 nonce。
+- 把 receipt 超时直接标记为链上失败。
+
+## 面试官追问
+
+1. `latest` 和 `pending` 的 transaction count 有什么区别？
+2. 为什么加速交易必须使用相同 nonce？
+3. 取消交易已经发送，但原交易先确认了，UI 应怎样更新？
+4. 多标签页同时发交易时，手动 nonce 管理有什么风险？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 nonce 决定同一账户的交易顺序。
+- 知道低 nonce pending 会影响后续交易。
+
+### 中级回答
+
+- 能解释同 nonce 替换、加速与取消的竞争关系。
+- 会追踪替代 hash，而不是只等待原交易。
+
+### 高级回答
+
+- 能处理 pending/latest 视图、多个发送入口、费用上涨和替换时间线。
+- 能设计避免错误重试与重复业务执行的交易队列。
+
+## 参考资料
+
+- [ethereum.org：Transactions](https://ethereum.org/developers/docs/transactions/)
+- [ethereum.org：eth_getTransactionCount](https://ethereum.org/developers/docs/apis/json-rpc/#eth_gettransactioncount)
+- [viem：waitForTransactionReceipt](https://viem.sh/docs/actions/public/waitForTransactionReceipt)
