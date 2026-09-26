@@ -1,0 +1,121 @@
+---
+id: web3-basics-001
+slug: token-amount-number-vs-bigint
+title: 为什么链上金额不能直接用 JavaScript Number 计算？
+summary: 考察安全整数、十进制输入与最小单位转换，以及 BigInt 的正确使用边界。
+status: review
+difficulty: beginner
+category: web3-basics
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - bigint
+  - precision
+  - token-units
+stacks:
+  viem: "2.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: MDN Number.MAX_SAFE_INTEGER
+    url: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER
+  - title: viem parseUnits
+    url: https://viem.sh/docs/utilities/parseUnits
+  - title: viem formatUnits
+    url: https://viem.sh/docs/utilities/formatUnits
+---
+
+## 题目
+
+下面的金额转换有什么问题？如果用户输入 `"0.1"` ETH，前端应该怎样安全地转换、比较和展示？
+
+```ts
+const amount = Number(input) * 10 ** 18;
+```
+
+## 考察目标
+
+- 是否知道 JavaScript `number` 是浮点数且存在安全整数上限。
+- 是否会让十进制输入以字符串进入 `parseUnits`，并在最小单位中使用 `bigint`。
+- 是否能区分计算值与展示值，避免错误舍入或硬编码 18 位 decimals。
+
+## 30 秒回答
+
+`number` 无法精确表示所有小数，而且 `10 ** 18` 已超过 `Number.MAX_SAFE_INTEGER`，乘法结果不能保证是准确整数。用户输入应保持字符串，用代币实际的 decimals 交给 `parseUnits` 转成最小单位 `bigint`；余额、allowance 和交易金额都用 `bigint` 比较。展示时再用 `formatUnits` 转成十进制字符串，最后只在 UI 层做明确的截断或舍入。
+
+## 深入回答
+
+JavaScript `number` 使用 IEEE 754 双精度浮点数。它能安全表示的最大整数是 `2^53 - 1`，而 1 ETH 的 wei 值是 `10^18`，已经远超这个范围。十进制小数也常常无法用二进制浮点数精确表示。
+
+因此下面两种操作都有风险：
+
+- 先把用户字符串输入转成 `Number`，可能在进入链上单位转换前就丢失精度。
+- 把链上返回的 `bigint` 转成 `number` 做比较或加减，可能丢掉低位。
+
+推荐的数据流是：
+
+1. 输入框始终保存字符串。
+2. 校验小数位数不超过代币 decimals，拒绝科学计数法等不支持格式。
+3. 用 `parseUnits(input, decimals)` 得到最小单位 `bigint`。
+4. 余额、报价、allowance 和交易参数都保持 `bigint`。
+5. 展示时用 `formatUnits(value, decimals)` 得到字符串。
+6. 千分位、有效数字和小额显示策略只影响展示，不反向覆盖精确值。
+
+不能假设所有 ERC-20 都是 18 位小数。`decimals` 在 ERC-20 中是可选元数据，产品应从可信资产配置或合约读取并设置合理校验与回退；原生资产也应使用目标链定义的单位。
+
+## 示例代码
+
+```ts
+import { formatUnits, parseUnits } from "viem";
+
+const decimals = 18;
+const amount = parseUnits("0.1", decimals); // 100000000000000000n
+
+if (amount > balance) {
+  throw new Error("余额不足");
+}
+
+const displayValue = formatUnits(amount, decimals); // "0.1"
+```
+
+如果产品只展示四位小数，应对 `displayValue` 做字符串或十进制定点处理，并明确采用截断还是四舍五入；不要先转回 `Number` 再修改业务金额。
+
+## 常见错误
+
+- 使用 `Number(input) * 10 ** decimals` 构造交易金额。
+- 把 RPC 返回的十六进制数量或 `bigint` 转成 `number`。
+- 假设所有代币都有 18 位 decimals。
+- 用展示层四舍五入后的字符串作为下一笔交易的精确输入。
+- 直接用 `JSON.stringify` 序列化 `bigint`，没有定义传输格式。
+
+## 面试官追问
+
+1. 为什么 `0.1 + 0.2` 的问题和 wei 超过安全整数是两类精度风险？
+2. 用户输入的小数位超过代币 decimals 时应该怎样处理？
+3. `bigint` 通过接口或本地存储时需要注意什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 `number` 存在精度和安全整数问题。
+- 会使用字符串、`parseUnits` 和 `bigint`。
+
+### 中级回答
+
+- 能设计输入校验、最小单位计算和展示格式化的数据流。
+- 知道不同代币的 decimals 可能不同。
+
+### 高级回答
+
+- 能处理舍入策略、极小金额、序列化和跨系统精度约定。
+- 能区分业务精确值、报价精度与纯展示精度。
+
+## 参考资料
+
+- [MDN：Number.MAX_SAFE_INTEGER](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER)
+- [viem：parseUnits](https://viem.sh/docs/utilities/parseUnits)
+- [viem：formatUnits](https://viem.sh/docs/utilities/formatUnits)

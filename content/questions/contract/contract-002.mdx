@@ -1,0 +1,116 @@
+---
+id: contract-002
+slug: contract-abi-and-function-selector
+title: ABI 和函数选择器在合约调用中分别做什么？
+summary: 考察函数选择器、参数编码和返回值解码在前端合约交互中的作用。
+status: review
+difficulty: beginner
+category: contract
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - abi
+  - function-selector
+  - calldata
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: Solidity Contract ABI Specification
+    url: https://docs.soliditylang.org/en/latest/abi-spec.html
+---
+
+## 题目
+
+前端调用 `transfer(address,uint256)` 时，ABI 起什么作用？calldata 的前 4 个字节是什么，后面的参数又如何组织？
+
+## 考察目标
+
+- 是否知道 ABI 是编码和解码所需的接口描述，不是部署在前端的合约代码。
+- 是否理解函数选择器来自规范化函数签名的 Keccak-256 哈希前 4 字节。
+- 是否能说明调用数据、返回值和事件日志需要不同的解码信息。
+
+## 30 秒回答
+
+ABI 描述函数、事件、错误及其参数类型，前端库据此编码 calldata 并解码返回值。函数调用的前 4 字节是规范化函数签名 Keccak-256 哈希的前 4 字节，例如签名包含函数名和参数类型但不包含返回类型；第 5 字节开始是按 ABI 规则编码的参数。EVM 收到的只是字节，ABI 主要供调用方和工具正确解释这些字节。
+
+## 深入回答
+
+### ABI 的作用
+
+JSON ABI 通常包含函数名、输入、输出、状态可变性、事件和自定义错误。前端库可以用它完成：
+
+- 根据函数名和参数类型选择正确的重载。
+- 把地址、整数、数组、元组等编码为 calldata。
+- 解码 `eth_call` 返回值。
+- 解码事件日志和合约自定义错误。
+- 在 TypeScript 中推导允许的函数名和参数类型。
+
+ABI 编码不是自描述格式。只有一段返回字节时，如果不知道预期类型，无法可靠地判断它应该被解释成整数、地址还是其他结构。
+
+### 函数选择器
+
+函数选择器是规范化函数签名 Keccak-256 哈希的前 4 字节。`transfer(address,uint256)` 中：
+
+- 参数类型必须使用规范形式，例如 `uint` 写作 `uint256`。
+- 参数名、空格和返回类型不进入函数签名。
+- 4 字节空间可能出现碰撞，因此选择器本身不能作为安全授权依据。
+
+从第 5 字节开始是参数编码。静态值通常占用 32 字节槽；字符串、动态数组等动态类型在头部保存偏移量，实际内容位于后部。
+
+事件与函数不同。非匿名事件通常把完整事件签名哈希放在 `topic0`，它是 32 字节，不是 4 字节函数选择器；被 `indexed` 的参数进入 topics，其余参数在 data 中编码。
+
+## 示例代码
+
+```ts
+import { encodeFunctionData } from "viem";
+
+const data = encodeFunctionData({
+  abi: erc20Abi,
+  functionName: "transfer",
+  args: [recipient, 1_000_000n],
+});
+
+const selector = data.slice(0, 10); // 0x + 8 个十六进制字符，即 4 字节
+const encodedArguments = `0x${data.slice(10)}`;
+```
+
+业务代码应让经过校验的 ABI 和合约地址一起来自目标链部署配置，不能仅凭调用成功就认定地址是预期合约。
+
+## 常见错误
+
+- 认为 ABI 本身部署在链上并能从任意合约自动读取。
+- 计算选择器时把返回类型、参数名或空格加入签名。
+- 把事件 `topic0` 当成 4 字节函数选择器。
+- 认为同一个选择器永远只对应一个函数。
+- 有 ABI 就不再校验目标链和合约地址。
+
+## 面试官追问
+
+1. 为什么没有 ABI 仍然可以发送原始 calldata，但很难安全地构造和解释？
+2. 函数重载时前端库如何确定调用哪一个函数？
+3. 动态类型为什么需要偏移量？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 ABI 用于编码参数和解码结果。
+- 知道函数选择器是函数签名哈希的前 4 字节。
+
+### 中级回答
+
+- 能说明规范化签名、静态与动态参数编码和重载处理。
+- 能区分函数 selector 与事件 topic。
+
+### 高级回答
+
+- 能解释 ABI 非自描述、选择器碰撞和错误解码的工程风险。
+- 能从原始 calldata、返回值或日志定位编码问题。
+
+## 参考资料
+
+- [Solidity：Contract ABI Specification](https://docs.soliditylang.org/en/latest/abi-spec.html)

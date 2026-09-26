@@ -1,0 +1,124 @@
+---
+id: contract-003
+slug: erc20-erc721-erc1155-frontend-differences
+title: ERC-20、ERC-721 和 ERC-1155 的前端交互有何不同？
+summary: 考察三类 Token 的余额模型、标识方式、转移接口和授权粒度差异。
+status: review
+difficulty: beginner
+category: contract
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - erc-20
+  - erc-721
+  - erc-1155
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: ERC-20 Token Standard
+    url: https://eips.ethereum.org/EIPS/eip-20
+  - title: ERC-721 Non-Fungible Token Standard
+    url: https://eips.ethereum.org/EIPS/eip-721
+  - title: ERC-1155 Multi Token Standard
+    url: https://eips.ethereum.org/EIPS/eip-1155
+---
+
+## 题目
+
+从前端角度比较 ERC-20、ERC-721 和 ERC-1155：用户持有的资产如何标识，怎样查询余额或所有权，如何转移，以及授权给第三方时粒度有什么不同？
+
+## 考察目标
+
+- 是否理解同质化数量、唯一 tokenId 和“合约地址 + id + 数量”三种资产模型。
+- 是否能选择正确的余额、转移和授权接口。
+- 是否知道 UI 不能只用 symbol 或合约地址识别所有资产。
+
+## 30 秒回答
+
+ERC-20 表示同质化数量，用 `balanceOf(address)` 查余额，通过 `transfer` 或 `transferFrom` 转移数量，授权是 owner 对 spender 的额度。ERC-721 的每个 `tokenId` 唯一，用 `ownerOf(tokenId)` 查所有者，可按单个 token 授权，也可给 operator 全量操作权限。ERC-1155 一个合约可管理多个 id，每个账户对每个 id 有数量，支持批量查询和批量转移，标准授权主要是 `setApprovalForAll` 的 operator 权限。
+
+## 深入回答
+
+### ERC-20
+
+ERC-20 的同一合约内，每个最小单位在接口层是同质的。前端关注：
+
+- `balanceOf(owner)`：账户持有数量。
+- `allowance(owner, spender)`：spender 可使用的额度。
+- `transfer(to, value)`：持有人直接转移。
+- `approve` + `transferFrom`：第三方在额度内代为转移。
+
+金额需要结合 decimals 展示，但业务计算应保持最小单位整数。
+
+### ERC-721
+
+ERC-721 的核心是唯一 `tokenId`：
+
+- `ownerOf(tokenId)`：查询某个 token 的所有者。
+- `balanceOf(owner)`：只返回该账户持有多少个 NFT，不返回 tokenId 列表。
+- `approve(to, tokenId)`：授权单个 token。
+- `setApprovalForAll(operator, approved)`：授权 operator 管理该账户的全部该系列 NFT。
+- `safeTransferFrom`：转给合约时会检查接收方是否实现接收接口，通常比裸 `transferFrom` 更安全。
+
+仅靠标准合约调用通常不能高效枚举账户的所有 tokenId，前端常需事件索引或数据服务。
+
+### ERC-1155
+
+ERC-1155 在一个合约中管理多个 id；同一个 id 可以有多个数量，因此资产键至少是“chainId + 合约地址 + tokenId”：
+
+- `balanceOf(account, id)`：查询某个账户某个 id 的数量。
+- `balanceOfBatch`：批量查询账户与 id 组合。
+- `safeTransferFrom`：转移某个 id 的指定数量。
+- `safeBatchTransferFrom`：一次转移多个 id 和数量。
+- `setApprovalForAll`：给 operator 全局操作权限，标准中没有 ERC-721 式的单 token 授权。
+
+### UI 建模
+
+前端资产对象不能只保存一个 `amount`。至少要根据标准保存：
+
+- ERC-20：合约地址、数量、decimals。
+- ERC-721：合约地址、tokenId。
+- ERC-1155：合约地址、tokenId、数量。
+
+三者都必须带 chainId。名称、symbol、图片和元数据用于展示，不是资产身份的安全依据。
+
+## 常见错误
+
+- 用 ERC-721 的 `balanceOf` 返回值当成 tokenId。
+- 认为 ERC-1155 的一个合约地址只代表一种资产。
+- 把 ERC-20 allowance、ERC-721 单 token approve 和 operator 全量授权当成同一种粒度。
+- 只用 symbol 或名称判断资产身份。
+- 忽略 chainId，导致不同链上的同地址资产被错误合并。
+
+## 面试官追问
+
+1. 为什么 ERC-721 的 `balanceOf` 不能告诉你用户拥有哪些 tokenId？
+2. ERC-1155 的批量接口会怎样影响前端交易确认页？
+3. 三种标准的授权 UI 分别应该展示哪些风险信息？
+
+## 评分标准
+
+### 初级回答
+
+- 能说清同质化数量、唯一 tokenId 和多 id 数量模型。
+- 知道三者查询与转移接口的主要差异。
+
+### 中级回答
+
+- 能准确比较 allowance、单 token approve 和 operator 授权。
+- 能设计包含 chainId、合约地址、tokenId 与数量的前端数据模型。
+
+### 高级回答
+
+- 能讨论安全转移回调、事件索引、元数据可信度和批量操作 UX。
+- 能处理非标准实现、资产发现和授权风险提示。
+
+## 参考资料
+
+- [ERC-20：Token Standard](https://eips.ethereum.org/EIPS/eip-20)
+- [ERC-721：Non-Fungible Token Standard](https://eips.ethereum.org/EIPS/eip-721)
+- [ERC-1155：Multi Token Standard](https://eips.ethereum.org/EIPS/eip-1155)

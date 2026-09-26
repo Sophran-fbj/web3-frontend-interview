@@ -1,0 +1,129 @@
+---
+id: data-001
+slug: eth-call-vs-eth-send-transaction
+title: eth_call 和 eth_sendTransaction 有什么区别？
+summary: 考察本地执行调用与广播交易在状态、签名、Gas 和返回结果上的核心差异。
+status: review
+difficulty: beginner
+category: data
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - json-rpc
+  - eth-call
+  - transaction
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: Ethereum JSON-RPC API
+    url: https://ethereum.org/developers/docs/apis/json-rpc/
+---
+
+## 题目
+
+读取 ERC-20 余额和调用 ERC-20 `transfer` 时，底层为什么分别适合使用 `eth_call` 和 `eth_sendTransaction`？请比较两者是否签名、是否消耗 Gas、是否改变链上状态，以及各自返回什么。
+
+## 考察目标
+
+- 是否能区分“在某个区块状态上执行一次调用”和“向网络提交一笔交易”。
+- 是否理解只读调用无需钱包账户，而写入需要用户授权。
+- 是否知道拿到交易哈希并不等于交易已经成功。
+
+## 30 秒回答
+
+`eth_call` 让节点在指定区块状态上本地执行调用，不创建链上交易、不持久化状态，也不让用户实际支付 Gas，直接返回 ABI 编码的执行结果，适合读取和模拟。`eth_sendTransaction` 请求账户签名并广播交易，可能改变状态、需要 Gas，先返回交易哈希；前端还必须等待 receipt 并检查执行状态。即使调用的是会写状态的函数，使用 `eth_call` 也只会模拟，不会把变化保存到链上。
+
+## 深入回答
+
+### eth_call
+
+`eth_call` 接收一个类似交易的 call object，并在指定的区块状态上执行。它常用于：
+
+- 调用 `view` 或 `pure` 合约函数。
+- 读取余额、allowance 和合约配置。
+- 在发送交易前模拟可能改变状态的函数。
+- 查询某个历史区块下的执行结果，前提是 RPC 节点保留所需历史状态。
+
+它不会创建交易，也不会把状态变化写回链上。调用本身不产生用户需要支付的链上 Gas，但节点执行仍受 Gas 上限和 EVM 规则约束，因此仍可能 out of gas 或 revert。
+
+### eth_sendTransaction
+
+`eth_sendTransaction` 让管理该账户的钱包或客户端构造、授权并发送交易。浏览器 DApp 通常通过钱包 Provider 发起该请求，由钱包向用户展示确认界面。
+
+返回的交易哈希只说明请求已被接受并形成交易标识，不说明交易已经打包，更不说明执行成功。前端还要追踪：
+
+1. 交易是否进入网络。
+2. 是否被区块打包或被替换。
+3. receipt 的状态是成功还是回滚。
+4. 产品需要等待多少个确认。
+
+### 不要只按 Solidity 修饰符判断
+
+`eth_call` 可以模拟非 `view` 函数，只是模拟产生的状态变化不会持久化。反过来，也可以用交易调用只读函数，但那会无意义地创建交易并花费 Gas。前端应根据用户意图选择读取或写入路径，而不是仅靠函数名称判断。
+
+## 示例代码
+
+```ts
+const balance = await publicClient.readContract({
+  address: token,
+  abi: erc20Abi,
+  functionName: "balanceOf",
+  args: [account],
+});
+
+const { request } = await publicClient.simulateContract({
+  account,
+  address: token,
+  abi: erc20Abi,
+  functionName: "transfer",
+  args: [recipient, amount],
+});
+
+const hash = await walletClient.writeContract(request);
+const receipt = await publicClient.waitForTransactionReceipt({ hash });
+
+if (receipt.status !== "success") {
+  throw new Error("转账交易执行失败");
+}
+```
+
+这里的 `readContract` 和 `simulateContract` 最终依赖调用类 RPC；`writeContract` 则通过钱包发送交易。
+
+## 常见错误
+
+- 认为 `eth_call` 只能调用 Solidity 的 `view` 函数。
+- 认为 `eth_call` 完全不执行 EVM，因此不会 revert。
+- 拿到交易哈希就显示“转账成功”。
+- 读取公共数据也强制用户先连接钱包。
+- 把模拟成功当成未来上链一定成功，忽略模拟后链上状态可能变化。
+
+## 面试官追问
+
+1. 为什么模拟成功的交易上链后仍可能失败？
+2. `eth_call` 的 block parameter 会怎样影响结果？
+3. 钱包返回 hash 后页面应该进入什么状态？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 `eth_call` 不持久化状态，交易可能改变状态并花费 Gas。
+- 知道交易请求返回的是 hash，不是最终结果。
+
+### 中级回答
+
+- 能说明 `eth_call` 可用于读取和模拟，并理解 block parameter。
+- 会等待 receipt 并区分广播、打包和执行成功。
+
+### 高级回答
+
+- 能解释模拟与真实执行之间的状态竞争、节点差异和历史状态限制。
+- 能设计稳定的交易追踪与替换处理流程。
+
+## 参考资料
+
+- [ethereum.org：JSON-RPC API](https://ethereum.org/developers/docs/apis/json-rpc/)

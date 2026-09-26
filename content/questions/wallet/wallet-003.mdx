@@ -1,0 +1,122 @@
+---
+id: wallet-003
+slug: eth-accounts-vs-eth-request-accounts
+title: eth_accounts 和 eth_requestAccounts 有什么区别？
+summary: 考察读取已授权账户与主动请求账户权限的差别，以及连接按钮的正确行为。
+status: review
+difficulty: beginner
+category: wallet
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - eip-1193
+  - account-access
+  - wallet-connection
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+references:
+  - title: EIP-1193 Ethereum Provider JavaScript API
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: EIP-1102 Opt-in Account Exposure
+    url: https://eips.ethereum.org/EIPS/eip-1102
+---
+
+## 题目
+
+页面初始化和用户点击“连接钱包”时，分别应该调用 `eth_accounts` 还是 `eth_requestAccounts`？两者在授权和用户交互上有什么区别？
+
+## 考察目标
+
+- 是否理解“读取已经暴露的账户”和“主动申请账户访问权限”是两件事。
+- 是否会避免页面加载时自动弹出钱包授权。
+- 是否知道空账户数组、用户拒绝和账户变化应如何处理。
+
+## 30 秒回答
+
+`eth_accounts` 只读取钱包当前已经授权给站点的账户，不应触发授权弹窗，适合页面初始化时恢复状态。`eth_requestAccounts` 会主动请求账户访问，通常可能弹出钱包确认，只应由用户点击连接按钮等明确操作触发。前者返回空数组表示当前没有可用账户；后者还可能因为用户拒绝而报错。连接后仍需监听 `accountsChanged`，不能永久信任第一次拿到的地址。
+
+## 深入回答
+
+EIP-1193 把钱包暴露给网页的对象定义为 Provider，DApp 通过 `request` 发起 RPC 请求。账户是否对某个站点可见由钱包控制。
+
+### 页面初始化
+
+初始化时调用 `eth_accounts`，用于判断钱包是否已经向当前站点暴露账户：
+
+- 返回一个或多个地址：可以用第一个地址恢复账户相关 UI，但仍要重新读取 chainId 和业务数据。
+- 返回空数组：表示当前没有可用账户，应保持未连接状态。
+- Provider 不存在：表示当前没有检测到该类注入钱包，不应把它当成 RPC 故障。
+
+应用不应仅凭 localStorage 中保存的地址恢复“已连接”。缓存只能作为界面线索，当前授权事实必须重新向钱包读取。
+
+### 用户主动连接
+
+当用户点击“连接钱包”后调用 `eth_requestAccounts`。钱包可以展示授权界面，用户也可以拒绝。前端应区分：
+
+- 请求进行中：禁用重复点击，避免并发授权请求。
+- 用户拒绝：回到未连接状态，并给出可重试提示。
+- 返回账户：再读取 chainId，检查是否为产品支持的网络。
+- 返回空数组：按未连接处理，不假设一定会有地址。
+
+请求成功不代表授权永久有效。用户可以在钱包中切换账户、撤销站点权限或断开连接，因此应用需要处理 `accountsChanged`；收到空数组时应清理账户相关状态和数据。
+
+## 示例代码
+
+```ts
+async function restoreWallet(provider: EIP1193Provider) {
+  const accounts = await provider.request({ method: "eth_accounts" });
+  return Array.isArray(accounts) && accounts.length > 0 ? accounts[0] : null;
+}
+
+async function connectWallet(provider: EIP1193Provider) {
+  const accounts = await provider.request({ method: "eth_requestAccounts" });
+
+  if (!Array.isArray(accounts) || accounts.length === 0) {
+    throw new Error("钱包没有提供可用账户");
+  }
+
+  return accounts[0];
+}
+```
+
+生产代码还应校验返回值是否为合法地址，并把钱包错误转换成稳定的产品错误类型。
+
+## 常见错误
+
+- 页面一加载就调用 `eth_requestAccounts`，造成打扰式弹窗。
+- 认为安装了钱包就等于用户已经授权账户。
+- 用本地缓存地址替代 `eth_accounts` 的实时结果。
+- 把用户拒绝授权解释成网络或 RPC 故障。
+- 连接成功后不监听 `accountsChanged`。
+
+## 面试官追问
+
+1. `eth_accounts` 返回空数组时，页面应该清理哪些状态？
+2. 为什么连接成功后仍然不能只依赖 localStorage？
+3. 用户连续点击两次连接按钮时，你会怎样避免并发请求？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 `eth_accounts` 是读取现有授权，`eth_requestAccounts` 是主动请求授权。
+- 知道主动请求应由用户操作触发。
+
+### 中级回答
+
+- 能处理空数组、用户拒绝和请求中状态。
+- 知道需要监听 `accountsChanged` 并重新校验 chainId。
+
+### 高级回答
+
+- 能说明账户暴露的隐私边界、权限撤销和状态恢复策略。
+- 能设计幂等的连接状态机并处理多个钱包 Provider。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API](https://eips.ethereum.org/EIPS/eip-1193)
+- [EIP-1102：Opt-in Account Exposure](https://eips.ethereum.org/EIPS/eip-1102)
