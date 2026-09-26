@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { RandomQuestionButton } from "@/components/random-question-button";
 import {
   categoryLabels,
   difficultyLabels,
@@ -193,15 +194,25 @@ export default async function QuestionsPage({
         </form>
       )}
 
-      <div className="mt-14 flex items-baseline justify-between border-b border-[var(--line-strong)] pb-4">
+      <div className="mt-14 flex flex-wrap items-center justify-between gap-4 border-b border-[var(--line-strong)] pb-4">
         <h2 className="text-base font-semibold text-[var(--text-strong)]">
           {hasActiveFilters ? "筛选结果" : "全部题目"}
         </h2>
-        <p className="font-mono text-sm text-[var(--text-faint)] tabular-nums">
-          {hasActiveFilters
-            ? `${questions.length} / ${allQuestions.length} 题`
-            : `共 ${questions.length} 题`}
-        </p>
+        <div className="flex items-center gap-4">
+          {questions.length > 0 && (
+            <RandomQuestionButton
+              candidates={questions.map(({ frontmatter }) => ({
+                id: frontmatter.id,
+                slug: frontmatter.slug,
+              }))}
+            />
+          )}
+          <p className="font-mono text-sm text-[var(--text-faint)] tabular-nums">
+            {hasActiveFilters
+              ? `${questions.length} / ${allQuestions.length} 题`
+              : `共 ${questions.length} 题`}
+          </p>
+        </div>
       </div>
 
       {allQuestions.length === 0 ? (
