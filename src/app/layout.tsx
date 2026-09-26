@@ -13,13 +13,25 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  colorScheme: "dark",
+  colorScheme: "dark light",
   themeColor: "#080b16",
 };
 
+const themeBootScript = `
+try {
+  const theme = localStorage.getItem("web3-interview-theme");
+  if (["cold-white", "graphite", "warm-sand"].includes(theme)) {
+    document.documentElement.dataset.theme = theme;
+  }
+} catch {}
+`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" data-theme="graphite" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+      </head>
       <body>
         <a
           href="#main-content"

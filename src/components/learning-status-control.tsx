@@ -57,10 +57,10 @@ export function LearningStatusControl({ questionId }: { questionId: string }) {
               type="button"
               aria-pressed={selected}
               onClick={() => setStatus(questionId, option.value)}
-              className={`min-h-10 border px-2 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
+              className={`min-h-10 rounded-lg border px-2 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
                 selected
-                  ? "border-[var(--accent)] bg-[var(--accent)] text-white"
-                  : "border-[var(--line-strong)] text-[var(--text-muted)] hover:border-[var(--accent-bright)] hover:text-[var(--text-strong)]"
+                  ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--on-accent)]"
+                  : "border-[var(--line-strong)] bg-[var(--surface)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text-strong)]"
               }`}
             >
               {option.label}

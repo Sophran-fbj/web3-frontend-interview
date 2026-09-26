@@ -10,6 +10,7 @@ import {
   difficultyLabels,
   questionTypeLabels,
 } from "@/content/question-labels";
+import { createQuestionsHref } from "@/content/question-list-url";
 import {
   getVisibleQuestionBySlug,
   getVisibleQuestions,
@@ -86,11 +87,17 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
         <p className="mt-5 max-w-3xl text-base leading-7 text-[var(--text-muted)] sm:text-lg">
           {frontmatter.summary}
         </p>
-        <div className="mt-6 flex flex-wrap gap-x-4 gap-y-2 font-mono text-xs text-[var(--text-faint)]">
+        <nav aria-label="题目标签" className="mt-6 flex flex-wrap gap-2">
           {frontmatter.tags.map((tag) => (
-            <span key={tag}>#{tag}</span>
+            <Link
+              key={tag}
+              href={createQuestionsHref({ tag })}
+              className="inline-flex min-h-8 items-center rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 font-mono text-xs text-[var(--text-faint)] hover:border-[var(--accent)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+            >
+              #{tag}
+            </Link>
           ))}
-        </div>
+        </nav>
       </header>
 
       <div className="mt-10 grid gap-12 lg:grid-cols-[minmax(0,46rem)_12rem] lg:items-start lg:gap-20">
@@ -133,8 +140,8 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
         aria-label="题目导航"
         className="mt-14 grid gap-px border-y border-[var(--line-strong)] bg-[var(--line)] sm:grid-cols-2"
       >
-        {previousQuestion && (
-          <div className="bg-[var(--canvas)] py-5 sm:pr-6">
+        <div className="bg-[var(--canvas)] py-5 sm:pr-6">
+          {previousQuestion ? (
             <Link
               href={`/questions/${previousQuestion.slug}`}
               className="group block focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
@@ -146,12 +153,19 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
                 {previousQuestion.title}
               </span>
             </Link>
-          </div>
-        )}
-        {nextQuestion && (
-          <div
-            className={`bg-[var(--canvas)] py-5 sm:pl-6 sm:text-right ${previousQuestion ? "" : "sm:col-start-2"}`}
-          >
+          ) : (
+            <div aria-disabled="true" className="cursor-not-allowed opacity-55">
+              <span className="block text-xs text-[var(--text-faint)]">
+                上一题
+              </span>
+              <span className="mt-2 block leading-6 font-medium text-[var(--text-muted)]">
+                当前为第一题
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="bg-[var(--canvas)] py-5 sm:pl-6 sm:text-right">
+          {nextQuestion ? (
             <Link
               href={`/questions/${nextQuestion.slug}`}
               className="group block focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
@@ -163,8 +177,17 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
                 {nextQuestion.title}
               </span>
             </Link>
-          </div>
-        )}
+          ) : (
+            <div aria-disabled="true" className="cursor-not-allowed opacity-55">
+              <span className="block text-xs text-[var(--text-faint)]">
+                下一题
+              </span>
+              <span className="mt-2 block leading-6 font-medium text-[var(--text-muted)]">
+                当前为最后一题
+              </span>
+            </div>
+          )}
+        </div>
       </nav>
     </main>
   );

@@ -51,4 +51,13 @@ describe("filterQuestions", () => {
       "transaction-001",
     ]);
   });
+
+  it("filters by an exact tag", async () => {
+    const questions = await getAllQuestions();
+    const result = filterQuestions(questions, { tag: "token-units" });
+
+    expect(result.map(({ frontmatter }) => frontmatter.id)).toEqual([
+      "web3-basics-001",
+    ]);
+  });
 });

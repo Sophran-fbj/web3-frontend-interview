@@ -1,10 +1,12 @@
 @import "tailwindcss";
 
-:root {
+:root,
+html[data-theme="graphite"] {
   color-scheme: dark;
   --canvas: #080b16;
   --canvas-raised: #0c1120;
   --surface: #11182b;
+  --surface-hover: #172139;
   --line: #222c43;
   --line-strong: #34415e;
   --text-strong: #f3f5fa;
@@ -12,6 +14,75 @@
   --text-faint: #77829a;
   --accent: #7668e8;
   --accent-bright: #a99fff;
+  --on-accent: #ffffff;
+  --grid-line: rgb(118 104 232 / 4%);
+  --tap-highlight: rgb(169 159 255 / 18%);
+  --selection: rgb(118 104 232 / 42%);
+  --link-decoration: rgb(169 159 255 / 45%);
+  --code-text: #d9d5ff;
+  --code-block-bg: #0d1324;
+  --code-block-text: #dbe2f2;
+  --control-highlight: rgb(255 255 255 / 5%);
+  --shadow: rgb(0 0 0 / 42%);
+  --theme-wheel-outline: #f3f5fa;
+  --theme-wheel-indicator: #a99fff;
+}
+
+html[data-theme="cold-white"] {
+  color-scheme: light;
+  --canvas: #f6f8fc;
+  --canvas-raised: #ffffff;
+  --surface: #edf2fa;
+  --surface-hover: #e4ebf7;
+  --line: #dbe2ef;
+  --line-strong: #b9c5d8;
+  --text-strong: #182033;
+  --text-muted: #49566d;
+  --text-faint: #718098;
+  --accent: #4169e1;
+  --accent-bright: #284fbf;
+  --on-accent: #ffffff;
+  --grid-line: rgb(65 105 225 / 5%);
+  --tap-highlight: rgb(65 105 225 / 14%);
+  --selection: rgb(65 105 225 / 24%);
+  --link-decoration: rgb(40 79 191 / 35%);
+  --code-text: #354f9c;
+  --code-block-bg: #e9eef8;
+  --code-block-text: #24314b;
+  --control-highlight: rgb(255 255 255 / 72%);
+  --shadow: rgb(37 51 76 / 18%);
+  --theme-wheel-outline: #182033;
+  --theme-wheel-indicator: #4169e1;
+}
+
+html[data-theme="warm-sand"] {
+  color-scheme: light;
+  --canvas: #f4eee2;
+  --canvas-raised: #fff9ef;
+  --surface: #ebe0cf;
+  --surface-hover: #e3d4bf;
+  --line: #d9cbb7;
+  --line-strong: #bca98e;
+  --text-strong: #322a22;
+  --text-muted: #62564a;
+  --text-faint: #877766;
+  --accent: #a35d37;
+  --accent-bright: #7d4128;
+  --on-accent: #ffffff;
+  --grid-line: rgb(163 93 55 / 5%);
+  --tap-highlight: rgb(163 93 55 / 14%);
+  --selection: rgb(163 93 55 / 22%);
+  --link-decoration: rgb(125 65 40 / 34%);
+  --code-text: #7b432c;
+  --code-block-bg: #e8dcc9;
+  --code-block-text: #3e332a;
+  --control-highlight: rgb(255 255 255 / 56%);
+  --shadow: rgb(67 50 34 / 20%);
+  --theme-wheel-outline: #322a22;
+  --theme-wheel-indicator: #a35d37;
+}
+
+:root {
   background: var(--canvas);
   color: var(--text-muted);
   font-family:
@@ -21,8 +92,8 @@
 body {
   min-height: 100vh;
   background:
-    linear-gradient(90deg, rgb(118 104 232 / 4%) 1px, transparent 1px) 0 0 /
-      5rem 5rem,
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 5rem
+      5rem,
     var(--canvas);
 }
 
@@ -40,11 +111,11 @@ li {
 a,
 button {
   touch-action: manipulation;
-  -webkit-tap-highlight-color: rgb(169 159 255 / 18%);
+  -webkit-tap-highlight-color: var(--tap-highlight);
 }
 
 ::selection {
-  background: rgb(118 104 232 / 42%);
+  background: var(--selection);
   color: var(--text-strong);
 }
 
@@ -114,7 +185,7 @@ button {
 .question-prose a {
   color: var(--accent-bright);
   text-decoration: underline;
-  text-decoration-color: rgb(169 159 255 / 45%);
+  text-decoration-color: var(--link-decoration);
   text-underline-offset: 0.25em;
 }
 
@@ -131,7 +202,7 @@ button {
   border: 1px solid var(--line);
   background: var(--surface);
   padding: 0.12rem 0.35rem;
-  color: #d9d5ff;
+  color: var(--code-text);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 0.88em;
 }
@@ -139,9 +210,9 @@ button {
 .question-prose pre {
   overflow-x: auto;
   border-left: 2px solid var(--accent);
-  background: #0d1324;
+  background: var(--code-block-bg);
   padding: 1.25rem;
-  color: #dbe2f2;
+  color: var(--code-block-text);
   font-size: 0.86rem;
   line-height: 1.7;
   tab-size: 2;

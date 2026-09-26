@@ -41,7 +41,7 @@ export default async function Home() {
         <div className="mt-9 flex flex-wrap items-center gap-5">
           <Link
             href="/questions"
-            className="inline-flex min-h-11 items-center bg-[var(--accent)] px-5 text-sm font-semibold text-white hover:bg-[var(--accent-bright)] hover:text-[var(--canvas)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent-bright)]"
+            className="inline-flex min-h-11 items-center rounded-lg bg-[var(--accent)] px-5 text-sm font-semibold text-[var(--on-accent)] shadow-[0_10px_28px_var(--shadow)] hover:bg-[var(--accent-bright)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent-bright)]"
           >
             {questions.length > 0
               ? `浏览 ${questions.length} 道题目`

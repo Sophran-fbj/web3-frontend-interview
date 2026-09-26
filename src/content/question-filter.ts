@@ -7,6 +7,7 @@ export type QuestionFilters = {
   category?: QuestionFrontmatter["category"];
   questionType?: QuestionFrontmatter["questionType"];
   stack?: string;
+  tag?: string;
 };
 
 function normalize(value: string) {
@@ -33,6 +34,8 @@ export function filterQuestions(
       return false;
 
     if (filters.stack && !(filters.stack in frontmatter.stacks)) return false;
+
+    if (filters.tag && !frontmatter.tags.includes(filters.tag)) return false;
 
     if (!query) return true;
 

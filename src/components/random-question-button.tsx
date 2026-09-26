@@ -42,7 +42,7 @@ export function RandomQuestionButton({
       type="button"
       onClick={openRandomQuestion}
       disabled={candidates.length === 0}
-      className="min-h-10 border border-[var(--line-strong)] px-4 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--accent-bright)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+      className="min-h-11 rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] px-4 text-sm font-medium text-[var(--text-muted)] shadow-[inset_0_1px_0_var(--control-highlight)] hover:border-[var(--accent)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
     >
       随机抽一题
     </button>
