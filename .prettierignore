@@ -1,0 +1,6 @@
+.next
+coverage
+drizzle/meta
+node_modules
+pnpm-lock.yaml
+localDocs
