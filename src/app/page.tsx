@@ -9,10 +9,18 @@ export default async function Home() {
       categories.includes(frontmatter.category),
     ).length;
   const overview = [
-    ["钱包与连接", countByCategory(["wallet"])],
-    ["签名与交易", countByCategory(["signing", "transaction"])],
-    ["合约与链上数据", countByCategory(["contract", "data"])],
-    ["Web3 基础", countByCategory(["web3-basics"])],
+    ["钱包与签名", countByCategory(["wallet", "signing"])],
+    ["交易与合约", countByCategory(["transaction", "contract"])],
+    ["数据与安全", countByCategory(["data", "security"])],
+    [
+      "架构与体验",
+      countByCategory([
+        "web3-basics",
+        "performance-ux",
+        "architecture",
+        "business-scenario",
+      ]),
+    ],
   ] as const;
 
   return (

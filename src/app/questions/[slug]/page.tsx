@@ -43,12 +43,18 @@ export async function generateMetadata({
 
 export default async function QuestionPage({ params }: QuestionPageProps) {
   const { slug } = await params;
-  const question = await getVisibleQuestionBySlug(slug);
+  const questions = await getVisibleQuestions();
+  const questionIndex = questions.findIndex(
+    ({ frontmatter }) => frontmatter.slug === slug,
+  );
+  const question = questions[questionIndex];
 
   if (!question) notFound();
 
   const { frontmatter, body } = question;
   const sections = splitQuestionSections(body);
+  const previousQuestion = questions[questionIndex - 1]?.frontmatter;
+  const nextQuestion = questions[questionIndex + 1]?.frontmatter;
 
   return (
     <main
@@ -96,7 +102,7 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
             </AnswerDisclosure>
           )}
         </div>
-        <aside className="order-first border-l border-[var(--line)] pl-5 text-sm lg:sticky lg:top-8 lg:order-last">
+        <aside className="border-l border-[var(--line)] pl-5 text-sm lg:sticky lg:top-8">
           <p className="font-medium text-[var(--text-strong)]">阅读建议</p>
           <p className="mt-2 leading-6 text-[var(--text-faint)]">
             先用 30 秒口述结论，再展开完整状态流，最后检查常见错误。
@@ -122,6 +128,44 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
           <LearningStatusControl questionId={frontmatter.id} />
         </aside>
       </div>
+
+      <nav
+        aria-label="题目导航"
+        className="mt-14 grid gap-px border-y border-[var(--line-strong)] bg-[var(--line)] sm:grid-cols-2"
+      >
+        {previousQuestion && (
+          <div className="bg-[var(--canvas)] py-5 sm:pr-6">
+            <Link
+              href={`/questions/${previousQuestion.slug}`}
+              className="group block focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+            >
+              <span className="block text-xs text-[var(--text-faint)]">
+                上一题
+              </span>
+              <span className="mt-2 block leading-6 font-medium text-[var(--text-muted)] group-hover:text-[var(--accent-bright)]">
+                {previousQuestion.title}
+              </span>
+            </Link>
+          </div>
+        )}
+        {nextQuestion && (
+          <div
+            className={`bg-[var(--canvas)] py-5 sm:pl-6 sm:text-right ${previousQuestion ? "" : "sm:col-start-2"}`}
+          >
+            <Link
+              href={`/questions/${nextQuestion.slug}`}
+              className="group block focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+            >
+              <span className="block text-xs text-[var(--text-faint)]">
+                下一题
+              </span>
+              <span className="mt-2 block leading-6 font-medium text-[var(--text-muted)] group-hover:text-[var(--accent-bright)]">
+                {nextQuestion.title}
+              </span>
+            </Link>
+          </div>
+        )}
+      </nav>
     </main>
   );
 }

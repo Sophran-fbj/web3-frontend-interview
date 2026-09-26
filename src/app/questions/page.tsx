@@ -31,13 +31,13 @@ function findOption<T extends string>(value: string | undefined, options: T[]) {
   return options.find((option) => option === value);
 }
 
-const difficulties = Object.keys(
+const difficultyOrder = Object.keys(
   difficultyLabels,
 ) as QuestionFrontmatter["difficulty"][];
-const categories = Object.keys(
+const categoryOrder = Object.keys(
   categoryLabels,
 ) as QuestionFrontmatter["category"][];
-const questionTypes = Object.keys(
+const questionTypeOrder = Object.keys(
   questionTypeLabels,
 ) as QuestionFrontmatter["questionType"][];
 
@@ -46,6 +46,19 @@ export default async function QuestionsPage({
 }: QuestionsPageProps) {
   const params = await searchParams;
   const allQuestions = await getVisibleQuestions();
+  const difficulties = difficultyOrder.filter((difficulty) =>
+    allQuestions.some(
+      ({ frontmatter }) => frontmatter.difficulty === difficulty,
+    ),
+  );
+  const categories = categoryOrder.filter((category) =>
+    allQuestions.some(({ frontmatter }) => frontmatter.category === category),
+  );
+  const questionTypes = questionTypeOrder.filter((questionType) =>
+    allQuestions.some(
+      ({ frontmatter }) => frontmatter.questionType === questionType,
+    ),
+  );
   const stacks = Array.from(
     new Set(
       allQuestions.flatMap(({ frontmatter }) =>
