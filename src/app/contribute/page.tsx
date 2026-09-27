@@ -20,13 +20,13 @@ const options = [
     title: "内容纠错",
     description: "发现答案、版本或参考资料有误，告诉我们具体位置和依据。",
     href: correctionIssueLink(),
-    action: "反馈内容问题",
+    action: "反馈问题",
   },
   {
     title: "题目投稿",
     description: "推荐与 Web3 前端工作直接相关、值得练习的面试题。",
     href: questionSuggestionLink,
-    action: "建议一道题",
+    action: "题目投稿",
   },
   {
     title: "面经分享",
@@ -40,6 +40,7 @@ export default function ContributePage() {
   return (
     <main
       id="main-content"
+      data-page="contribute"
       className="mx-auto w-full max-w-4xl px-5 py-14 sm:px-8 sm:py-20"
     >
       <Link
@@ -52,8 +53,7 @@ export default function ContributePage() {
         参与共建
       </h1>
       <p className="mt-5 max-w-2xl leading-7 text-[var(--text-muted)]">
-        选择一类内容，在 GitHub 提交。提交内容和 GitHub
-        用户名公开可见；题目和面经会先由维护者核对、整理，再决定是否收录。
+        发现题目有误、想到值得收录的新题，或愿意分享真实面经？欢迎一起把题库做得更准确、更贴近实际面试。
       </p>
       <div className="mt-10 divide-y divide-[var(--line)] border-y border-[var(--line-strong)]">
         {options.map((option) => (

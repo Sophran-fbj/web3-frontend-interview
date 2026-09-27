@@ -91,6 +91,10 @@ body {
     var(--canvas);
 }
 
+body:has([data-page="contribute"]) > footer {
+  display: none;
+}
+
 h1,
 h2,
 h3 {
