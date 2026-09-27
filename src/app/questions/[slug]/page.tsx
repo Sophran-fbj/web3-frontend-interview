@@ -15,6 +15,7 @@ import {
   getVisibleQuestions,
 } from "@/content/question-repository";
 import { splitQuestionSections } from "@/content/question-sections";
+import { getAbsoluteUrl } from "@/lib/site-url";
 
 type QuestionPageProps = {
   params: Promise<{ slug: string }>;
@@ -35,9 +36,25 @@ export async function generateMetadata({
 
   if (!question) return {};
 
+  const url = getAbsoluteUrl(`/questions/${slug}`);
+
   return {
     title: question.frontmatter.title,
     description: question.frontmatter.summary,
+    alternates: url ? { canonical: url } : undefined,
+    openGraph: {
+      type: "article",
+      locale: "zh_CN",
+      siteName: "Web3 前端面试手册",
+      title: question.frontmatter.title,
+      description: question.frontmatter.summary,
+      url,
+    },
+    twitter: {
+      card: "summary",
+      title: question.frontmatter.title,
+      description: question.frontmatter.summary,
+    },
   };
 }
 

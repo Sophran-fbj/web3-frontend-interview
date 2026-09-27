@@ -20,11 +20,7 @@ import {
 } from "@/content/question-pagination";
 import { getVisibleQuestions } from "@/content/question-repository";
 import type { QuestionFrontmatter } from "@/content/question-schema";
-
-export const metadata: Metadata = {
-  title: "题库",
-  description: "按主题浏览 Web3 前端面试题。",
-};
+import { getAbsoluteUrl } from "@/lib/site-url";
 
 type QuestionsPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -32,6 +28,52 @@ type QuestionsPageProps = {
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+export async function generateMetadata({
+  searchParams,
+}: QuestionsPageProps): Promise<Metadata> {
+  const params = await searchParams;
+  const hasActiveFilters = [
+    "q",
+    "difficulty",
+    "category",
+    "type",
+    "stack",
+  ].some((key) => Boolean(firstParam(params[key])?.trim()));
+  const questions = await getVisibleQuestions();
+  const requestedPage = Number.parseInt(firstParam(params.page) ?? "1", 10);
+  const { currentPage } = paginateQuestions(questions, requestedPage);
+  const title =
+    currentPage > 1
+      ? `Web3 前端面试题库 · 第 ${currentPage} 页`
+      : "Web3 前端面试题库";
+  const description =
+    "按钱包、签名、交易、合约交互、安全等主题浏览 Web3 前端面试题，查看简答、深入分析、常见错误和参考资料。";
+  const url = getAbsoluteUrl(
+    currentPage > 1 ? `/questions?page=${currentPage}` : "/questions",
+  );
+
+  return {
+    title,
+    description,
+    alternates: { canonical: hasActiveFilters ? undefined : url },
+    openGraph: {
+      type: "website",
+      locale: "zh_CN",
+      siteName: "Web3 前端面试手册",
+      title,
+      description,
+      url: hasActiveFilters ? undefined : url,
+    },
+    twitter: { card: "summary", title, description },
+    robots:
+      process.env.CONTENT_PREVIEW === "true"
+        ? { index: false, follow: false }
+        : hasActiveFilters
+          ? { index: false, follow: true }
+          : undefined,
+  };
 }
 
 function findOption<T extends string>(value: string | undefined, options: T[]) {
