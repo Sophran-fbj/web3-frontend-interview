@@ -48,6 +48,12 @@ export default async function Home() {
               ? `浏览 ${questions.length} 道题目`
               : "查看题库"}
           </Link>
+          <Link
+            href="/contribute"
+            className="text-sm text-[var(--text-muted)] underline decoration-[var(--line-strong)] underline-offset-4 hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+          >
+            反馈与投稿
+          </Link>
         </div>
       </section>
 

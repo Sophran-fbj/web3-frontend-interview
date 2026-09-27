@@ -1,0 +1,25 @@
+name: 内容纠错
+description: 指出已有题目的事实、版本或表述问题
+title: "[纠错] "
+body:
+  - type: input
+    id: question
+    attributes:
+      label: 题目与链接
+      placeholder: 题目标题或页面链接
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题在哪里
+      description: 请指出具体段落和有疑问的结论。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 修正建议与依据
+      description: 请尽量附上规范、官方文档或可核实的来源。
+    validations:
+      required: true

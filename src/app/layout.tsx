@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Link from "next/link";
 
 import { SiteHeader } from "@/components/site-header";
 import { getSiteUrl } from "@/lib/site-url";
@@ -66,6 +67,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         </a>
         <SiteHeader />
         {children}
+        <footer className="border-t border-[var(--line)] px-5 py-6 text-center text-sm text-[var(--text-faint)] sm:px-8">
+          <Link
+            href="/contribute"
+            className="hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+          >
+            反馈与投稿
+          </Link>
+        </footer>
       </body>
     </html>
   );

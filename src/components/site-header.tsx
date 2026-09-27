@@ -19,6 +19,12 @@ export function SiteHeader() {
           >
             我的收藏
           </Link>
+          <Link
+            href="/contribute"
+            className="hidden text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)] sm:inline"
+          >
+            参与共建
+          </Link>
           <ThemeSwitcher />
         </nav>
       </div>

@@ -17,6 +17,7 @@ import {
 } from "@/content/question-repository";
 import { splitQuestionSections } from "@/content/question-sections";
 import { getAbsoluteUrl } from "@/lib/site-url";
+import { correctionIssueLink } from "@/lib/contribution-links";
 
 type QuestionPageProps = {
   params: Promise<{ slug: string }>;
@@ -198,6 +199,17 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
           )}
         </div>
       </nav>
+      <p className="mt-6 text-sm text-[var(--text-faint)]">
+        发现这道题有问题？{" "}
+        <a
+          href={correctionIssueLink(
+            `${frontmatter.title}（/questions/${frontmatter.slug}）`,
+          )}
+          className="text-[var(--accent-bright)] underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+        >
+          反馈此题
+        </a>
+      </p>
     </main>
   );
 }

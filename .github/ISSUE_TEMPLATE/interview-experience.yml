@@ -1,0 +1,37 @@
+name: 面经分享
+description: 分享已匿名化、可以公开的真实 Web3 前端面试经历
+title: "[面经] "
+body:
+  - type: markdown
+    attributes:
+      value: "此 Issue 和你的 GitHub 用户名会公开显示。请勿填写姓名、联系方式、公司内部资料或受保密协议约束的信息；不确定能否公开的内容请不要提交。"
+  - type: input
+    id: role
+    attributes:
+      label: 岗位方向
+      placeholder: 例如 Web3 前端，中级
+    validations:
+      required: true
+  - type: textarea
+    id: questions
+    attributes:
+      label: 实际考察的问题与追问
+      description: 只描述你亲历且有权公开的内容，可省略公司和个人身份信息。
+    validations:
+      required: true
+  - type: textarea
+    id: reflection
+    attributes:
+      label: 你的回答与复盘
+      description: 可选；请区分实际回答和事后补充的理解。
+    validations:
+      required: false
+  - type: checkboxes
+    id: permission
+    attributes:
+      label: 发布确认
+      options:
+        - label: 这是我亲历且有权公开分享的内容，已经去除个人和公司敏感信息。
+          required: true
+        - label: 我同意经人工整理后，以 CC BY-SA 4.0 许可发布我的原创投稿。
+          required: true

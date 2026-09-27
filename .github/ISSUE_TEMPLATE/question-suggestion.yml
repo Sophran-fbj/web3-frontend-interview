@@ -1,0 +1,34 @@
+name: 题目投稿
+description: 建议一道与 Web3 前端直接相关的面试题
+title: "[题目] "
+body:
+  - type: input
+    id: question
+    attributes:
+      label: 建议的题目
+      placeholder: 用一句话写出面试问题
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 为什么值得考
+      description: 说明对应的 Web3 前端工作场景和考察目标。
+    validations:
+      required: true
+  - type: textarea
+    id: answer
+    attributes:
+      label: 回答思路或参考资料
+      description: 可以只提供思路；技术结论请尽量附官方来源。
+    validations:
+      required: true
+  - type: checkboxes
+    id: permission
+    attributes:
+      label: 内容确认
+      options:
+        - label: 我提交的是自己有权分享的内容，且没有复制商业题库或保密材料。
+          required: true
+        - label: 我同意经人工整理后，以 CC BY-SA 4.0 许可发布我的原创投稿。
+          required: true
