@@ -221,17 +221,16 @@ export default async function QuestionsPage({
             />
           </div>
 
-          <div className="mt-3 flex min-h-6 items-center justify-between gap-4 text-xs text-[var(--text-faint)]">
-            <p>搜索后按 Enter，选择筛选项后立即更新</p>
-            {hasActiveFilters && (
+          {hasActiveFilters && (
+            <div className="mt-3 flex justify-end text-xs">
               <Link
                 href="/questions"
-                className="shrink-0 text-[var(--text-muted)] underline decoration-[var(--line-strong)] underline-offset-4 hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+                className="text-[var(--text-muted)] underline decoration-[var(--line-strong)] underline-offset-4 hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
               >
                 清除全部
               </Link>
-            )}
-          </div>
+            </div>
+          )}
         </section>
       )}
 

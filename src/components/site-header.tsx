@@ -12,18 +12,7 @@ export function SiteHeader() {
         >
           Web3 前端面试手册
         </Link>
-        <nav
-          aria-label="主导航"
-          className="flex items-center gap-4 text-sm sm:gap-6"
-        >
-          <Link
-            href="/questions"
-            className="text-[var(--text-muted)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
-          >
-            浏览题库
-          </Link>
-          <ThemeSwitcher />
-        </nav>
+        <ThemeSwitcher />
       </div>
     </header>
   );

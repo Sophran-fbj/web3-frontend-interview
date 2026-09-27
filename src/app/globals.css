@@ -142,6 +142,16 @@ button {
   display: none;
 }
 
+.page-jump-input {
+  appearance: textfield;
+}
+
+.page-jump-input::-webkit-inner-spin-button,
+.page-jump-input::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
 .question-prose {
   min-width: 0;
   max-width: 46rem;
