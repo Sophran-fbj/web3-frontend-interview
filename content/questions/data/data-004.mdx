@@ -26,6 +26,8 @@ references:
     url: https://www.jsonrpc.org/specification
   - title: "wagmi：useReadContracts（§Parameters、§Returns）"
     url: https://wagmi.sh/react/api/hooks/useReadContracts
+  - title: "EIP-7702：Set Code for EOAs（§Specification 的 Delegation indicator）"
+    url: https://eips.ethereum.org/EIPS/eip-7702
 ---
 
 ## 题目
@@ -40,11 +42,12 @@ references:
 
 ## 30 秒回答
 
-账户概览的链上基础数据可以由余额、交易计数与代码查询组合而成，这几项独立读取可以合并为一次批量请求；批量响应可能按任意顺序返回，需要按每个响应对象的 id 与请求关联，通知类请求不产生响应；整批请求还可能整体传输失败。代币余额与授权额度属于合约读取，需要按合约调用取回。实现差异与工程取舍见深入回答。
+账户概览可以批量读取余额、nonce 与代码，但代码非空不等于传统合约账户：EIP-7702 委托的 EOA 也会返回委托指示码。JSON-RPC 批量响应可能乱序，应按 id 关联并逐项处理失败；代币余额与授权额度则需做合约读取。缓存键至少区分链和账户。实现差异与工程取舍见深入回答。
 
 ## 深入回答
 
 - 【协议保证】eth_getBalance、eth_getTransactionCount、eth_getCode 分别返回账户的余额、交易计数与代码（依据：EIP-1474 §eth_getBalance、§eth_getTransactionCount、§eth_getCode）。
+- 【协议保证】EIP-7702 委托后的 EOA 会返回非空委托指示码，因此 eth_getCode 不能单独用来断定地址由合约控制（依据：EIP-7702 §Specification 的 Delegation indicator）。
 - 【协议保证】代币余额与授权额度存放在合约存储中，需要按 eth_call 读取（依据：EIP-1474 §eth_call）。
 - 【协议保证】JSON-RPC 支持批量请求：服务端可以按任意顺序返回响应数组，客户端需要使用每个响应对象的 id 与请求关联；通知类请求不产生响应（依据：JSON-RPC 2.0 规范 §Batch）。
 - 【实现行为】wagmi 的 useReadContracts 把多个合约读取聚合为尽量少的调用，并以数组返回各项结果（依据：wagmi useReadContracts §Parameters、§Returns）。
@@ -116,3 +119,4 @@ const balance = data?.[0]?.status === "success" ? data[0].result : undefined;
 - [EIP-1474：Remote procedure call specification（§eth_getBalance、§eth_getTransactionCount、§eth_getCode、§eth_call）](https://eips.ethereum.org/EIPS/eip-1474)
 - [JSON-RPC 2.0 规范（§Batch）](https://www.jsonrpc.org/specification)
 - [wagmi：useReadContracts（§Parameters、§Returns）](https://wagmi.sh/react/api/hooks/useReadContracts)
+- [EIP-7702：Set Code for EOAs（§Specification 的 Delegation indicator）](https://eips.ethereum.org/EIPS/eip-7702)

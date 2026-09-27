@@ -26,6 +26,8 @@ references:
     url: https://wagmi.sh/react/api/hooks/useReadContract
   - title: EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）
     url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: Ethereum Execution APIs：eth_getBlockByNumber（§Block tag）
+    url: https://ethereum.github.io/execution-apis/api/methods/eth_getBlockByNumber/
 ---
 
 ## 题目
@@ -40,22 +42,23 @@ references:
 
 ## 30 秒回答
 
-读接口的区块参数可以用区块高度表示，也可以用标签表示，标签决定这次读取落在哪一个区块上。区块越新，被链上区块组织变化影响的可能性越大；不同标签对应不同强度的确定性。safe 与 finalized 的语义与可用性属于节点实现层面的事。实现差异与工程取舍见深入回答。
+读接口的区块参数可以用高度或标签表示。以太坊执行层 API 中，latest 是节点看到的最新链头，safe 是满足相应安全假设的安全链头，finalized 是达到共识最终性的链头。目标 RPC 端点或其他 EVM 链可能不支持这些标签；不支持时按高度读取只能给出确认深度近似值，不能冒充 finalized。实现差异与工程取舍见深入回答。
 
 ## 深入回答
 
-- 【协议保证】JSON-RPC 的区块参数可以用区块号表示，也可以用 earliest、latest、pending 等标签表示（依据：EIP-1474 §Block Identifier 及方法条目中的区块参数说明）。
+- 【协议保证】JSON-RPC 的区块参数可以用区块号或标签表示；以太坊执行层 API 定义了 earliest、latest、pending、safe 与 finalized 等标签（依据：Ethereum Execution APIs §Block tag）。
+- 【协议保证】在以太坊执行层 API 中，safe 指满足诚实多数与同步性假设的安全链头，finalized 指达到加密经济最终性的链头，两者不是节点任意定义的同义标签（依据：Ethereum Execution APIs §Block tag）。
 - 【协议保证】不同区块参数指向不同区块，同一读取可能返回不同结果（依据：EIP-1474 §Block Identifier）。
 - 【实现行为】wagmi 的读取类 Hook 暴露 blockTag 参数，取值包含 latest、earliest、pending、safe 与 finalized（依据：wagmi useReadContract §blockTag）
 - 【工程经验】safe 与 finalized 标签能否被节点接受取决于其版本与配置；使用前应做能力探测，并为不支持的情况准备按区块高度读取的降级路径（依据：工程经验，无规范依据）
 - 【工程经验】读取「可能继续变化」的数据用 latest，读取「用于结算或核对」的数据用更强的最终性口径，可以让界面语义与风险一致（依据：工程经验，无规范依据）
-- 【工程经验】节点不识别某个标签时，降级路径可以按高度读取，再在前端按区块深度自行判断（依据：工程经验，无规范依据）
+- 【工程经验】端点不支持标签时，可以按高度读取并显示确认深度，但这只是风险近似判断，不能把结果标成 safe 或 finalized。结算业务若必须得到共识最终性，应改用能提供该标签或等价最终性证明的端点（依据：Ethereum Execution APIs §Block tag；工程经验）。
 - 【工程经验】缓存与查询键应把标签纳入，避免把最新视图的结果复用到最终性视图上（依据：工程经验，无规范依据）
 - 【工程经验】把标签选择收敛到数据层统一下发，可以减少页面之间口径不一致的情况（依据：工程经验，无规范依据）
 
 ## 常见错误
 
-- 把 safe 与 finalized 当成同一强度的保证（依据：wagmi useReadContract §blockTag 把二者列为不同取值）
+- 把 safe 与 finalized 当成同一强度的保证，或把固定区块深度标成 finalized（依据：Ethereum Execution APIs §Block tag）。
 - 默认用 latest 读取，却在文案上把结果描述成「已最终」（依据：工程经验，无规范依据）
 - 节点返回不支持该标签的错误时没有降级，把失败直接抛给用户（依据：工程经验，无规范依据）
 - 把「落后多少个 epoch」这类数字写进产品文案或校验逻辑（依据：该数值随网络状况变化，不适合作为固定假设；工程经验）
@@ -90,3 +93,4 @@ references:
 - [ethereum.org：JSON-RPC（§eth_call、§eth_getBalance 的区块参数说明）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
 - [wagmi：useReadContract（§blockTag）](https://wagmi.sh/react/api/hooks/useReadContract)
 - [EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)
+- [Ethereum Execution APIs：eth_getBlockByNumber（§Block tag）](https://ethereum.github.io/execution-apis/api/methods/eth_getBlockByNumber/)

@@ -26,6 +26,8 @@ references:
     url: https://ethereum.org/en/developers/docs/dapps/
   - title: ethereum.org：Web2 vs Web3（页面级）
     url: https://ethereum.org/en/developers/docs/web2-vs-web3/
+  - title: EIP-4361：Sign-In with Ethereum（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-4361
 ---
 
 ## 题目
@@ -40,17 +42,17 @@ references:
 
 ## 30 秒回答
 
-Web3 前端把读路径从只依赖自家后端扩展为链上公共状态加 RPC 与索引服务，读到的数据可验证，但受节点可用性、索引延迟与最终性影响；写路径由用户通过钱包签名后提交交易，应用侧不能代替用户完成签名。身份从账号密码转为地址加签名挑战，资产由用户自己在钱包中持有，应用依赖用户授权才能操作。实现差异与工程取舍见深入回答。
+典型非托管 DApp 的读路径会组合 RPC、索引服务与自家后端，写路径由用户钱包授权或签名后提交。连接得到地址并不等于登录；需要服务端验证签名挑战才能建立会话。资产记录在链上，由账户密钥或合约规则控制，钱包负责管理密钥与发起操作，并不把资产保存在钱包里。实现差异与工程取舍见深入回答。
 
 ## 深入回答
 
 - 【协议保证】页面通过 provider 的 request 方法与钱包交互，密钥管理与签名在钱包侧完成；provider 运行在不受信任的页面环境中，不应被当作安全边界（依据：EIP-1193 §Security Considerations）。
-- 【协议保证】账户访问需要用户授权：未获授权时，面向账户的方法会被拒绝（依据：EIP-1193 §Provider Errors 的 4100 Unauthorized）。
+- 【协议保证】EIP-1193 定义了 4100 Unauthorized 错误码，但是否实施授权逻辑取决于钱包；规范建议默认不暴露账户，并通过请求方法获取访问权限，不能把所有钱包的逐次授权行为当作协议保证（依据：EIP-1193 §request、§User Account Exposure and Account Changes）。
 - 【工程经验】读路径从单一后端接口扩展为链上状态、RPC 与索引服务的组合，前端需要为每种数据源定义失败与降级策略（依据：ethereum.org dApps 页面；工程经验）。
 - 【工程经验】链上读到的数据受节点可用性与索引延迟影响，关键数值适合标注来源与更新时间（依据：ethereum.org dApps 页面；工程经验）。
 - 【工程经验】写路径由用户钱包签名并广播交易，应用侧负责组织参数、等待结果与对账（依据：ethereum.org dApps 页面；ethereum.org Web2 vs Web3 页面）。
-- 【工程经验】身份从账号密码转为地址加签名挑战：连接只提供地址，证明控制权需要用户对挑战签名（依据：ethereum.org Web2 vs Web3 页面；工程经验）。
-- 【工程经验】资产由用户自行持有，应用通过授权与签名操作资产，因此授权范围与撤销入口属于产品能力（依据：ethereum.org Web2 vs Web3 页面；工程经验）。
+- 【工程经验】若产品选择钱包登录，连接只提供地址；服务端仍需验证带域名与 nonce 的签名挑战，并建立自己的会话。其他登录方式也可以与钱包并存（依据：EIP-4361 §Specification；工程经验）。
+- 【工程经验】资产状态在链上，非托管钱包管理密钥与签名；应用通过用户授予的权限发起操作，因此授权范围与撤销路径需要清楚呈现（依据：ethereum.org Web2 vs Web3 页面；工程经验）。
 - 【工程经验】后端仍然可以承担缓存、聚合、通知与法币计价等职责，但需要把链上结论与后端加工结果分开标注（依据：ethereum.org dApps 页面；工程经验）。
 - 【工程经验】写路径的状态需要区分「已提交」「已包含」「已确认」三个阶段再展示（依据：工程经验，无规范依据）。
 - 【工程经验】不要把连接状态当作登录态，服务端会话需要独立建立与失效（依据：ethereum.org Web2 vs Web3 页面；工程经验）。
@@ -92,3 +94,4 @@ Web3 前端把读路径从只依赖自家后端扩展为链上公共状态加 RP
 - [EIP-1193：Ethereum Provider JavaScript API（§Security Considerations、§Provider Errors）](https://eips.ethereum.org/EIPS/eip-1193)
 - [ethereum.org：Introduction to dapps（页面级）](https://ethereum.org/en/developers/docs/dapps/)
 - [ethereum.org：Web2 vs Web3（页面级）](https://ethereum.org/en/developers/docs/web2-vs-web3/)
+- [EIP-4361：Sign-In with Ethereum（§Specification）](https://eips.ethereum.org/EIPS/eip-4361)

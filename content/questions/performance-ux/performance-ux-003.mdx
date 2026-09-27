@@ -61,19 +61,20 @@ wagmi 的刷新能力分布在三处：查询侧的 refetchInterval 等 TanStack
 ```tsx
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useBalance, useBlockNumber } from "wagmi";
+import { useBalance, useBlockNumber, useConnection } from "wagmi";
 
 export function Balance() {
   const queryClient = useQueryClient();
-  const { data: blockNumber } = useBlockNumber({ watch: true });
-  const { data: balance, queryKey } = useBalance();
+  const { address, chainId } = useConnection();
+  const { data: blockNumber } = useBlockNumber({ chainId, watch: true });
+  const { data: balance, queryKey } = useBalance({ address, chainId });
 
   useEffect(() => {
-    if (balance === undefined) return;
+    if (!address || blockNumber === undefined) return;
     void queryClient.invalidateQueries({ queryKey });
-  }, [blockNumber, queryClient, queryKey]);
+  }, [address, blockNumber, queryClient, queryKey]);
 
-  return <div>{balance?.formatted}</div>;
+  return <div>{balance?.formatted ?? "—"}</div>;
 }
 ```
 

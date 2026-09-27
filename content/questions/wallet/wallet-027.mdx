@@ -21,8 +21,8 @@ updatedAt: 2026-09-27
 reviewers: []
 changeLog: []
 references:
-  - title: viem：构建自定义客户端（§Parameters 的 transport）
-    url: https://viem.sh/docs/clients/custom
+  - title: wagmi：walletConnect connector（§Install、§Usage、§projectId、§metadata、§relayUrl）
+    url: https://wagmi.sh/react/api/connectors/walletConnect
   - title: WalletConnect：配对 URI（§Schema、§Parameters）
     url: https://specs.walletconnect.com/2.0/specs/clients/core/pairing/pairing-uri
 ---
@@ -39,23 +39,22 @@ references:
 
 ## 30 秒回答
 
-WalletConnect 的配对入口是一个 wc: 开头的 URI：schema 由 topic、可选版本与参数组成，参数中必需的是 symKey、methods 与 relay-protocol，可选的是 relay-data 与 expiryTimestamp；规范建议生成配对 URI 时把失效时间设为 5 分钟之后，symKey 是用于配对加密的对称密钥。接入时这些字段要与项目侧的中继配置配合使用，缺项会让连接流程无法完成或受到限制。实现差异与工程取舍见深入回答。
+WalletConnect 的配对入口是一个 wc: URI，包含 topic、用于加密的 symKey 与中继相关参数；扫码仅启动配对，连接还需钱包批准会话。wagmi 接入时需要安装对应依赖并配置 walletConnect connector 的 projectId，按需设置 metadata 与 relayUrl。中继不可用、配置缺失或会话未获批准时，界面应分别提示。实现差异与工程取舍见深入回答。
 
 ## 深入回答
 
 - 【协议保证】配对 URI 的 schema 为 wc:topic@version?parameters，版本与参数可省略（依据：WalletConnect Pairing URI §Schema）。
 - 【协议保证】必需参数包括 symKey（用于配对加密的对称密钥）、methods（按 ProtocolType 分组的方法列表）与 relay-protocol（中继协议名）（依据：WalletConnect Pairing URI §Parameters 的 Required）。
 - 【协议保证】可选参数包括 relay-data（hex 载荷）与 expiryTimestamp（秒级时间戳，规范建议生成时设为 5 分钟之后）（依据：WalletConnect Pairing URI §Parameters 的 Optional）。
-- 【实现行为】viem 的客户端由 chain 与 transport 组合而成，createClient 的 transport 参数决定请求如何发出（依据：viem 构建自定义客户端 §Parameters 的 transport）。
-- 【工程经验】DApp 侧通常把 connector 暴露的 EIP-1193 provider 接入现有链交互链路，接入点落在 connector 与 transport 这一层（工程经验，无规范依据）。
-- 【工程经验】项目标识（常见命名 projectId）用于接入 WalletConnect Cloud 中继，属于项目侧配置；它不在配对 URI 的字段列表中（工程经验，无规范依据）。
+- 【实现行为】wagmi 的 walletConnect connector 需要安装 @walletconnect/ethereum-provider，并在配置时提供 projectId；metadata 与 relayUrl 可按需设置（依据：wagmi walletConnect connector §Install、§Usage、§Parameters）。
+- 【工程经验】projectId 属于 DApp 的 connector 配置，不是配对 URI 字段；不要让应用代码自行拼接 symKey 或把它写进日志（依据：WalletConnect Pairing URI §Parameters；wagmi walletConnect connector §projectId）。
 - 【工程经验】把项目标识放进环境变量并配合域名白名单管理，避免使用公开示例值（工程经验，无规范依据）。
 - 【工程经验】钱包端展示的名称与图标来自项目元数据，缺失会让用户难以核对来源，上线前需要逐项检查（工程经验，无规范依据）。
 - 【工程经验】中继不可用或项目配置缺失时，连接流程会失败或受限，需要有可读的错误提示与替代路径（工程经验，无规范依据）。
 
 ## 常见错误
 
-- 把项目标识当成配对 URI 的参数去寻找（【协议保证】配对 URI 的必需参数是 symKey、methods 与 relay-protocol；依据：WalletConnect Pairing URI §Specification）。
+- 把 projectId 当成配对 URI 的参数，或把 symKey 当成项目配置项（依据：WalletConnect Pairing URI §Parameters；wagmi walletConnect connector §projectId）。
 - 使用公开示例里的项目标识（【工程经验】）。
 - 生成配对链接后长期复用，忽略有效期（【协议保证】expiryTimestamp 标注失效时间，规范建议 5 分钟；依据：WalletConnect Pairing URI §Specification）。
 - 缺少项目元数据，导致钱包端展示不可信（【工程经验】）。
@@ -88,5 +87,5 @@ WalletConnect 的配对入口是一个 wc: 开头的 URI：schema 由 topic、�
 
 ## 参考资料
 
-- [viem：构建自定义客户端（§Parameters 的 transport）](https://viem.sh/docs/clients/custom)
+- [wagmi：walletConnect connector（§Install、§Usage、§projectId、§metadata、§relayUrl）](https://wagmi.sh/react/api/connectors/walletConnect)
 - [WalletConnect：配对 URI（§Schema、§Parameters）](https://specs.walletconnect.com/2.0/specs/clients/core/pairing/pairing-uri)

@@ -40,11 +40,12 @@ references:
 
 ## 30 秒回答
 
-代付的思路是让签名与付费分离：签名授权可以由其他地址代为提交，提交者支付这笔交易的费用；或者由 paymaster 在链上代为结算。链上执行的费用依然存在，只是承担方发生变化。实现差异与工程取舍见深入回答。
+代付让签名方与链上付费方分离。ERC-2612 permit 只提供签名授权，不能单独完成后续交易；要让无 ETH 用户完成整个业务操作，还需支持 permit 的业务合约与代发方，或使用 ERC-4337 paymaster、适配 EIP-7702 的赞助流程。费用仍由某一方承担。实现差异与工程取舍见深入回答。
 
 ## 深入回答
 
 - 【协议保证】EIP-2612 的 permit 允许持有者以签名方式给出授权，并由其他地址代为提交，因此签名者本身不需要持有 ETH 来完成这一步（依据：EIP-2612 §Specification、§Rationale）
+- 【协议保证】permit 只设置代币的 allowance，不包含转账或业务调用；后续操作需要由其他交易执行。若目标是让用户全程不持有 ETH，业务合约必须支持利用该授权完成操作，并由代发方提交、支付费用（依据：EIP-2612 §Specification、§Motivation；后半句为工程方案）。
 - 【协议保证】permit 的签名绑定 nonce 与 deadline，二者共同限制签名的重复使用与有效窗口（依据：EIP-2612 §Specification）
 - 【协议保证】ERC-4337 用 UserOperation 表达用户意图，由 bundler 打包为外部交易调用 EntryPoint，EntryPoint 负责校验与执行（依据：EIP-4337 §Specification）
 - 【协议保证】paymaster 在这些流程中承担费用，链上依据其自身规则验证并结算这笔费用（依据：EIP-4337 §Specification）
@@ -77,7 +78,7 @@ references:
 
 ### 中级回答
 
-- 能区分 permit、paymaster 与委托授权三类路径的机制。
+- 能区分 permit 授权、paymaster 与委托授权三类机制，并说明 permit 单独不足以完成后续业务交易。
 - 能说明各路径的适用条件与用户侧表现。
 
 ### 高级回答

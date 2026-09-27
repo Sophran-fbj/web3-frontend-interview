@@ -25,6 +25,8 @@ references:
     url: https://eips.ethereum.org/EIPS/eip-5792
   - title: wagmi：useSendCalls（§Usage、§Return Type）
     url: https://wagmi.sh/react/api/hooks/useSendCalls
+  - title: viem：sendCalls（§forceAtomic）
+    url: https://viem.sh/docs/actions/wallet/sendCalls
 ---
 
 ## 题目
@@ -35,29 +37,31 @@ references:
 
 - EIP-5792 定义的钱包调用接口与返回值语义。
 - 批次提交与批次状态查询的分工。
-- 能力探测与不支持时的回退设计。
+- 能力探测、原子性要求与不支持时的回退设计。
 
 ## 30 秒回答
 
-EIP-5792 定义了一组钱包调用接口：wallet_sendCalls 请求钱包签名并广播一批调用，返回的是调用批次标识而不是交易哈希；wallet_getCallsStatus 按该标识查询批次状态；wallet_getCapabilities 返回钱包与账户在指定链上的能力；wallet_showCallsStatus 可以请钱包展示批次状态页。因此在 wagmi 中，useSendCalls 解决的是「提交批次」，确认与状态展示要交给对应的状态查询能力。实现差异与工程取舍见深入回答。
+EIP-5792 的 wallet_sendCalls 提交一批调用并返回批次标识，wallet_getCallsStatus 用该标识查询结果。批量提交不保证原子执行；「授权 + 兑换」若要求两步同成同败，应先检查目标链上的 atomic 能力，并在请求中要求原子执行。钱包无法满足时回退到逐笔串行流程。实现差异与工程取舍见深入回答。
 
 ## 深入回答
 
 - 【协议保证】wallet_sendCalls 请求钱包对一批调用签名并广播，返回批次标识，供后续查询使用（依据：EIP-5792 §Specification 的 wallet_sendCalls）。
 - 【协议保证】wallet_getCallsStatus 用批次标识查询状态，状态区分待处理、已确认与失败等情形（依据：EIP-5792 §Specification 的 wallet_getCallsStatus）。
 - 【协议保证】wallet_getCapabilities 返回钱包与账户在指定链上的能力，供 DApp 做渐进增强（依据：EIP-5792 §Specification 的 wallet_getCapabilities）。
+- 【协议保证】wallet_sendCalls 默认不能被理解为原子交易。atomicRequired 为 true 时，钱包必须让整批调用同成同败并连续执行；无法满足时应拒绝。为 false 时，钱包可以逐笔执行，批次可能部分成功（依据：EIP-5792 §wallet_sendCalls、§atomic Capability）。
 - 【协议保证】wallet_showCallsStatus 请求钱包向用户展示批次状态页（依据：EIP-5792 §Specification 的 wallet_showCallsStatus）。
 - 【实现行为】useSendCalls 的 mutate 变量包含 calls 数组，每项描述一笔调用，例如 to、value 与 data（依据：wagmi useSendCalls §Usage 的 calls 示例）。
+- 【实现行为】viem 的 sendCalls 参数用 forceAtomic 表达原子执行要求，对应 EIP-5792 RPC 中的 atomicRequired；业务代码不要把 RPC 字段名直接当作 hook 参数名（依据：viem sendCalls §forceAtomic、EIP-5792 §wallet_sendCalls）。
 - 【实现行为】useSendCalls 是 mutation，用 status 与 isPending 表达提交阶段；文档另提供 useSendCallsSync，在批次被包含进区块后再返回（依据：wagmi useSendCalls §Return Type 的 status、§Synchronous Usage）。
 - 【工程经验】批次标识要当作查询句柄保存下来，供后续状态查询与对账使用，而不是拿它去查交易 receipt（工程经验，无规范依据）。
-- 【工程经验】提交之前先做能力探测，不支持时回退到逐笔交易流程，避免把失败留到用户确认之后（工程经验，无规范依据）。
-- 【工程经验】批次的失败语义与单笔交易不同，界面要能表达批次内部部分失败的情形（工程经验，无规范依据）。
+- 【工程经验】提交「授权 + 兑换」前查询当前账户和链的 atomic 能力；业务要求两步同成同败时通过 forceAtomic 要求原子执行。能力不满足或请求被拒绝时，回退到等待授权确认后再提交兑换的串行流程，并向用户说明串行流程不是原子交易（依据：EIP-5792 §atomic Capability、viem sendCalls §forceAtomic）。
+- 【工程经验】非原子批次可能部分成功；用 wallet_getCallsStatus 的 status、atomic 与 receipts 区分各调用结果，不把批次提交成功当成链上成功（依据：EIP-5792 §wallet_getCallsStatus）。
 - 【工程经验】把「授权 + 业务调用」放进同一批次时，要确认目标链与钱包具备相应能力；不具备时仍按两步串行设计，并在文案里说明进度（工程经验，无规范依据）。
 
 ## 常见错误
 
 - 把批次标识当成交易哈希去查 receipt（【协议保证】wallet_sendCalls 返回的是批次标识；依据：EIP-5792 §Specification）。
-- 不做能力探测直接调用，遇到不支持时才报错（【工程经验】）。
+- 业务要求原子执行却只检查能否批量提交，未检查 atomic 能力或未要求 atomicRequired（依据：EIP-5792 §atomic Capability）。
 - 用并发发起多笔交易替代批量调用，造成弹窗互相打断（【工程经验】）。
 - 把批次提交成功当成链上执行成功，缺少后续状态查询（【协议保证】批次状态由 wallet_getCallsStatus 提供；依据：EIP-5792 §Specification）。
 - 只覆盖整批成功或整批失败，忽略批次内部分失败的展示（【工程经验】）。
@@ -80,7 +84,7 @@ EIP-5792 定义了一组钱包调用接口：wallet_sendCalls 请求钱包签名
 ### 中级回答
 
 - 能说明 wallet_sendCalls 与 wallet_getCallsStatus 的分工。
-- 能给出不支持批量调用时的回退路径。
+- 能说明原子与非原子批次的区别，并给出不支持所需能力时的回退路径。
 
 ### 高级回答
 
@@ -91,3 +95,4 @@ EIP-5792 定义了一组钱包调用接口：wallet_sendCalls 请求钱包签名
 
 - [EIP-5792：Wallet Call API（§Specification）](https://eips.ethereum.org/EIPS/eip-5792)
 - [wagmi：useSendCalls（§Usage、§Return Type）](https://wagmi.sh/react/api/hooks/useSendCalls)
+- [viem：sendCalls（§forceAtomic）](https://viem.sh/docs/actions/wallet/sendCalls)

@@ -58,17 +58,23 @@ useWriteContract 的 mutation 成功时返回交易哈希，此时链上状态�
 ## 示例代码
 
 ```tsx
-// 省略上下文：abi 与地址来自项目配置，加载态与错误提示未展开。
+// 省略上下文：abi、address、owner、spender 来自当前链与账户配置；加载态与错误提示未展开。
 const queryClient = useQueryClient();
-const { writeContract, data: hash } = useWriteContract();
+const { mutate: writeContract, data: hash } = useWriteContract();
 const { isSuccess } = useWaitForTransactionReceipt({ hash });
+const { queryKey: allowanceQueryKey } = useReadContract({
+  abi,
+  address,
+  functionName: "allowance",
+  args: [owner, spender],
+});
 
 useEffect(() => {
   if (isSuccess) {
-    // 定点失效；跨页面共享的数据可按前缀批量失效。
-    queryClient.invalidateQueries({ queryKey: ["readContract"] });
+    // 用读取 hook 的完整 queryKey 定点失效，避免刷新其他账户或链。
+    void queryClient.invalidateQueries({ queryKey: allowanceQueryKey });
   }
-}, [isSuccess, queryClient]);
+}, [isSuccess, queryClient, allowanceQueryKey]);
 ```
 
 ## 常见错误

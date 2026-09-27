@@ -46,7 +46,7 @@ CREATE 的地址与部署者地址和部署者的创建计数相关，同一个�
 
 - 【协议保证】CREATE2 的地址按固定公式计算：部署者地址、盐值与初始化代码的哈希共同参与，结果取哈希的末 20 字节（依据：EIP-1014 §Specification 的地址公式）
 - 【协议保证】CREATE2 的地址计算不依赖部署者的创建计数，因此参数固定的前提下可以提前算出（依据：EIP-1014 §Specification）
-- 【协议保证】CREATE 的地址由部署者地址与部署者 nonce 决定；部署者每发起一笔交易，其 nonce 递增（依据：EIP-1014 §Rationale 的 Address formula 对 `keccak256(rlp([sender, nonce]))` 的说明）。
+- 【协议保证】CREATE 的地址由部署者地址与创建前的部署者 nonce 决定。EOA 发起交易会递增其 nonce，合约账户执行 CREATE 也会递增其 nonce；不能把合约部署者的 nonce 当作其发出的交易笔数（依据：EIP-1014 §Rationale 的 Address formula；Ethereum Yellow Paper §9.7）。
 - 【协议保证】CREATE2 的地址由部署者地址、salt 与 init code 哈希计算，不使用部署者 nonce（依据：EIP-1014 §Specification）。
 - 【工程经验】提前展示预期地址，可以让用户在部署完成前完成充值等准备动作，但需要处理「部署尚未发生」的中间状态（依据：工程经验，无规范依据）
 - 【工程经验】多链上出现相同合约地址通常来自确定性部署，但地址相同并不表示实现代码、管理员或初始化参数一致，逐链核验仍然需要（依据：工程经验，无规范依据）

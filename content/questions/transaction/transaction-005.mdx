@@ -28,6 +28,8 @@ references:
     url: https://eips.ethereum.org/EIPS/eip-2718
   - title: "Solidity 文档：Contract ABI Specification（§Function Selector、§Argument Encoding）"
     url: https://docs.soliditylang.org/en/latest/abi-spec.html
+  - title: "EIP-7702：Set Code for EOAs（§Specification 的授权 nonce 规则）"
+    url: https://eips.ethereum.org/EIPS/eip-7702
 ---
 
 ## 题目
@@ -56,7 +58,7 @@ references:
 
 - 【协议保证】以 EIP-1559 类型为例，待签名摘要覆盖 chainId、nonce、费用字段、gasLimit、destination、amount、data 与 accessList；摘要不包含 signature_y_parity、signature_r、signature_s（依据：EIP-1559 §Specification 的签名摘要公式）。
 
-- 【协议保证】`nonce` 表示该账户已发送的交易数量，是交易序列化字段之一（依据：EIP-1474 §eth_getTransactionCount；EIP-1559 §Specification 的 payload 字段）。
+- 【协议保证】`nonce` 是账户当前交易序号，也是交易序列化字段之一；它不能无条件解释为「已发送交易数」，因为 EIP-7702 的有效授权也会增加授权账户的 nonce（依据：EIP-1559 §Specification 的 payload 字段；EIP-7702 §Specification）。
 
 - 【协议保证】`gasLimit` 是这笔交易允许消耗的上限；交易有效性要求余额覆盖上限费用，未用部分退回（依据：EIP-1559 §Specification）。
 
@@ -110,3 +112,4 @@ references:
 - [EIP-1474：Remote procedure call specification（§eth_call、§eth_sendTransaction、§eth_getTransactionCount）](https://eips.ethereum.org/EIPS/eip-1474)
 - [EIP-2718：Typed Transaction Envelope（§Specification）](https://eips.ethereum.org/EIPS/eip-2718)
 - [Solidity 文档：Contract ABI Specification（§Function Selector、§Argument Encoding）](https://docs.soliditylang.org/en/latest/abi-spec.html)
+- [EIP-7702：Set Code for EOAs（§Specification 的授权 nonce 规则）](https://eips.ethereum.org/EIPS/eip-7702)

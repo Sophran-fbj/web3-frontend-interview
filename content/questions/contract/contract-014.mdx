@@ -1,7 +1,7 @@
 ---
 id: contract-014
 slug: erc721-metadata-offchain
-title: ERC-721 元数据的链下依赖
+title: ERC-721 元数据的可用性与链下依赖
 summary: 说明 ownerOf、tokenURI 与 balanceOf 的语义与失败形态，以及元数据获取、回退与列表降级的设计。
 status: review
 difficulty: intermediate
@@ -28,7 +28,7 @@ references:
 
 ## 题目
 
-一个 NFT 详情页在 token 不存在时把 ownerOf 的回滚显示成「合约故障」；另一个列表页逐个请求展示几十个 NFT 的图片，多数卡片空白。请说明元数据链下依赖带来的问题与处理方式。
+一个 NFT 详情页在 token 不存在时把 ownerOf 的回滚显示成「合约故障」；另一个列表页逐个请求展示几十个 NFT 的图片，多数卡片空白。请说明元数据的可用性问题，以及采用链下 URI 时的处理方式。
 
 ## 考察目标
 
@@ -38,16 +38,16 @@ references:
 
 ## 30 秒回答
 
-ERC-721 规定 ownerOf 与 tokenURI 对不存在的 token 抛出错误，tokenURI 返回的元数据指向链下资源；这些资源可能不可用、被替换或加载缓慢。实现差异与工程取舍见深入回答。
+ERC-721 的 ownerOf 对不存在的 token 抛出错误；可选的 Metadata 扩展提供 tokenURI，对无效 token 也应抛错。URI 不一定指向链下资源；若使用 HTTP 或 IPFS，前端需处理资源不可用、变更或加载缓慢。实现差异与工程取舍见深入回答。
 
 ## 深入回答
 
 - 【协议保证】ERC-721 规定 ownerOf(tokenId) 返回该 token 的持有者，并对不存在的 token 抛出错误（依据：EIP-721 §Specification 的 ownerOf 定义）。
-- 【协议保证】ERC-721 规定 tokenURI(tokenId) 返回该 token 的元数据 URI，并对不存在的 token 抛出错误；元数据本身托管在链下（依据：EIP-721 §Specification 的 tokenURI 定义）。
-- 【协议保证】balanceOf(owner) 返回账户持有的 token 数量，可用于数量展示与列表分页（依据：EIP-721 §Specification 的 balanceOf 定义）。
-- 【工程经验】把 ownerOf 的错误按「token 不存在」处理并展示可读提示，不把合约调用错误统一显示为故障（依据：EIP-721 §Specification 的 ownerOf 定义）。
+- 【协议保证】tokenURI 属于可选的 ERC721Metadata 扩展；实现该扩展时，它返回资产 URI，对无效 token 抛出错误。规范未要求元数据托管在链下，需按实际 URI 判断获取方式（依据：EIP-721 §Specification 的 ERC721Metadata 定义）。
+- 【协议保证】balanceOf(owner) 返回账户持有的 token 数量，不提供 token ID；按持有人枚举 token ID 需要可选的 ERC721Enumerable 扩展或另建索引（依据：EIP-721 §Specification 的 balanceOf、ERC721Enumerable 定义）。
+- 【工程经验】ownerOf 回滚可能表示 token 不存在，也可能是 RPC 或合约调用异常；结合回滚原因与重试结果判断后展示可读提示（依据：EIP-721 §Specification 的 ownerOf 定义；工程经验）。
 - 【工程经验】元数据请求设置超时与失败占位；对 IPFS 一类内容寻址资源准备多网关回退（依据：工程经验，无规范依据）。
-- 【工程经验】列表页先批量读取 tokenURI，再并发拉取元数据并缓存；单项失败只影响对应卡片（依据：工程经验，无规范依据）。
+- 【工程经验】先通过可选枚举接口或事件索引取得 token ID，再批量读取 tokenURI、并发拉取元数据并缓存；单项失败只影响对应卡片（依据：EIP-721 §Specification 的 ERC721Enumerable 定义；工程经验）。
 - 【工程经验】展示图片前按内容哈希等线索核对资源与预期是否一致，降低被替换资源误导的风险（依据：工程经验，无规范依据）。
 - 【工程经验】把 HTTPS 与 IPFS 两类 URI 的处理分开设计，不把网关可用性当作链上状态的一部分（依据：工程经验，无规范依据）。
 
@@ -57,7 +57,7 @@ ERC-721 规定 ownerOf 与 tokenURI 对不存在的 token 抛出错误，tokenUR
 - 把元数据 JSON 当作链上可信数据使用。
 - 逐个请求元数据导致列表加载缓慢。
 - 元数据加载失败时卡片长期空白，没有占位与重试。
-- 用 balanceOf 的结果逐个调用 tokenURI 时不处理分页与失败。
+- 把 balanceOf 返回的数量误当作连续的 token ID 范围，逐个调用 tokenURI。
 
 ## 面试官追问
 
@@ -71,7 +71,7 @@ ERC-721 规定 ownerOf 与 tokenURI 对不存在的 token 抛出错误，tokenUR
 ### 初级回答
 
 - 能说明 ownerOf 与 tokenURI 对不存在 token 的行为。
-- 知道元数据托管在链下。
+- 知道 tokenURI 是可选扩展，链下 URI 会带来额外可用性风险。
 
 ### 中级回答
 

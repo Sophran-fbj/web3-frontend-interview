@@ -28,6 +28,10 @@ references:
     url: https://ethereum.github.io/yellowpaper/paper.pdf
   - title: EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）
     url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-161：State trie clearing（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-161
+  - title: EIP-7702：Set Code for EOAs（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-7702
 ---
 
 ## 题目
@@ -42,18 +46,18 @@ references:
 
 ## 30 秒回答
 
-链上账户的状态由 nonce、balance、codeHash 与 storageRoot 四个字段组成。nonce 在外部拥有账户上表示已发送的交易数量，在合约账户上表示创建过的合约数量；codeHash 标识账户代码的哈希，storageRoot 是账户存储的根哈希。实现差异与工程取舍见深入回答。
+链上账户的状态由 nonce、balance、codeHash 与 storageRoot 四个字段组成。nonce 是账户级计数器：EOA 发起交易会增加它，EIP-7702 的有效授权也可能增加它；新合约账户的 nonce 初始为 1，之后创建合约也会增加。它不能直接当成交易次数或活跃度。codeHash 标识代码哈希，storageRoot 是存储根哈希。实现差异与工程取舍见深入回答。
 
 ## 深入回答
 
 - 【协议保证】账户状态包含 nonce、balance、codeHash 与 storageRoot 四个字段（依据：Yellow Paper §4.1 World State）。
-- 【协议保证】nonce 对 EOA 表示已发送的交易数量，对合约账户表示其创建过的合约数量（依据：Yellow Paper §4.1 World State）。
+- 【协议保证】nonce 是账户状态中的计数器。EOA 作为交易发送者时会递增，EIP-7702 的有效授权也会使 authority 的 nonce 递增；新合约账户在初始化代码执行前把 nonce 设为 1，之后创建合约时继续递增。因此它不等于「已发送交易数」或「创建合约数」（依据：Yellow Paper §4.1 World State、EIP-161 §Specification、EIP-7702 §Specification）。
 - 【协议保证】balance 表示账户持有的原生资产数量，以 wei 为单位记账（依据：Yellow Paper §4.1 World State）。
 - 【协议保证】codeHash 指向账户代码的哈希；没有代码的账户对应空内容的哈希（依据：Yellow Paper §4.1 World State）。
 - 【协议保证】storageRoot 是账户存储数据的根哈希（依据：Yellow Paper §4.1 World State）。
 - 【协议保证】账户字段可以分别通过 JSON-RPC 方法读取：余额、交易计数、代码与存储各有对应方法（依据：EIP-1474 §eth_getBalance、§eth_getTransactionCount、§eth_getCode、§eth_getStorageAt）。
 - 【工程经验】拼出一个地址的概况需要多次读取或批量请求，按账户与链维度缓存结果可以减少重复请求（依据：工程经验，无规范依据）
-- 【工程经验】把交易计数大于零当成「活跃用户」的判据并不成立：合约账户的 nonce 语义不同，且该计数不反映行为与时间（依据：工程经验，无规范依据）
+- 【工程经验】把 eth_getTransactionCount 的结果大于零当成「活跃用户」的判据并不成立：合约创建与 7702 授权都可能让 nonce 非零，且该计数不反映行为时间（依据：EIP-161、EIP-7702；工程经验）。
 
 ## 常见错误
 
@@ -93,3 +97,5 @@ references:
 - [ethereum.org：JSON-RPC（§eth_getBalance、§eth_getTransactionCount、§eth_getCode、§eth_getStorageAt）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
 - [Ethereum Yellow Paper：World State（§4.1）](https://ethereum.github.io/yellowpaper/paper.pdf)
 - [EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-161：State trie clearing（§Specification）](https://eips.ethereum.org/EIPS/eip-161)
+- [EIP-7702：Set Code for EOAs（§Specification）](https://eips.ethereum.org/EIPS/eip-7702)

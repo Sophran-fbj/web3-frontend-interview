@@ -21,6 +21,8 @@ updatedAt: 2026-09-27
 reviewers: []
 changeLog: []
 references:
+  - title: wagmi：useConnection（§Return Type）
+    url: https://wagmi.sh/react/api/hooks/useConnection
   - title: wagmi：useConnections（§Usage）
     url: https://wagmi.sh/react/api/hooks/useConnections
   - title: wagmi：useSwitchConnection（§Usage、§Return Type）
@@ -41,11 +43,12 @@ references:
 
 ## 30 秒回答
 
-useConnections 返回当前的活动连接，useSwitchConnection 通过 `mutate({ connector })` 切换当前连接；迁移指南说明 useSwitchConnection 的 connectors 返回值不再受支持，改用 useConnections 读取活动连接、useConnectors 读取可用 connector。切换会改变当前连接，依赖当前连接的查询随之切换到新的数据源，而表单、待签内容等业务状态需要显式清理。实现差异与工程取舍见深入回答。
+useConnections 返回所有活动连接组成的列表，useConnection 返回当前连接；useSwitchConnection 通过 `mutate({ connector })` 切换当前连接。useConnectors 返回可用 connector 列表，与已建立的连接不同。切换或断开后，表单、待签内容等绑定旧连接的业务状态需要显式清理。实现差异与工程取舍见深入回答。
 
 ## 深入回答
 
 - 【实现行为】useConnections 返回活动连接列表，文档示例直接读取该列表用于渲染（依据：wagmi useConnections §Usage）。
+- 【实现行为】useConnection 返回当前连接及其状态；不要把它与 useConnections 的列表混为一谈（依据：wagmi useConnection §Return Type、useConnections §Usage）。
 - 【实现行为】useSwitchConnection 的用法是 `switchConnection.mutate({ connector: connection.connector })`（依据：wagmi useSwitchConnection §Usage）。
 - 【实现行为】useSwitchConnection 的结果包含 status、isPending 等 mutation 状态（依据：wagmi useSwitchConnection §Return Type 的 status、isPending）。
 - 【实现行为】useSwitchConnection 返回的 connectors 已被标记为废弃，迁移指南建议改用 useConnections 并从连接中导出 connector（依据：wagmi useSwitchConnection §Return Type 的 connectors（deprecated）、从 v2 迁移到 v3 §Removed useDisconnect().connectors & useSwitchConnection().connectors）。
@@ -74,7 +77,7 @@ useConnections 返回当前的活动连接，useSwitchConnection 通过 `mutate(
 
 ### 初级回答
 
-- 知道 useConnections 返回活动连接，useSwitchConnection 用于切换。
+- 知道 useConnections 返回活动连接列表，useConnection 返回当前连接，useSwitchConnection 用于切换。
 - 知道活动连接与可用 connector 是两份不同的数据。
 
 ### 中级回答
@@ -89,6 +92,7 @@ useConnections 返回当前的活动连接，useSwitchConnection 通过 `mutate(
 
 ## 参考资料
 
+- [wagmi：useConnection（§Return Type）](https://wagmi.sh/react/api/hooks/useConnection)
 - [wagmi：useConnections（§Usage）](https://wagmi.sh/react/api/hooks/useConnections)
 - [wagmi：useSwitchConnection（§Usage、§Return Type）](https://wagmi.sh/react/api/hooks/useSwitchConnection)
 - [wagmi：从 v2 迁移到 v3（§Removed useDisconnect().connectors & useSwitchConnection().connectors）](https://wagmi.sh/react/guides/migrate-from-v2-to-v3)
