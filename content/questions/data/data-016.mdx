@@ -1,0 +1,100 @@
+---
+id: data-016
+slug: cross-tab-state-consistency
+title: 两个标签页同时打开，状态怎么收敛？
+summary: 考察多标签页场景下的状态同步，以及连接标识与链状态的一致性维护。
+status: review
+difficulty: advanced
+category: data
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - multi-tab
+  - consistency
+  - reconnect
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: Ethereum Yellow Paper（§4.1 World State）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+  - title: EIP-1193：Ethereum Provider JavaScript API（§Events 的 chainChanged、accountsChanged）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: wagmi：createConfig（§Parameters 的 storage；§State 的 connections）
+    url: https://wagmi.sh/react/api/createConfig
+  - title: wagmi：TanStack Query（§Persistence via External Stores）
+    url: https://wagmi.sh/react/guides/tanstack-query
+---
+
+## 题目
+
+用户报告：他在 A 标签页完成了交易，切到 B 标签页看到的仍是旧余额；还有一次他在两个标签页分别提交了交易，第二笔直接报错。
+
+请说明这两个现象的成因，以及你的状态层需要具备哪些能力才能收敛。
+
+## 考察目标
+
+- 能否识别标签页之间状态互不可见的问题。
+- 是否理解持久化与状态广播的差别。
+- 能否给出避免重复提交的方案。
+
+## 30 秒回答
+
+账户 nonce 是链上账户状态中的序号，不能简单等同于用户在页面发起的交易数：EIP-7702 授权也可能使它递增。两个标签页若自行分配相同 nonce，提交时可能冲突。标签页各有内存状态；可用 `storage` 事件或 BroadcastChannel 通知另一页重新读取链上状态，并让钱包管理交易 nonce，应用层只协调同一业务动作的重复提交。
+
+## 深入回答
+
+- 【协议保证】账户状态包含 nonce，普通外部账户发送交易时会消耗相应序号；EIP-7702 授权也可递增被授权账户的 nonce，不能把它无条件当作页面交易计数（依据：Yellow Paper §4.1 World State；EIP-7702 §Behavior）。
+- 【协议保证】provider 在账户集合变化时发出 `accountsChanged`、在链变化时发出 `chainChanged`，这两个事件是标签页内状态更新的输入（依据：EIP-1193 §Events）
+- 【实现行为】wagmi 通过 `createConfig` 的 `storage` 参数持久化连接状态，页面重新加载后可以恢复（依据：wagmi：createConfig §Parameters 的 storage）
+- 【实现行为】wagmi 暴露配置的 `state.connections` 等状态与订阅接口，状态变化可以驱动界面重读（依据：wagmi：createConfig §State 的 connections）
+- 【实现行为】查询缓存可以写入外部存储，但多标签页的内存缓存不会自动同步；收到跨页通知后仍需重新校验链上数据（依据：wagmi：TanStack Query §Persistence via External Stores；浏览器存储行为）。
+- 【工程经验】标签页各自持有内存状态，持久化写入对其他标签页不可见，需要显式的变更通知机制（依据：工程经验，无规范依据）
+- 【工程经验】两个标签页各自预测 nonce 并同时提交时，后到的交易可能因 nonce 冲突被节点拒绝或被替换（依据：工程经验，无规范依据）
+- 【工程经验】把待处理交易队列放进共享存储，并对提交动作做互斥，可以避免同一账户的并发提交（依据：工程经验，无规范依据）
+- 【工程经验】收到外部变更后以链上数据刷新，而不是合并两边的本地预测，能避免状态错乱（依据：工程经验，无规范依据）
+- 【工程经验】跨标签页通知不可用时降级为「标签页激活时重读状态」，一致性收敛到切换时刻；写操作仍然每次都经过钱包确认（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 认为持久化存储会自动同步内存状态（依据：工程经验，无规范依据）
+- 待处理交易队列只存在内存里（依据：Yellow Paper §4.1 World State）
+- 两个标签页同时提交交易而不做互斥（依据：工程经验，无规范依据）
+- 收到外部变更后直接合并本地预测，造成 nonce 错乱（依据：工程经验，无规范依据）
+- 认为「另一个标签页已确认」可以复用授权（依据：EIP-1193 §Events）
+
+## 面试官追问
+
+1. 你如何在浏览器环境里通知其他标签页状态变化？
+2. 通知风暴如何避免？
+3. 两个标签页分别连接不同钱包时，状态如何区分？
+4. 浏览器不支持跨标签页通知时，你的降级方案是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道标签页之间内存状态不共享。
+- 知道需要重新读取链上数据才能收敛。
+
+### 中级回答
+
+- 能指出待处理队列需要共享，否则会出现 nonce 冲突。
+- 能给出「共享来源 + 变更通知 + 链上为准」的方案。
+
+### 高级回答
+
+- 能设计出带互斥提交与通知节流的一致性方案，并说明降级路径。
+- 能明确跨标签页同步不能替代用户对写操作的确认。
+
+## 参考资料
+
+- [Ethereum Yellow Paper（§4.1 World State）](https://ethereum.github.io/yellowpaper/paper.pdf)
+- [EIP-1193：Ethereum Provider JavaScript API（§Events 的 chainChanged、accountsChanged）](https://eips.ethereum.org/EIPS/eip-1193)
+- [wagmi：createConfig（§Parameters 的 storage；§State 的 connections）](https://wagmi.sh/react/api/createConfig)
+- [wagmi：TanStack Query（§Persistence via External Stores）](https://wagmi.sh/react/guides/tanstack-query)

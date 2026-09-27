@@ -1,0 +1,96 @@
+---
+id: contract-033
+slug: untrusted-contract-return-values
+title: 合约说的话，前端要信几分？
+summary: 考察链上数据的信任边界，以及前端在展示与决策上的职责划分。
+status: review
+difficulty: advanced
+category: contract
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - untrusted-data
+  - display
+  - trust-boundary
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-20：Token Standard（§Specification 的 name、symbol、decimals、balanceOf）
+    url: https://eips.ethereum.org/EIPS/eip-20
+  - title: EIP-721：Non-Fungible Token Standard（§Specification 的 Metadata 扩展）
+    url: https://eips.ethereum.org/EIPS/eip-721
+  - title: ethereum.org：Introduction to smart contracts（§Permissionless、§Limitations）
+    url: https://ethereum.org/en/developers/docs/smart-contracts/
+---
+
+## 题目
+
+你的应用支持用户自行添加合约地址来追踪资产。有用户添加了一个合约，页面显示「年化收益 999999%」「已审计」「官方认证」，于是他把资金转了进去。
+
+事后发现这些字段全部来自该合约的自述。请说明链上数据在信任层面的分层，以及前端应该如何处理这类「自述信息」。
+
+## 考察目标
+
+- 能否按可信度对链上数据分层。
+- 是否理解「合约自述」与「外部验证」的区别。
+- 能否给出展示与决策的职责划分。
+
+## 30 秒回答
+
+EIP-20 把 `name`、`symbol`、`decimals` 标为可选，返回内容由实现给出，标准接口只约束方法形态。因此年化收益、审计状态、认证标识这类字段可以任意编造，展示时应标注来源为「合约自述」，并与外部验证过的信息分开呈现。
+
+## 深入回答
+
+- 【协议保证】EIP-20 的 `name`、`symbol`、`decimals` 标为 OPTIONAL，规范说明接口与其他合约不应假定这些值存在（依据：EIP-20 §Specification 的 name、symbol、decimals）
+- 【协议保证】`balanceOf`、`totalSupply` 等方法在 EIP-20 中定义了语义与返回值约定，规范不包含对实现诚实性的检查机制（依据：EIP-20 §Specification 的 balanceOf、totalSupply）
+- 【协议保证】EIP-721 的 Metadata 扩展同样属于可选部分，`tokenURI` 指向的内容由实现给出（依据：EIP-721 §Specification 的 Metadata 扩展）
+- 【工程经验】即使在标准接口上，返回值的正确性仍取决于实现；对数量级异常的返回值做交叉核对（例如与链上转账记录对照）能提前发现异常（依据：工程经验，无规范依据）
+- 【工程经验】收益率、审计声明、认证标识属于合约自述，可以任意编造；界面上标注来源或直接不展示无法验证的字段（依据：工程经验，无规范依据）
+- 【工程经验】「已审计」「官方认证」这类结论来自链下渠道，与合约自述不是同一来源，标注时要区分开（依据：工程经验，无规范依据）
+- 【工程经验】合约地址、部署交易哈希与函数签名不随合约自述变化，适合作为用户核对的锚点（依据：工程经验，无规范依据）
+- 【工程经验】不展示自述字段会牺牲可用性（代币名称本身就属于自述信息），可行的折中是展示并标注来源，对收益率、审计状态这类字段采取更严格的策略（依据：工程经验，无规范依据）
+- 【工程经验】用户自行添加地址时给出风险提示、默认不做加权推荐，可以降低误信概率（依据：ethereum.org Introduction to smart contracts §Permissionless）
+- 【工程经验】「这个合约安全」的结论不适合由前端给出，前端提供的是信息与提示，决策责任仍在用户（依据：ethereum.org Introduction to smart contracts §Limitations）
+
+## 常见错误
+
+- 认为链上返回的数据就是可信数据（依据：ethereum.org Introduction to smart contracts §Permissionless）
+- 把合约自述的年化收益率当作产品卖点展示（依据：工程经验，无规范依据）
+- 把「已验证」「已审计」标签加在来源不明的合约上（依据：工程经验，无规范依据）
+- 不区分自述信息与外部验证信息，界面混排（依据：工程经验，无规范依据）
+- 因无法验证而拒绝展示全部链上信息，牺牲可用性（依据：EIP-20 §Specification 的 OPTIONAL 说明）
+
+## 面试官追问
+
+1. 用户自行添加的合约，你会默认展示还是要求确认？
+2. 界面上怎样表达「这个数值来自合约自述」？
+3. 恶意合约伪装成你已收录的代币，界面能识别吗？靠什么识别？
+4. 你会选择哪些不可伪造的信息作为用户核对锚点？
+
+## 评分标准
+
+### 初级回答
+
+- 知道合约返回的内容不代表真实。
+- 知道收益率、审计状态这类字段可能被伪造。
+
+### 中级回答
+
+- 能对链上数据按可信度分层，并区分自述信息与外部验证信息。
+- 能给出加来源标注与默认不做推荐的策略。
+
+### 高级回答
+
+- 能指出标准接口的返回值也可能与事实不符，并给出格式校验、交叉核对与来源确认的组合方案。
+- 能说明用户核对锚点的选择标准，以及前端不适合给出安全性结论的边界。
+
+## 参考资料
+
+- [EIP-20：Token Standard（§Specification 的 name、symbol、decimals、balanceOf）](https://eips.ethereum.org/EIPS/eip-20)
+- [EIP-721：Non-Fungible Token Standard（§Specification 的 Metadata 扩展）](https://eips.ethereum.org/EIPS/eip-721)
+- [ethereum.org：Introduction to smart contracts（§Permissionless、§Limitations）](https://ethereum.org/en/developers/docs/smart-contracts/)

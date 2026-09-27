@@ -1,0 +1,91 @@
+---
+id: security-010
+slug: contract-verified-claim-trust
+title: 「合约已验证」这个标签能信多少？
+summary: 考察源码验证的实际含义与边界，以及标签类信息在风控中的定位。
+status: review
+difficulty: intermediate
+category: security
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - verification
+  - trust
+  - labeling
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "ethereum.org：Verifying smart contracts（§What is source code verification?、§What is full verification?、§Source code verification tools）"
+    url: https://ethereum.org/en/developers/docs/smart-contracts/verifying/
+  - title: "ethereum.org：Introduction to smart contracts（§Limitations）"
+    url: https://ethereum.org/en/developers/docs/smart-contracts/
+---
+
+## 题目
+
+你们的界面计划给合约加一个「已验证」标签，用来帮助用户识别风险。审核时有人提出：这个标签可能带来反效果。
+
+请说明「已验证」在技术上到底代表什么，以及这个标签应该怎么用才不至于误导。
+
+## 考察目标
+
+- 能否准确说明验证的实际含义。
+- 是否理解验证状态不能推出安全或可信。
+- 能否给出标签的使用边界与文案。
+
+## 30 秒回答
+
+「已验证」表示链上部署的字节码与公开源码一致，说明源码可读；它不说明代码意图、漏洞与部署者身份。因此标签应限定为「源码已验证并与链上字节码一致」这类事实描述，不能作为安全结论使用。
+
+## 深入回答
+
+- 【实现行为】区块浏览器与验证工具（Etherscan、Blockscout、Sourcify、Tenderly 等）提供源码验证服务，验证把公开源码与链上字节码对应起来（依据：ethereum.org：Verifying smart contracts §Source code verification tools）。
+- 【工程经验】验证解决的是「源码与字节码是否一致」，不说明代码做了什么、有没有漏洞，也不说明部署者是谁（依据：ethereum.org：Verifying smart contracts §What is source code verification?；作为背景，非协议规范）。
+- 【工程经验】代理模式下验证对象是某个具体地址：代理与实现是两份代码，标签需要写明被验证的是哪一层（依据：工程经验，无规范依据）。
+- 【工程经验】合约升级后实现地址变化，原有验证结论不再自动适用，需要重新核对（依据：工程经验，无规范依据）。
+- 【工程经验】「已审计」「官方」属于结论型标签，来源需要是独立第三方，不能从「已验证」推导出来（依据：工程经验，无规范依据）。
+- 【工程经验】标签文案限定为事实描述，例如列出验证时间与被验证的地址，供用户核对（依据：工程经验，无规范依据）。
+- 【工程经验】标签存在时，确认强度与风险提示保持不变，不因标签收起关键参数（依据：工程经验，无规范依据）。
+- 【工程经验】透传第三方提供的验证状态前，先核对它的含义与更新方式（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把「已验证」当作「安全」或「可信」（【工程经验】）。
+- 用它替代表格中的风险提示（【工程经验】）。
+- 代理场景下不区分被验证的是代理还是实现（【工程经验】）。
+- 合约升级后不更新标签（【工程经验】）。
+- 把第三方提供的标签直接透传而不核对含义（【工程经验】）。
+
+## 面试官追问
+
+1. 代理合约下你会如何标注验证范围？
+2. 如果只有代理被验证，用户看到的风险是什么？
+3. 你会用什么方式帮助用户核对实现合约地址？
+4. 标签的更新流程应该由谁负责？
+
+## 评分标准
+
+### 初级回答
+
+- 知道验证指公开源码与链上字节码一致。
+- 知道验证不说明代码是否安全。
+
+### 中级回答
+
+- 能列出验证无法覆盖的范围（漏洞、意图、部署者身份）。
+- 能给出「只描述事实、不与结论型标签混用」的文案原则。
+
+### 高级回答
+
+- 能说明代理场景下验证范围的标注方式，并给出实现合约的核对入口。
+- 能给出合约升级后的标签更新流程。
+
+## 参考资料
+
+- [ethereum.org：Verifying smart contracts（§What is source code verification?、§What is full verification?、§Source code verification tools）](https://ethereum.org/en/developers/docs/smart-contracts/verifying/)
+- [ethereum.org：Introduction to smart contracts（§Limitations）](https://ethereum.org/en/developers/docs/smart-contracts/)

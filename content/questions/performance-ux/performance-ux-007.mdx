@@ -1,0 +1,100 @@
+---
+id: performance-ux-007
+slug: mobile-wallet-deeplink-roundtrip
+title: 手机端跳去钱包再跳回来，状态怎么不丢？
+summary: 考察移动端往返流程中的状态保持，以及会话恢复与用户回跳的处理。
+status: review
+difficulty: advanced
+category: performance-ux
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - mobile
+  - deeplink
+  - session
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: WalletConnect Specs：Pairing URI（§Parameters 的 symKey、methods、relay-protocol、expiryTimestamp）
+    url: https://specs.walletconnect.com/2.0/specs/clients/core/pairing/pairing-uri
+  - title: wagmi：walletConnect connector（§Parameters 的 projectId、metadata、storageOptions、customStoragePrefix）
+    url: https://wagmi.sh/react/api/connectors/walletConnect
+  - title: EIP-1193：Ethereum Provider JavaScript API（§Events 的 disconnect）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: wagmi：createConfig（§Parameters 的 storage）
+    url: https://wagmi.sh/react/api/createConfig
+---
+
+## 题目
+
+在手机上，用户点击「连接钱包」后被跳转到钱包应用，确认后再跳回浏览器。用户反馈：回来之后页面像是重置了，有时需要重新连接，有时看不到自己的操作。
+
+请说明这段往返流程中状态为什么会丢，以及需要做哪些设计来保证连续性。
+
+## 考察目标
+
+- 能否识别移动端往返与桌面端的差异。
+- 是否理解会话持久化与回跳参数的作用。
+- 能否给出恢复流程与用户提示。
+
+## 30 秒回答
+
+WalletConnect 的 Pairing URI 由 `symKey`、`methods`、`relay-protocol` 等必需参数组成，`expiryTimestamp` 给出配对的过期时间。移动端跳转到钱包应用时，浏览器页面可能被系统挂起甚至回收，内存状态不适合作为恢复依据；恢复流程要能在回跳后识别同一会话，并继续原来的操作意图。
+
+## 深入回答
+
+- 【协议保证】WalletConnect 的 Pairing URI 规范包含必需参数 `symKey`、`methods`、`relay-protocol`，以及可选参数 `expiryTimestamp`（依据：WalletConnect Specs：Pairing URI §Parameters）
+- 【协议保证】`expiryTimestamp` 以秒为单位，规范建议生成时取当前时间加五分钟，超过该时间配对被视为过期（依据：WalletConnect Specs：Pairing URI §Parameters 的 expiryTimestamp）
+- 【协议保证】provider 的 `disconnect` 事件在连接断开时发出，携带错误对象，可用于区分会话丢失（依据：EIP-1193 §Events 的 disconnect）
+- 【实现行为】wagmi 的 walletConnect 连接器用 `projectId` 与 `metadata` 初始化，`storageOptions` 与 `customStoragePrefix` 影响会话信息的持久化位置（依据：wagmi：walletConnect connector §Parameters 的 projectId、metadata、storageOptions、customStoragePrefix）
+- 【实现行为】`createConfig` 的 `storage` 参数决定连接状态在浏览器中的持久化方式（依据：wagmi：createConfig §Parameters 的 storage）
+- 【工程经验】页面被系统回收后内存状态消失，关键状态需要落到持久化存储（依据：工程经验，无规范依据）
+- 【工程经验】需要持久化的内容有三类：连接会话信息、待执行的操作意图、提交去重标识（依据：工程经验，无规范依据）
+- 【工程经验】回跳后先读取持久化状态并尝试恢复连接，恢复中显示明确中间态，恢复成功后继续原来的操作意图（依据：工程经验，无规范依据）
+- 【工程经验】会话过期与用户拒绝授权分别处理：前者提示重新连接并保留操作意图，后者回到操作前状态且不自动重试（依据：工程经验，无规范依据）
+- 【工程经验】记录往返耗时、恢复成功率与失败原因，用于区分钱包侧问题与状态设计问题（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 把会话与操作意图只放在内存里（依据：工程经验，无规范依据）
+- 回跳后当作新会话开始，用户需要重复授权（依据：WalletConnect Specs：Pairing URI §Parameters 的 expiryTimestamp）
+- 恢复过程中显示「未连接」，让用户以为失败（依据：工程经验，无规范依据）
+- 不保留操作意图，用户回来后需要重新操作（依据：工程经验，无规范依据）
+- 不做去重，用户重复提交产生多笔交易（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 页面被系统回收后，你能依赖哪些存储？
+2. 用户从钱包返回但拒绝授权时，界面应该怎样？
+3. 如何区分「用户主动离开」与「等待回跳」？
+4. 恢复失败时你如何避免用户重复点击导致多笔交易？
+
+## 评分标准
+
+### 初级回答
+
+- 知道移动端跳转会导致页面挂起。
+- 知道需要持久化会话信息以便恢复。
+
+### 中级回答
+
+- 能列出需要持久化的三类内容，并说明回跳后要继续原操作意图。
+- 能区分恢复中与未连接的界面表现。
+
+### 高级回答
+
+- 能给出恢复失败与拒绝授权两类情况的处理路径，并用去重标识避免重复提交。
+- 能提出可观测指标用于定位往返流程问题。
+
+## 参考资料
+
+- [WalletConnect Specs：Pairing URI（§Parameters 的 symKey、methods、relay-protocol、expiryTimestamp）](https://specs.walletconnect.com/2.0/specs/clients/core/pairing/pairing-uri)
+- [wagmi：walletConnect connector（§Parameters 的 projectId、metadata、storageOptions、customStoragePrefix）](https://wagmi.sh/react/api/connectors/walletConnect)
+- [EIP-1193：Ethereum Provider JavaScript API（§Events 的 disconnect）](https://eips.ethereum.org/EIPS/eip-1193)
+- [wagmi：createConfig（§Parameters 的 storage）](https://wagmi.sh/react/api/createConfig)

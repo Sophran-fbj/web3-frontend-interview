@@ -1,0 +1,95 @@
+---
+id: transaction-030
+slug: nonce-consumption-and-internal-calls
+title: 合约内部调用会消耗谁的 nonce？
+summary: 考察随机数在两类账户上的不同语义，以及它对「账户活跃度」类指标的影响。
+status: review
+difficulty: advanced
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - nonce
+  - internal-call
+  - account-model
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: Ethereum Yellow Paper：World State（§4.1）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+  - title: EIP-7702：Set EOA account code（§Specification 的 Behavior）
+    url: https://eips.ethereum.org/EIPS/eip-7702
+  - title: EIP-1474：Remote procedure call 规范（§eth_getLogs）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+运营想做一个「用户活跃度」看板，初版方案是用账户的随机数当作「发送过的交易数」，并统计合约地址的随机数来判断协议活跃度。
+
+请指出这个方案的问题，并说明随机数在两类账户上分别代表什么。
+
+## 考察目标
+
+- 是否理解随机数在外部账户与合约账户上的两种语义。
+- 能否指出内部调用不消耗调用者随机数这一事实。
+- 能否给出替代的统计口径。
+
+## 30 秒回答
+
+nonce 是账户状态中的序号，不等于业务操作次数。普通外部账户发交易会递增 nonce，合约之间的普通调用不会因此递增被调账户的 nonce；但合约执行 `CREATE` 会递增创建者的 nonce，EIP-7702 授权也可能递增被授权账户的 nonce。因此不能说整条调用链只有交易发起者的 nonce 会变化。业务活跃度应按明确的事件、交易或应用记录口径统计。
+
+## 深入回答
+
+- 【协议保证】账户状态包含 nonce；普通外部账户交易与合约创建分别是常见的递增来源，但 EIP-7702 授权及委托执行增加了其他情形（依据：Yellow Paper §4.1 World State；EIP-7702 §Behavior、§Backwards Compatibility）。
+- 【协议保证】交易由外部账户发起，交易被处理时发送者的 nonce 随之递增（依据：EIP-7702 §Specification 的 Behavior 对发送者 nonce 的处理）。
+- 【协议保证】普通 `CALL` 不会仅因调用而递增被调账户的 nonce；调用过程中若有 `CREATE`，创建者的 nonce 仍会变化（依据：Yellow Paper §7 Contract Creation；EIP-7702 §Backwards Compatibility）。
+- 【协议保证】合约创建新合约时，递增的是发起创建的合约账户的 nonce，因为该账户的 nonce 记录它创建过的合约数量（依据：Yellow Paper §4.1 World State）。
+- 【工程经验】nonce 统计与业务活跃度口径不同：批量操作、授权和合约创建都可能让两者不成比例（依据：工程经验，无规范依据）。
+- 【工程经验】nonce 与业务动作不是一对一：一笔交易可能包含多个业务动作（批量调用），一次业务动作也可能拆成多笔交易（依据：工程经验，无规范依据）。
+- 【工程经验】统计口径建议以事件日志为源：按目标合约与事件类型筛选，需要「用户操作次数」时按发起者地址聚合，通常需要索引服务或自建索引（依据：EIP-1474 §eth_getLogs 的筛选参数；工程实现）。
+- 【工程经验】统计侧要处理重组与幂等：按确认数或最终性等级收敛，并对同一交易哈希去重（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 用 nonce 衡量用户活跃度（【协议保证】nonce 语义与业务动作无关，依据：Yellow Paper §4.1 World State）。
+- 认为内部调用会增加调用者的 nonce。
+- 忽略一次交易可以包含多个业务动作。
+- 把合约账户的 nonce 理解为「合约被调用次数」。
+- 统计时不做重组与幂等处理。
+
+## 面试官追问
+
+1. 如果业务需要区分「用户主动操作」与「机器人操作」，你会补充哪些维度？
+2. 合约创建新合约时，哪一方的 nonce 会变化？
+3. 重组导致统计回退时，看板如何保持可信？
+4. 你会如何向上级解释「nonce 不能代表活跃度」？
+5. 前端在这个统计链路里应承担什么、不承担什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道外部账户的 nonce 是已发送交易的数量。
+- 知道内部调用不产生新的交易。
+
+### 中级回答
+
+- 能说明合约账户的 nonce 语义是「创建过的合约数量」，并指出内部调用不递增调用者 nonce。
+- 能提出以事件日志为统计源的替代方案。
+
+### 高级回答
+
+- 能分析不同统计口径的失真方向，并区分「用户操作次数」与「协议活跃度」。
+- 能指出重组与幂等对统计数据的影响，并给出收敛策略。
+
+## 参考资料
+
+- [Ethereum Yellow Paper：World State（§4.1）](https://ethereum.github.io/yellowpaper/paper.pdf)
+- [EIP-7702：Set EOA account code（§Specification 的 Behavior）](https://eips.ethereum.org/EIPS/eip-7702)
+- [EIP-1474：Remote procedure call 规范（§eth_getLogs）](https://eips.ethereum.org/EIPS/eip-1474)

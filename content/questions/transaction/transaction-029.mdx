@@ -1,0 +1,97 @@
+---
+id: transaction-029
+slug: mempool-eviction-and-dropped-transaction
+title: 交易会「自己消失」吗？
+summary: 考察待处理交易被丢弃的机制，以及前端如何判断与处理这种状态。
+status: review
+difficulty: advanced
+category: transaction
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - mempool
+  - dropped
+  - pending
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1474：Remote procedure call 规范（§eth_getTransactionByHash、§eth_getTransactionReceipt）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-4337：Account Abstraction（§Semi-abstracted Nonce Support）
+    url: https://eips.ethereum.org/EIPS/eip-4337
+  - title: Ethereum Yellow Paper：World State（§4.1）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+  - title: ethereum.org：Transactions（§Transaction lifecycle）
+    url: https://ethereum.org/en/developers/docs/transactions/
+---
+
+## 题目
+
+用户报告：「交易发出去了，哈希也有了，过了半小时再看，区块浏览器上什么都没有，钱包里也没有这笔记录。」
+
+请说明一笔已广播的交易有可能在什么环节「消失」，以及前端如何判断它已经不再可能被打包。
+
+## 考察目标
+
+- 能否说明交易从广播到打包的完整路径。
+- 是否理解节点会按本地策略丢弃待处理交易。
+- 能否给出「已被丢弃」的判定方法与用户操作。
+
+## 30 秒回答
+
+交易广播后可能进入部分节点的待处理池，也可能被节点拒绝或按本地策略移除。查不到哈希不等于已丢弃；要同时看交易收据、链上 nonce 和多个端点的待处理记录。即使多处查不到，也只能标为「疑似丢弃」：旧交易仍可能在别处传播。若用户决定重发，应沿用同一交易 nonce，并核对新旧交易意图；只有收据状态成功且达到所需确认程度后才把业务标为完成。
+
+## 深入回答
+
+- 【协议保证】交易查询与收据查询都以交易哈希为输入，交易未被打包时收据不可用（依据：EIP-1474 §eth_getTransactionByHash、§eth_getTransactionReceipt）。
+- 【协议保证】普通交易的发送账户不能用同一 nonce 让两笔交易都上链；但这不保证新交易一定能替换旧交易，节点仍有本地替换策略（依据：Yellow Paper §6 Transaction Execution）。
+- 【协议保证】链上账户 nonce 可用于判断某个交易序号是否已被消耗，不能单独证明某个哈希已丢弃（依据：Yellow Paper §4.1 World State；EIP-1474 §eth_getTransactionCount）。
+- 【工程经验】广播路径上的每个环节都可能让交易不可见：节点校验失败而不进入网络、待处理集合按本地策略丢弃、传播只到达部分节点、费用偏低长期不被选中（依据：ethereum.org Transactions §Transaction lifecycle 的流程描述）。
+- 【工程经验】待处理集合是节点本地的视图，不同端点在同一时刻的结果可能不一致，因此判定需要查询多个可信端点（依据：工程经验，无规范依据）。
+- 【工程经验】链上 nonce 尚未消耗、多端点查不到哈希且等待较久，只能提示「疑似丢弃」；私有传播或端点视图差异仍可能让旧交易后来上链（依据：工程经验，无规范依据）。
+- 【工程经验】重新提交要沿用同一 nonce；换用新 nonce 会在旧交易仍被打包时造成两笔都生效，或留下无法推进的序号空洞（依据：工程经验，无规范依据）。
+- 【工程经验】界面保留「未知」或「疑似丢弃」状态并提供核对、重发入口；在有收据和足够确认前不把业务状态标为最终完成（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为交易一旦广播，就总会在某个时刻被打包。
+- 只用一次哈希查询结果作为丢弃判断依据。
+- 疑似丢弃后直接用新 nonce 重发，旧交易仍被打包时可能两笔都生效（依据：Yellow Paper §6 Transaction Execution）。
+- 在等待期间把业务状态标记为已完成。
+- 只查询单一 RPC 就下结论。
+
+## 面试官追问
+
+1. 你怎么区分「被丢弃」与「节点暂时不同步」？
+2. 重新提交时如何降低与旧交易同时生效的风险？
+3. 如果用户已经基于「交易成功」的假设做了下一步操作，你如何补救？
+4. 你会如何监控丢弃率，并把结果反馈到费率策略上？
+
+## 评分标准
+
+### 初级回答
+
+- 知道交易先进入待处理集合、再由验证者打包。
+- 知道已广播的交易可能长时间不被打包。
+
+### 中级回答
+
+- 能说明待处理集合是节点本地的，可见性取决于查询端点。
+- 能给出结合链上 nonce 与多端点查询判断丢弃的方法。
+
+### 高级回答
+
+- 能给出跨端点的判定流程，并说明重发要沿用同一 nonce。
+- 能说明业务状态不得在确认前前移，以及丢弃后的回滚处理。
+
+## 参考资料
+
+- [EIP-1474：Remote procedure call 规范（§eth_getTransactionByHash、§eth_getTransactionReceipt）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-4337：Account Abstraction（§Semi-abstracted Nonce Support）](https://eips.ethereum.org/EIPS/eip-4337)
+- [Ethereum Yellow Paper：World State（§4.1）](https://ethereum.github.io/yellowpaper/paper.pdf)
+- [ethereum.org：Transactions（§Transaction lifecycle）](https://ethereum.org/en/developers/docs/transactions/)

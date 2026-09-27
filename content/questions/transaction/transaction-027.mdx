@@ -1,0 +1,94 @@
+---
+id: transaction-027
+slug: underpaid-max-fee-behavior
+title: 费用上限设低了，交易会怎样？
+summary: 考察费用上限与基础费用的关系，以及低价交易的等待与失效表现。
+status: review
+difficulty: advanced
+category: transaction
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - eip-1559
+  - base-fee
+  - mempool
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1559：Fee market change（§Abstract、§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-1559
+  - title: EIP-4337：Account Abstraction（§Semi-abstracted Nonce Support）
+    url: https://eips.ethereum.org/EIPS/eip-4337
+  - title: ethereum.org：Transactions（§Transaction lifecycle）
+    url: https://ethereum.org/en/developers/docs/transactions/
+---
+
+## 题目
+
+你在做「手续费档位」功能，提供了慢速、标准、快速三档。有用户选了慢速档后，交易一直停留在待处理状态，界面上只显示一个转圈动画。
+
+请说明费用上限偏低时交易会发生什么、为什么它会长时间停住，以及界面应该给出什么可执行的操作。
+
+## 考察目标
+
+- 能否说明基础费用与费用上限的关系。
+- 是否知道低价交易停住的机制与最终可能的结局。
+- 能否给出可操作的界面方案。
+
+## 30 秒回答
+
+基础费用由协议按父区块的 gas 使用量与目标值计算，单块变化幅度有上限；交易要被纳入区块，其 `max_fee_per_gas` 需要不低于该区块的基础费用。上限低于当前基础费用的交易在待处理集合里缺少竞争力，可能长时间等待，也可能被节点丢弃或被同 nonce 的更高费用交易替换。
+
+## 深入回答
+
+- 【协议保证】基础费用按父区块的 gas 使用量与目标值计算，变化幅度受 `BASE_FEE_MAX_CHANGE_DENOMINATOR`（8）约束，即单块最多约 12.5%（依据：EIP-1559 §Specification 的基础费用计算与常量定义）。
+- 【协议保证】交易要被纳入区块，需要满足 `max_fee_per_gas >= block.base_fee_per_gas` 的断言（依据：EIP-1559 §Specification 的交易验证断言）。
+- 【协议保证】成交价格按 `min(max_priority_fee_per_gas, max_fee_per_gas - base_fee) + base_fee` 计算，基础费用被销毁、优先费归出块方；只覆盖基础费用而不给优先费的交易在规则上有效，但缺少被优先选取的动机（依据：EIP-1559 §Specification 的费用结算、§Abstract）。
+- 【协议保证】同一账户同一 nonce 至多一笔交易能上链，因此用同一 nonce 提高费用重发时，先被打包的那笔生效，另一笔失效（依据：EIP-4337 §Semi-abstracted Nonce Support 对 nonce 唯一性的说明）。
+- 【工程经验】待处理集合的容量与保留策略由各节点实现决定，公开资料只描述「被打包才算成功」的流程而没有时间承诺，因此等待时长不可预测（依据：ethereum.org Transactions §Transaction lifecycle；具体策略因客户端与服务商而异）。
+- 【工程经验】等待中的结局需要分开处理：仍在待处理集合、被节点丢弃、被同 nonce 的交易替换，三者的界面与后续操作不同（依据：工程经验，无规范依据）。
+- 【工程经验】界面除了「加速」还要提供「放弃等待」入口，并说明放弃后如何确认最终状态（依据：工程经验，无规范依据）。
+- 【工程经验】未确认之前不把资产显示为已转移，业务状态保持未完成，避免交易被丢弃后回滚业务数据（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为费用上限低的交易会立刻失败，忽略它可能长时间停留在待处理状态。
+- 在等待期间就把界面显示为成功。
+- 只提供「加速」而不提供「取消或放弃等待」。
+- 把基础费用当作固定值展示，忽略它按区块调整（【协议保证】基础费用每块按父区块使用量重算，依据：EIP-1559 §Specification）。
+- 交易被丢弃后不清理本地待处理状态。
+
+## 面试官追问
+
+1. 你如何在界面上让用户理解「等待中」与「已失败」的区别？
+2. 提高费用重发时，为什么需要沿用相同的 nonce？
+3. 如果基础费用在用户等待期间回落，你会主动提示他继续等待吗？
+4. 交易被丢弃后，业务侧的订单状态如何回退？
+
+## 评分标准
+
+### 初级回答
+
+- 知道基础费用由协议按区块调整，交易出价需要覆盖它。
+- 知道低价交易可能长时间等待而不是立刻失败。
+
+### 中级回答
+
+- 能说明基础费用的调整方向，并解释只覆盖基础费用为何缺少打包动机。
+- 能列出等待、被丢弃、被替换三种不同结局。
+
+### 高级回答
+
+- 能给出「等待中」的可操作界面（加速、放弃）并说明同 nonce 重发的原理。
+- 能说明未确认期间业务状态保持未完成，以及被丢弃后的回滚处理。
+
+## 参考资料
+
+- [EIP-1559：Fee market change（§Abstract、§Specification）](https://eips.ethereum.org/EIPS/eip-1559)
+- [EIP-4337：Account Abstraction（§Semi-abstracted Nonce Support）](https://eips.ethereum.org/EIPS/eip-4337)
+- [ethereum.org：Transactions（§Transaction lifecycle）](https://ethereum.org/en/developers/docs/transactions/)

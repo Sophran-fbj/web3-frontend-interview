@@ -1,0 +1,99 @@
+---
+id: performance-ux-009
+slug: disable-cta-before-wallet-prompt
+title: 按钮该在什么时候禁用？
+summary: 考察提交前校验的时机，以及无谓弹窗对用户信任的消耗。
+status: review
+difficulty: beginner
+category: performance-ux
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - cta
+  - validation
+  - precheck
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1474：Ethereum JSON-RPC Specification（§Specification 的 Methods 条目 eth_call、eth_estimateGas、eth_getBalance、eth_getTransactionCount、eth_getCode）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-1193：Ethereum Provider JavaScript API（§Provider Errors）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: wagmi：useConnection（§Return Type 的 status、isConnecting / isReconnecting / isConnected / isDisconnected）
+    url: https://wagmi.sh/react/api/hooks/useConnection
+  - title: wagmi：useSimulateContract（§Usage、§Return Type）
+    url: https://wagmi.sh/react/api/hooks/useSimulateContract
+---
+
+## 题目
+
+用户抱怨：点了「兑换」按钮后钱包弹窗出现，确认后却报错说余额不足；换个场景，用户没连钱包点按钮，直接弹出连接请求，连完还要再点一次。
+
+请说明按钮的启用条件应该怎么设计，以及为什么应在打开钱包之前完成校验。
+
+## 考察目标
+
+- 能否给出按钮启用条件清单。
+- 是否理解无谓弹窗的代价。
+- 能否设计出「先校验、后请求」的流程。
+
+## 30 秒回答
+
+只读检查在协议层不需要钱包参与：`eth_getBalance`、`eth_getTransactionCount`、`eth_getCode` 可以读取余额、nonce 与合约代码，`eth_call` 执行不改变状态的调用，`eth_estimateGas` 估算执行所需 gas。把这些检查放在打开钱包之前，可以让弹窗只用于签名与发送；用户拒绝（错误码 `4001`）时保持输入并允许重试。
+
+## 深入回答
+
+- 【协议保证】`eth_call` 执行一次不改变链上状态的调用，`eth_estimateGas` 估算执行所需 gas，两者可用于提交前的检查（依据：EIP-1474 §Specification 的 Methods 条目 eth_call、eth_estimateGas）
+- 【协议保证】`eth_getBalance`、`eth_getTransactionCount`、`eth_getCode` 分别读取账户余额、nonce 与合约代码（依据：EIP-1474 §Specification 的 Methods 条目 eth_getBalance、eth_getTransactionCount、eth_getCode）
+- 【协议保证】`4001` 表示用户拒绝了请求，属于 provider 错误码（依据：EIP-1193 §Provider Errors）
+- 【实现行为】wagmi 的 `useSimulateContract` 在提交前模拟合约调用，返回模拟结果与错误（依据：wagmi：useSimulateContract §Usage、§Return Type）
+- 【实现行为】`useConnection` 的 `isConnecting / isReconnecting / isConnected / isDisconnected` 可以直接驱动按钮的启用与文案（依据：wagmi：useConnection §Return Type）
+- 【工程经验】每次打开钱包都是高成本交互，先本地校验再请求能减少无谓弹窗（依据：工程经验，无规范依据）
+- 【工程经验】未连接时按钮文案表达「连接钱包」，连接完成后再表达真实动作，避免一次点击既连接又执行（依据：工程经验，无规范依据）
+- 【工程经验】用户拒绝后保留输入与滚动位置、不自动重试，并给出可以再次尝试的提示（依据：工程经验，无规范依据）
+- 【工程经验】校验依赖的数据会过期（余额可能刚被另一笔交易用掉），提交前再做一次检查可以降低失败概率，但链上回滚仍可能发生（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 未连接时按钮直接触发连接并要求用户再点一次执行（依据：工程经验，无规范依据）
+- 不校验链就打开钱包，用户确认后才报错（依据：EIP-1193 §Provider Errors）
+- 余额不足时只显示错误码（依据：EIP-1474 §Specification 的 Methods 条目 eth_getBalance）
+- 用户拒绝后清空表单（依据：工程经验，无规范依据）
+- 提交中不禁用按钮，产生重复请求（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 校验数据可能过期，你如何降低「校验通过但仍失败」的概率？
+2. 一次点击里连接并执行，会带来什么具体问题？
+3. 用户连续两次拒绝授权，界面应该如何变化？
+4. 你如何把「缺什么」具体地告诉用户？
+
+## 评分标准
+
+### 初级回答
+
+- 知道按钮应在校验通过后再打开钱包。
+- 知道用户拒绝后应保留输入并不自动重试。
+
+### 中级回答
+
+- 能列出启用条件清单，并说明连接与执行应分两步。
+- 能针对余额与授权不足给出具体指引。
+
+### 高级回答
+
+- 能说明校验数据过期导致的残余失败，并给出提交前二次校验与错误呈现方案。
+- 能设计出用户拒绝后的状态保持与信任维护方式。
+
+## 参考资料
+
+- [EIP-1474：Ethereum JSON-RPC Specification（§Specification 的 Methods 条目 eth_call、eth_estimateGas、eth_getBalance、eth_getTransactionCount、eth_getCode）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-1193：Ethereum Provider JavaScript API（§Provider Errors）](https://eips.ethereum.org/EIPS/eip-1193)
+- [wagmi：useConnection（§Return Type 的 status、isConnecting / isReconnecting / isConnected / isDisconnected）](https://wagmi.sh/react/api/hooks/useConnection)
+- [wagmi：useSimulateContract（§Usage、§Return Type）](https://wagmi.sh/react/api/hooks/useSimulateContract)

@@ -1,0 +1,95 @@
+---
+id: security-011
+slug: parameter-tampering-between-page-and-wallet
+title: 从点击到弹窗，参数可能在哪一步被改？
+summary: 考察请求链路上的信任环节，以及前端如何降低参数被替换的可能性。
+status: review
+difficulty: advanced
+category: security
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - tampering
+  - trust
+  - request-flow
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-1193：Ethereum Provider JavaScript API（§Security Considerations 的 Handling Adversarial Behavior）"
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: "EIP-1474：Ethereum JSON-RPC 规范（§Methods 的 eth_sendTransaction、eth_call）"
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: "ethereum.org：Ethereum security and scam prevention（§Double check transactions before sending）"
+    url: https://ethereum.org/en/security/
+---
+
+## 题目
+
+你们做过一次演练：在页面里注入一段脚本，把用户点击「质押 10 个代币」时提交的金额改成 100 个，结果钱包弹窗显示的就是 100，用户没有察觉。
+
+请分析这条链路上有哪些环节可能被改动，以及前端与钱包各自能提供什么保护。
+
+## 考察目标
+
+- 能否列出参数从页面到签名的完整链路。
+- 是否理解规范对 Provider 对象的安全假设。
+- 能否给出降低篡改影响的工程手段。
+
+## 30 秒回答
+
+链路包括页面构造参数、第三方依赖处理、Provider 转发、钱包展示与签名。EIP-1193 把 Provider 描述为暴露在不受信环境中、受第三方控制的对象，其属性可以被读取或覆盖，因此页面内注入的脚本可以替换参数，也可以替换整个 Provider。
+
+## 深入回答
+
+- 【协议保证】EIP-1193 说明 Provider 是不受信环境中的对象，其属性可以被读取或覆盖，钱包与客户端需要限流并校验来自 Provider 的数据（依据：EIP-1193 §Security Considerations 的 Handling Adversarial Behavior）。
+- 【协议保证】`eth_sendTransaction` 的 `from`、`to`、`value`、`data`、`gas` 等参数由请求方构造并通过 JSON-RPC 请求对象提交（依据：EIP-1474 §Methods 的 eth_sendTransaction）。
+- 【协议保证】`eth_call` 用于在不提交交易的前提下立即执行一次消息调用，可用于提交前的模拟（依据：EIP-1474 §Methods 的 eth_call）。
+- 【工程经验】展示用参数与提交用参数来自同一份计算结果，避免两次拼接产生差异（依据：工程经验，无规范依据）。
+- 【工程经验】减少注入面：严格的内容安全策略、限制外部脚本、隔离不可信内容（依据：工程经验，无规范依据）。
+- 【工程经验】在最后一次确认里复述关键参数，让用户与钱包弹窗对照（依据：ethereum.org：Ethereum security and scam prevention §Double check transactions before sending；作为背景，非协议规范）。
+- 【工程经验】链下业务规则在服务端再校验一次，链上规则由合约强制（依据：工程经验，无规范依据）。
+- 【工程经验】记录关键参数与用户确认内容，便于事后复盘（依据：工程经验，无规范依据）。
+- 【工程经验】演练或监控出现「钱包显示与页面显示不一致」时，按安全事件流程处理，而不是加一句前端提示（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为参数交给钱包后不再变化（【协议保证】Provider 的属性可被读取或覆盖；依据：EIP-1193 §Security Considerations 的 Handling Adversarial Behavior）。
+- 展示用参数与提交用参数分别计算（【工程经验】）。
+- 省略前端核对，理由是「钱包会显示完整内容」（【工程经验】）。
+- 只在前端做业务规则校验，不落到服务端与合约（【工程经验】）。
+- 演练发现不一致时只加提示、不做溯源（【工程经验】）。
+
+## 面试官追问
+
+1. 你会如何实现「展示与提交同源」？
+2. 发现注入后，你的应急步骤是什么？
+3. 内容安全策略能挡住哪些注入路径，哪些路径仍然存在？
+4. 服务端校验能覆盖哪些业务规则，哪些规则需要由合约强制？
+
+## 评分标准
+
+### 初级回答
+
+- 知道页面内脚本可以改写提交给钱包的参数。
+- 知道钱包会展示待签内容供用户核对。
+
+### 中级回答
+
+- 能列出链路中的可改动点，并给出「展示与提交同源」的做法。
+- 能说明规范把 Provider 视为不受信对象的含义。
+
+### 高级回答
+
+- 能给出减少注入面、服务端与合约分层校验的完整方案，并说明各自覆盖范围。
+- 能给出发现篡改后的应急流程与可观测要求。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§Security Considerations 的 Handling Adversarial Behavior）](https://eips.ethereum.org/EIPS/eip-1193)
+- [EIP-1474：Ethereum JSON-RPC 规范（§Methods 的 eth_sendTransaction、eth_call）](https://eips.ethereum.org/EIPS/eip-1474)
+- [ethereum.org：Ethereum security and scam prevention（§Double check transactions before sending）](https://ethereum.org/en/security/)

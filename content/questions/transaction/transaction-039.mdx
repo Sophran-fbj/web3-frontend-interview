@@ -1,0 +1,95 @@
+---
+id: transaction-039
+slug: optimistic-balance-during-pending
+title: 等待打包期间，余额该不该先扣掉？
+summary: 考察乐观更新在链上场景的适用条件，以及回滚时的一致性处理。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - optimistic-ui
+  - balance
+  - consistency
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1474：Remote procedure call 规范（§eth_getBalance、§eth_getTransactionReceipt、§Block Identifier）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-140：REVERT instruction（§Abstract）
+    url: https://eips.ethereum.org/EIPS/eip-140
+  - title: EIP-1559：Fee market change（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-1559
+---
+
+## 题目
+
+用户在兑换页面点击确认后，交易进入等待打包状态。产品希望余额立刻变化，让用户感觉「已经生效」。
+
+请分析这个做法成立的条件与风险，并说明如果不做乐观更新，界面应该如何表达等待状态。
+
+## 考察目标
+
+- 能否判断哪些链上状态可以乐观更新。
+- 是否理解等待期间的多种结局。
+- 能否给出回滚与展示的一致性方案。
+
+## 30 秒回答
+
+等待期间界面上的余额属于界面状态：链上余额查询有区块参数，尚未打包的交易并不改变已出块状态的读数；拿到收据才能知道执行成功还是回滚，执行失败会回滚状态，但已消耗的 gas 照收。因此界面需要把展示层与链上读数分开，并为失败保留回滚路径。
+
+## 深入回答
+
+- 【协议保证】交易未被打包时收据不可用；拿到收据才能知道执行成功还是回滚（依据：EIP-1474 §eth_getTransactionReceipt 的说明）。
+- 【协议保证】执行回滚会撤销状态变更，但已执行的计算照价收费，剩余 gas 按规则退还（依据：EIP-140 §Abstract；EIP-1559 §Specification 的 gas 结算）。
+- 【协议保证】余额查询支持区块参数，`latest` 与 `pending` 的读数可能不同，因此界面上的乐观值与链上读数要分开存放（依据：EIP-1474 §eth_getBalance、§Block Identifier）。
+- 【工程经验】金额可以乐观扣减，费用要等收据，因为费用最终按实际消耗结算，提前扣减会在失败或被丢弃时产生解释成本（依据：工程经验，无规范依据）。
+- 【工程经验】等待期间锁定与同一资产相关的操作，或明确提示「有待处理交易」，避免用户基于乐观状态重复发起（依据：工程经验，无规范依据）。
+- 【工程经验】乐观值不参与风控与额度计算，这类判定使用链上读取值（依据：工程经验，无规范依据）。
+- 【工程经验】回滚路径要覆盖三种结局：打包且成功、打包但执行失败、长时间未打包或被丢弃；每种结局的提示与可选操作不同（依据：工程经验，无规范依据）。
+- 【工程经验】对高频、小额、可回滚的操作，乐观更新收益较大；对大额、不可逆操作，等待确认后再更新更稳妥（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 乐观扣减后不做回滚处理。
+- 用乐观余额参与风控或额度计算（【协议保证】界面乐观值与链上读数来源不同，依据：EIP-1474 §eth_getBalance、§Block Identifier）。
+- 等待期间不锁定同类操作，允许重复提交。
+- 把费用也一并乐观扣减（【协议保证】费用按实际消耗与成交价格结算，依据：EIP-1559 §Specification）。
+- 交易被丢弃后仍显示为已扣减。
+
+## 面试官追问
+
+1. 你会把乐观状态存放在哪里，如何与链上数据缓存区分？
+2. 用户在等待期间刷新页面，乐观状态如何恢复？
+3. 哪些业务操作不适合乐观更新？
+4. 回滚时如何向用户解释费用已经消耗？
+5. 如果等待期间用户切换了钱包账户，乐观状态如何处理？
+
+## 评分标准
+
+### 初级回答
+
+- 知道待处理交易有成功、失败、被丢弃等多种结局。
+- 知道乐观更新需要对失败做回滚。
+
+### 中级回答
+
+- 能列出三种结局及对应处理，并说明等待期间需要锁定同类操作。
+- 能区分金额与费用的展示时机。
+
+### 高级回答
+
+- 能说明乐观状态与链上数据需要分离存放，并指出乐观值不参与业务判定。
+- 能按操作的可逆性与金额大小给出是否采用乐观更新的判断依据。
+
+## 参考资料
+
+- [EIP-1474：Remote procedure call 规范（§eth_getBalance、§eth_getTransactionReceipt、§Block Identifier）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-140：REVERT instruction（§Abstract）](https://eips.ethereum.org/EIPS/eip-140)
+- [EIP-1559：Fee market change（§Specification）](https://eips.ethereum.org/EIPS/eip-1559)

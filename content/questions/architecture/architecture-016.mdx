@@ -1,0 +1,99 @@
+---
+id: architecture-016
+slug: incremental-wagmi-adoption
+title: 老项目引入连接库，怎么不推倒重来？
+summary: 考察渐进式迁移的路径设计，以及共存期的状态一致性维护。
+status: review
+difficulty: advanced
+category: architecture
+questionType: retrospective
+ecosystems:
+  - evm
+tags:
+  - migration
+  - adoption
+  - coexistence
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：Getting Started（§Manual Installation、§Wrap App in Context Provider、§Setup TanStack Query）
+    url: https://wagmi.sh/react/getting-started
+  - title: wagmi：createConfig（§Parameters（storage）、§State）
+    url: https://wagmi.sh/react/api/createConfig
+  - title: wagmi：Migrate from v2 to v3（§Deprecations）
+    url: https://wagmi.sh/react/guides/migrate-from-v2-to-v3
+  - title: EIP-1193：Ethereum Provider JavaScript API（§request、§Events）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+---
+
+## 题目
+
+你们有一个已经上线一年的 DApp，钱包连接是手写的监听逻辑，数据获取直接用底层库。
+
+团队希望引入连接库与缓存层，但不允许停服重写。请给出一条可执行的迁移路径，并说明共存期最大的风险是什么。
+
+## 考察目标
+
+- 能否给出分阶段的迁移路径。
+- 是否识别共存期的双状态源风险。
+- 能否定义每阶段的验收条件。
+
+## 30 秒回答
+
+迁移的关键是让新库成为连接状态的单一来源，再逐步替换使用者：先把连接层接入应用根部并让旧代码读取新状态；再按页面把读数据的路径迁入查询层；最后清理手写监听与旧缓存。共存期的主要风险是两套连接状态并存导致界面数据矛盾。
+
+## 深入回答
+
+- 【协议保证】账户与链的变化由 provider 以 `accountsChanged`、`chainChanged` 事件推送，页面据此更新连接状态（依据：EIP-1193 §Events）。
+- 【协议保证】页面与钱包之间的调用统一经 `request` 方法完成，方法名与参数由请求方给出（依据：EIP-1193 §request）。
+- 【实现行为】引入 wagmi 时把 `WagmiProvider` 与 `QueryClientProvider` 接入应用根部，组件树内之后才可以使用 hooks（依据：wagmi Getting Started §Wrap App in Context Provider、§Setup TanStack Query）。
+- 【实现行为】`createConfig` 的 `storage` 默认在浏览器环境使用 localStorage 持久化配置状态，跨会话恢复连接依赖这一层（依据：wagmi createConfig §Parameters（storage））。
+- 【实现行为】连接状态集中在 `config.state`，包含 `status` 与 `connections`，组件通过 hooks 读取同一份状态（依据：wagmi createConfig §State）。
+- 【实现行为】v2 到 v3 的迁移指南列出 hook 改名（例如 `useAccount` 改为 `useConnection`）与写操作统一为 `mutate`/`mutateAsync` 等弃用项，升级时这类改名会进入迁移清单（依据：wagmi Migrate from v2 to v3 §Deprecations）。
+- 【工程经验】先统一状态源、再替换读数据路径、最后删旧代码；顺序颠倒时两套状态会同时对外服务，问题难以归因（依据：工程经验，无规范依据）。
+- 【工程经验】共存期的双状态源会让两个组件树对当前账户有不同判断，表现为界面数据错位且难以复现（依据：工程经验，无规范依据）。
+- 【工程经验】每个阶段给出可验证指标（例如「连接状态仅有一处写入」「目标页面不再直接调用底层库」），并把回滚开关保留到下一阶段验收通过（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 新旧两套连接逻辑长期并存（依据：工程经验，无规范依据）。
+- 【协议保证】账户与链变化由 provider 事件推送；只迁移读数据而不迁移状态源，两处状态会不一致（依据：EIP-1193 §Events）。
+- 迁移期间埋点中断，无法评估影响（依据：工程经验，无规范依据）。
+- 一次性替换全部调用点，风险集中（依据：工程经验，无规范依据）。
+- 迁移完成后不删除旧代码，遗留重复路径（依据：工程经验，无规范依据）。
+
+## 面试官追问
+
+1. 如何验证「连接状态只有一处写入」？
+2. 共存期出现界面数据矛盾，你的排查顺序是什么？
+3. 迁移期间是否保留旧接口用于回滚？保留到什么条件达成？
+4. 如何向团队证明迁移的收益？
+
+## 评分标准
+
+### 初级回答
+
+- 知道迁移应分阶段进行。
+- 知道需要避免两套连接状态并存。
+
+### 中级回答
+
+- 能给出阶段划分与完成标志，并指出双状态源是主要风险。
+- 能列出迁移期间需要保持不变的兼容点。
+
+### 高级回答
+
+- 能为每个阶段定义可验证指标，并说明回滚与埋点保留策略。
+- 能说明缓存按链与账户维度失效在迁移中的必要性。
+
+## 参考资料
+
+- [wagmi：Getting Started（§Manual Installation、§Wrap App in Context Provider、§Setup TanStack Query）](https://wagmi.sh/react/getting-started)
+- [wagmi：createConfig（§Parameters（storage）、§State）](https://wagmi.sh/react/api/createConfig)
+- [wagmi：Migrate from v2 to v3（§Deprecations）](https://wagmi.sh/react/guides/migrate-from-v2-to-v3)
+- [EIP-1193：Ethereum Provider JavaScript API（§request、§Events）](https://eips.ethereum.org/EIPS/eip-1193)

@@ -1,0 +1,95 @@
+---
+id: web3-basics-016
+slug: tx-hash-block-hash-and-receipt
+title: 用户说交易「查不到」，你要先分清哪三个标识？
+summary: 考察交易哈希、区块哈希与收据的层级关系，以及查询失败的多种真实原因。
+status: review
+difficulty: intermediate
+category: web3-basics
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - tx-hash
+  - receipt
+  - pending
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1474：Remote procedure call specification（§eth_getTransactionByHash、§eth_getTransactionReceipt、§eth_getLogs 的 removed 字段）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-2718：Typed Transaction Envelope（§Specification 的 Receipts）
+    url: https://eips.ethereum.org/EIPS/eip-2718
+  - title: ethereum.org：Transactions（§Transaction lifecycle、§What's a transaction?）
+    url: https://ethereum.org/en/developers/docs/transactions/
+---
+
+## 题目
+
+用户拿着一个交易哈希来投诉：「钱包里显示已发送，但区块浏览器查不到这笔交易，是不是钱丢了？」
+
+请说明交易哈希、区块哈希和交易收据分别代表什么，并列出「查不到」的几种可能原因，以及你会如何排查。
+
+## 考察目标
+
+- 交易、区块、收据三者的先后关系。
+- 「拿到哈希」不等同于「交易已被网络接受」。
+- 节点可见性问题与真正的交易失败的区别。
+
+## 30 秒回答
+
+交易哈希由交易内容确定，区块哈希标识包含它的区块，收据记录执行结果：包含状态、实际消耗的 gas 与日志。三者对应「交易被构造、被打包、产生执行结果」三个阶段。收据在交易被打包之后才可用，`eth_getTransactionByHash` 查不到时返回 `null`，因此「查不到」不构成交易失败的结论。
+
+## 深入回答
+
+- 【协议保证】交易以 `TransactionType || TransactionPayload` 的字节序列表示，其哈希由该字节序列确定（依据：EIP-2718 §Specification）。
+- 【协议保证】收据同样以类型加载荷的形式定义，收据类型需要与交易类型匹配（依据：EIP-2718 §Specification 的 Receipts）。
+- 【协议保证】收据成员包括状态、`gasUsed`、`cumulativeGasUsed`、日志与日志布隆过滤器、`blockHash` 与 `blockNumber`、`transactionHash` 与 `transactionIndex` 等（依据：EIP-1474 §eth_getTransactionReceipt）。
+- 【协议保证】待处理交易没有收据，收据在交易被包含进区块之后才可用（依据：EIP-1474 §eth_getTransactionReceipt 的说明）。
+- 【协议保证】`eth_getTransactionByHash` 在按哈希查不到交易时返回 `null`，而不是以错误表示交易失败（依据：EIP-1474 §eth_getTransactionByHash）。
+- 【工程经验】库通常在广播前就能返回交易哈希，该哈希只说明交易被构造出来，不说明已有节点接受它（依据：ethereum.org Transactions 页面 §Transaction lifecycle；工程经验）。
+- 【工程经验】「查不到」的常见原因包括：交易未被节点接受、进入内存池后被丢弃、被同 `nonce` 的另一笔交易替换、当前节点尚未同步到对应区块、查询的网络与交易所在网络不同（依据：工程经验，无规范依据）。
+- 【工程经验】查询失败与「交易不存在」需要分开处理：前者重试或更换端点，后者才涉及状态判断（依据：工程经验，无规范依据）。
+- 【工程经验】记录位置时同时保存区块哈希与区块号；重组会让高度与区块哈希的对应关系变化（依据：EIP-1474 §eth_getLogs 的 removed 字段；工程经验）。
+
+## 常见错误
+
+- 认为「有哈希就代表已上链」。
+- 查询返回空就提示用户「交易失败」。
+- 把收据状态 `0` 理解成交易不存在（【协议保证】`status` 为 `0` 表示执行失败，依据：EIP-1474 §eth_getTransactionReceipt）。
+- 用区块号加序号记录交易位置，忽略重组会改变对应关系。
+- 在多个 RPC 之间轮询时不做去重，同一笔交易被判为新交易。
+
+## 面试官追问
+
+1. 各 RPC 都查不到时，你会用什么链上数据判断用户的钱有没有动？
+2. 交易被替换后，原哈希在浏览器里还能查到吗？为什么？
+3. 服务端在没有收据的情况下如何避免把「未知」记成「已支付」？
+4. 出现链重组时，你会如何让已经发出的通知和订单状态保持一致？
+
+## 评分标准
+
+### 初级回答
+
+- 能区分交易哈希、区块哈希与收据，知道收据代表执行结果。
+- 知道「查不到」不等同于「交易失败」。
+
+### 中级回答
+
+- 能列出至少三种查不到的原因，并说明查询失败与交易不存在需要分开处理。
+- 能指出交易哈希在广播前后由交易内容确定，广播不等同于被接受。
+
+### 高级回答
+
+- 能给出用 `nonce` 与余额变化反查的排查路径，并说明重组对区块号与区块哈希的影响。
+- 能明确服务端需要以收据与事件为准，不用交易哈希作为支付凭据。
+
+## 参考资料
+
+- [EIP-1474：Remote procedure call specification（§eth_getTransactionByHash、§eth_getTransactionReceipt、§eth_getLogs 的 removed 字段）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-2718：Typed Transaction Envelope（§Specification 的 Receipts）](https://eips.ethereum.org/EIPS/eip-2718)
+- [ethereum.org：Transactions（§Transaction lifecycle、§What's a transaction?）](https://ethereum.org/en/developers/docs/transactions/)

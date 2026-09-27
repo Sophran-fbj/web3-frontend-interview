@@ -1,0 +1,93 @@
+---
+id: security-008
+slug: connection-prompt-information-boundary
+title: 连接请求里，哪些信息是站点控制不了的？
+summary: 考察钱包侧展示与站点可控范围的边界，以及社交工程攻击的常见路径。
+status: review
+difficulty: intermediate
+category: security
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - connection
+  - trust
+  - information-boundary
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-1102：账户访问授权（§Specification 的 Protocol 与 eth_requestAccounts）"
+    url: https://eips.ethereum.org/EIPS/eip-1102
+  - title: "EIP-1193：Ethereum Provider JavaScript API（§Security Considerations 的 Handling Adversarial Behavior、User Account Exposure and Account Changes）"
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: "EIP-2255：钱包权限系统（§Specification 的 wallet_requestPermissions、wallet_getPermissions）"
+    url: https://eips.ethereum.org/EIPS/eip-2255
+---
+
+## 题目
+
+客服收到反馈：有用户看到「某某官方钱包请求访问」，于是点了同意，事后发现是钓鱼站点。
+
+有人提议在站点里加一句「本页面不请求你的私钥」，认为这样能降低风险。请分析这个提议的有效性，并说明连接环节有哪些信息是站点控制不了的。
+
+## 考察目标
+
+- 能否区分「站点能控制的内容」与「钱包展示的内容」。
+- 是否理解连接授权暴露的信息范围。
+- 能否给出更有价值的防护措施。
+
+## 30 秒回答
+
+账户可见性与连接授权由钱包侧管理：站点通过 `eth_requestAccounts` 请求账户访问，用户可以批准或拒绝；连接后的账户读取走 `eth_accounts` 与 `accountsChanged` 事件。EIP-1193 把 Provider 描述为不受信环境中的对象，站点能控制的只是自己页面上的文案与请求时机。
+
+## 深入回答
+
+- 【协议保证】站点通过 `eth_requestAccounts` 请求账户访问，调用可以触发用户界面供用户批准或拒绝，拒绝时返回错误（依据：EIP-1102 §Specification 的 Protocol 与 eth_requestAccounts）。
+- 【协议保证】EIP-2255 增加了 `wallet_requestPermissions` 与 `wallet_getPermissions` 两个方法，权限以包含 `invoker`、`parentCapability`、`caveats` 的对象数组表示（依据：EIP-2255 §Specification 的 wallet_requestPermissions、wallet_getPermissions）。
+- 【协议保证】EIP-1193 说明 Provider 是不受信环境中的对象，其属性可以被读取或覆盖，账户与隐私能力在钱包侧实现，钱包与客户端负责限流并校验来自 Provider 的数据（依据：EIP-1193 §Security Considerations 的 Handling Adversarial Behavior）。
+- 【协议保证】站点通过 `eth_accounts` 读取已授权账户，并监听 `accountsChanged` 事件；返回值由钱包控制（依据：EIP-1193 §Security Considerations 的 User Account Exposure and Account Changes）。
+- 【工程经验】页面上的「不请求私钥」类声明出现在站点可控的文案里，钓鱼页面可以照抄，因此不构成防护（依据：工程经验，无规范依据）。
+- 【工程经验】更有效的做法是固定官方入口、在显著位置展示官方域名与关键合约地址供用户对照、按需请求连接而不是页面加载即请求（依据：工程经验，无规范依据）。
+- 【工程经验】连接暴露的是地址与后续请求能力，签名与交易仍需逐次确认；地址本身可以用于关联分析，属于隐私取舍（依据：EIP-1193 §Security Considerations 的 User Account Exposure and Account Changes；隐私影响属于工程判断）。
+
+## 常见错误
+
+- 认为页面上的免责声明能降低钓鱼风险（【工程经验】）。
+- 认为连接会交出资金控制权（【协议保证】签名与交易仍需用户确认，账户可见性由钱包控制；依据：EIP-1193 §Security Considerations 的 User Account Exposure and Account Changes）。
+- 在页面加载时自动请求连接（【工程经验】）。
+- 把「本页面不请求私钥」当作安全承诺（【工程经验】）。
+- 不提供可核对的官方域名与合约地址（【工程经验】）。
+
+## 面试官追问
+
+1. 你会如何在界面上提供可核对的官方信息？
+2. 用户已经被钓鱼站点授权了，他可以做什么？
+3. 连接后站点能读取哪些信息？这些信息的隐私影响如何说明？
+4. 钱包侧还能提供哪些帮助用户判断的信号？
+
+## 评分标准
+
+### 初级回答
+
+- 知道连接需要用户授权，且确认界面由钱包控制。
+- 知道连接本身不交出资金控制权。
+
+### 中级回答
+
+- 能区分站点可控与钱包控制的信息，并指出页面免责声明无效的原因。
+- 能给出官方入口固定化与可核对信息的措施。
+
+### 高级回答
+
+- 能说明连接暴露的信息范围与隐私影响，并指出防线依赖用户核对习惯与钱包校验机制。
+- 能给出用户被钓鱼后可行的补救路径。
+
+## 参考资料
+
+- [EIP-1102：账户访问授权（§Specification 的 Protocol 与 eth_requestAccounts）](https://eips.ethereum.org/EIPS/eip-1102)
+- [EIP-1193：Ethereum Provider JavaScript API（§Security Considerations 的 Handling Adversarial Behavior、User Account Exposure and Account Changes）](https://eips.ethereum.org/EIPS/eip-1193)
+- [EIP-2255：钱包权限系统（§Specification 的 wallet_requestPermissions、wallet_getPermissions）](https://eips.ethereum.org/EIPS/eip-2255)

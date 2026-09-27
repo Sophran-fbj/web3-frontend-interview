@@ -1,0 +1,95 @@
+---
+id: business-scenario-001
+slug: dex-swap-edge-states
+title: 兑换页面要处理哪些边界状态？
+summary: 考察报价时效、滑点、授权与余额四类边界的交互设计。
+status: review
+difficulty: advanced
+category: business-scenario
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - dex
+  - swap
+  - edge-cases
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-20：Token Standard（§Specification（approve、allowance、transferFrom、decimals））
+    url: https://eips.ethereum.org/EIPS/eip-20
+  - title: EIP-2612：Permit extension for ERC-20（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-2612
+  - title: ethereum.org：DEX design best practices（§Key info to include、§Extra info to include、§Button behavior）
+    url: https://ethereum.org/en/developers/docs/design-and-ux/dex-design-best-practice/
+---
+
+## 题目
+
+你们要上线兑换功能，产品给出的需求只有一句「输入数量、点击兑换、完成」。
+
+请列出这个页面上需要处理的边界状态，并说明每一类对应的用户可见行为。
+
+## 考察目标
+
+- 能否覆盖报价、滑点、授权、余额四类边界。
+- 是否理解报价的时效性。
+- 能否给出「什么时候不该让用户继续」的判断。
+
+## 30 秒回答
+
+边界至少四类：报价（有有效期，过期需要刷新或中止）、滑点（过紧容易回滚且消耗费用，过松影响成交价）、授权（额度不足需要先授权，两步之间价格可能变化）、余额（代币不足与原生资产不足以支付费用是两类问题）。四类中有一类不满足时，界面不宜让用户继续提交。
+
+## 深入回答
+
+- 【协议保证】`approve` 会把 allowance 覆盖为新值，`allowance` 返回剩余可用额度；授权不足时 `transferFrom` 应当回滚（依据：EIP-20 §Specification（approve、allowance、transferFrom））。
+- 【协议保证】`decimals` 在标准中属于可选方法，界面需要处理读不到该值的情况（依据：EIP-20 §Specification（decimals））。
+- 【协议保证】EIP-2612 的 `permit` 通过签名设置授权额度，本身不执行兑换；只有兑换合约支持在同一笔交易中消费该签名时，才可能把授权与兑换合并（依据：EIP-2612 §Specification）。
+- 【工程经验】报价来自链下计算或链上查询，会随市场变化；界面需要显示报价时间并在超过阈值后刷新或标记过期（依据：工程经验，无规范依据）。
+- 【工程经验】滑点过紧时正常波动可能触发回滚，而交易失败后费用仍然被消耗；过松时成交价可能明显不利（依据：工程经验，无规范依据）。
+- 【工程经验】授权与兑换之间存在价格窗口，界面宜提示并允许用户重新确认（依据：工程经验，无规范依据）。
+- 【工程经验】代币余额不足与原生资产不足以支付费用是两类问题，文案与入口不同（依据：工程经验，无规范依据）。
+- 【工程经验】提交前检查清单：报价未过期、滑点下限被用户接受、授权足额、两类余额足够（依据：工程经验，无规范依据）。
+- 【工程经验】把授权与兑换合并成一个主按钮流程，用进度提示表达「两步」，比单独提供 Approve 按钮更贴合用户预期（依据：ethereum.org DEX design best practices §Button behavior）。
+
+## 常见错误
+
+- 报价不做时效标记，长时间使用旧价格（依据：工程经验，无规范依据）。
+- 把滑点默认值设为极端数值而不解释（依据：ethereum.org DEX design best practices §Extra info to include）。
+- 【协议保证】EIP-2612 允许用签名完成授权；不提示授权与兑换之间的价格窗口，用户会以为价格已被锁定（依据：EIP-2612 §Specification）。
+- 余额不足与费用不足使用同一文案（依据：工程经验，无规范依据）。
+- 用「将获得」这类确定性措辞描述预计结果（依据：工程经验，无规范依据）。
+
+## 面试官追问
+
+1. 报价过期后你如何避免用户误提交？
+2. 滑点设置过紧导致失败，费用由谁承担？
+3. 用户在授权后离开页面再回来，你的状态如何恢复？
+4. 你会如何设计「价格不利」时的提示？
+
+## 评分标准
+
+### 初级回答
+
+- 知道兑换需要先检查余额与授权。
+- 知道滑点设置会影响成交。
+
+### 中级回答
+
+- 能覆盖四类边界，并说明报价过期的处理与滑点的取舍。
+- 能区分代币不足与费用不足的提示。
+
+### 高级回答
+
+- 能给出提交前的中止条件集合，并说明失败时费用与状态的分摊。
+- 能指出界面不宜给出确定性价格承诺，宜用区间或下限表达。
+
+## 参考资料
+
+- [EIP-20：Token Standard（§Specification（approve、allowance、transferFrom、decimals））](https://eips.ethereum.org/EIPS/eip-20)
+- [EIP-2612：Permit extension for ERC-20（§Specification）](https://eips.ethereum.org/EIPS/eip-2612)
+- [ethereum.org：DEX design best practices（§Key info to include、§Extra info to include、§Button behavior）](https://ethereum.org/en/developers/docs/design-and-ux/dex-design-best-practice/)

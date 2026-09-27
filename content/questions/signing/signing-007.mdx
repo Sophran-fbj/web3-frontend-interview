@@ -1,0 +1,94 @@
+---
+id: signing-007
+slug: eip712-domain-replay-protection
+title: 结构化签名里的 domain 是干什么的？
+summary: 考察域分隔字段如何阻止签名被换链或换合约重放，以及部署期固化链标识的风险。
+status: review
+difficulty: advanced
+category: signing
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-712
+  - domain-separator
+  - replay
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-712：类型化结构化数据哈希与签名（§Specification 的 domainSeparator、§Security Considerations 的 Replay attacks）"
+    url: https://eips.ethereum.org/EIPS/eip-712
+  - title: "EIP-2612：permit 扩展（§Specification、§Security Considerations）"
+    url: https://eips.ethereum.org/EIPS/eip-2612
+  - title: "EIP-155：链标识与重放防护（§Specification）"
+    url: https://eips.ethereum.org/EIPS/eip-155
+---
+
+## 题目
+
+你们的签名服务支持多条链部署同一个协议，测试网与主网共用一套签名代码。
+
+有安全评审提出：如果签名内容里不包含链与合约信息，同一份签名可能被拿到另一条链的同一合约上使用。请说明域分隔字段的作用，以及它在实现上有哪些容易踩的坑。
+
+## 考察目标
+
+- 是否理解域分隔要解决的重放类型。
+- 能否说清常见域字段及其作用。
+- 是否知道部署期固化链标识带来的链分叉风险。
+
+## 30 秒回答
+
+域让签名只在特定上下文有效：`EIP712Domain` 可包含 `name`、`version`、`chainId`、`verifyingContract`、`salt`，其中链标识与验证合约地址分别限定链与合约范围，字段不匹配时合约侧校验失败。跨链重放与跨合约重放是两类不同问题。
+
+## 深入回答
+
+- 【协议保证】域分隔符由 `EIP712Domain` 结构计算，字段包括 `name`、`version`、`chainId`、`verifyingContract`、`salt`，协议设计者按需包含其中的字段（依据：EIP-712 §Specification 的 domainSeparator）。
+- 【协议保证】`chainId` 使用 EIP-155 的链标识；用户代理在当前链与签名中的链不一致时宜拒绝签名（依据：EIP-712 §Specification 的 domainSeparator；EIP-155 §Specification）。
+- 【协议保证】`verifyingContract` 是验证该签名的合约地址，用户代理可以据此做合约级防钓鱼（依据：EIP-712 §Specification 的 domainSeparator）。
+- 【协议保证】实现需要保证同一份签名再次出现时行为正确，例如拒绝重复提交或让操作幂等（依据：EIP-712 §Security Considerations 的 Replay attacks）。
+- 【协议保证】EIP-2612 说明域分隔符需要与合约和链绑定以阻止来自其他域的重放，常见取值为 `name`、`version`、`chainId`、`verifyingContract` 四字段，规范未把该组合固定为唯一结构（依据：EIP-2612 §Specification）。
+- 【协议保证】若域分隔符包含 `chainId` 且在部署时定义、之后不再重建，未来链分叉时可能出现跨链重放（依据：EIP-2612 §Security Considerations）。
+- 【工程经验】前端按目标合约的文档与 ABI 构造域与消息结构，并在界面展示关键字段；前后端理解不一致时表现为签名无效，排查成本较高（依据：工程经验，无规范依据）。
+- 【工程经验】域不覆盖同一上下文内的重复使用，业务层仍需要随机数与有效期（依据：EIP-2612 §Specification 的 nonce 与 deadline；业务设计属于工程经验）。
+
+## 常见错误
+
+- 认为消息签名自带域信息，忽略结构化签名中域字段的作用（【工程经验】）。
+- 只绑定链标识而忽略验证合约地址（【协议保证】`verifyingContract` 用于把签名绑定到具体合约；依据：EIP-712 §Specification 的 domainSeparator）。
+- 在合约部署时固化域分隔符且之后不再重建（【协议保证】链分叉时存在跨链重放风险；依据：EIP-2612 §Security Considerations）。
+- 前端自行省略域字段，认为合约侧会补上（【工程经验】）。
+- 把域分隔符当成随机数使用，误以为它能阻止同链内的重复使用（【工程经验】）。
+
+## 面试官追问
+
+1. 协议在测试网与主网共用签名逻辑，域里哪些字段需要不同？
+2. 如果协议升级导致验证合约地址变化，旧签名会怎样？
+3. 链分叉后，哪些历史签名可能变得危险？你的监控能发现吗？
+4. 域分隔符不做缓存、每次重建，会带来什么代价？
+
+## 评分标准
+
+### 初级回答
+
+- 知道签名内容需要绑定链与合约，否则可能被重放。
+- 能说出常见域字段包含名称、版本、链标识与验证合约地址。
+
+### 中级回答
+
+- 能区分跨链重放与跨合约重放，并说明各自需要绑定的字段。
+- 能指出前端与合约对域理解不一致时表现为签名无效，排查困难。
+
+### 高级回答
+
+- 能说明部署期固化链标识在链分叉场景下的重放风险，并给出重建策略。
+- 能指出域的作用边界（不覆盖同上下文内的重复使用），并说明还需要随机数与有效期。
+
+## 参考资料
+
+- [EIP-712：类型化结构化数据哈希与签名（§Specification 的 domainSeparator、§Security Considerations 的 Replay attacks）](https://eips.ethereum.org/EIPS/eip-712)
+- [EIP-2612：permit 扩展（§Specification、§Security Considerations）](https://eips.ethereum.org/EIPS/eip-2612)
+- [EIP-155：链标识与重放防护（§Specification）](https://eips.ethereum.org/EIPS/eip-155)

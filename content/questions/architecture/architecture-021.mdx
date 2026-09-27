@@ -1,0 +1,96 @@
+---
+id: architecture-021
+slug: major-version-migration-cost
+title: 底层库要升大版本，成本怎么估才靠谱？
+summary: 考察大版本升级的风险面，以及用可验证信号替代主观判断的评估方法。
+status: review
+difficulty: intermediate
+category: architecture
+questionType: retrospective
+ecosystems:
+  - evm
+tags:
+  - upgrade
+  - migration
+  - assessment
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：Migrate from v2 to v3（§Overview、§Install Connector Dependencies、§Bumped Minimum TypeScript Version、§Deprecations）
+    url: https://wagmi.sh/react/guides/migrate-from-v2-to-v3
+  - title: wagmi：Why Wagmi（§Stability）
+    url: https://wagmi.sh/react/why
+  - title: wagmi：Getting Started（§Manual Installation）
+    url: https://wagmi.sh/react/getting-started
+---
+
+## 题目
+
+安全扫描提示你使用的连接库有新的大版本，修复了几个问题并改了若干接口。
+
+上级要你给出评估：要不要升、大概多少工作量、风险在哪里。请给出评估方法，而不是一个主观结论。
+
+## 考察目标
+
+- 能否给出可验证的评估维度。
+- 是否知道如何量化改动面。
+- 能否说明升级与新功能开发的排序依据。
+
+## 30 秒回答
+
+评估依赖可验证信号：官方迁移指南列出的破坏性变更有哪些、代码库命中多少处、命中是否落在资金路径、现有测试能否覆盖被改动的分支。量化方式是在分支上升级依赖并跑类型检查与测试，把错误清单当作改动面清单。
+
+## 深入回答
+
+- 【实现行为】v2 到 v3 的迁移指南列出三类改动：连接器依赖转为可选 peer dependency、最低 TypeScript 版本提升、hook 改名与属性移除（依据：wagmi Migrate from v2 to v3 §Overview、§Install Connector Dependencies、§Bumped Minimum TypeScript Version、§Deprecations）。
+- 【实现行为】v3 中 `useConnect().connectors` 与 `useDisconnect().connectors` 等形式被移除，改用 `useConnectors`、`useConnections` 读取（依据：wagmi Migrate from v2 to v3 §Deprecations）。
+- 【实现行为】wagmi 自 v2 起的策略是新功能以 opt-in 形式引入、旧功能与替代功能并行弃用，这使大版本升级的改动面相对可控（依据：wagmi Why Wagmi §Stability）。
+- 【实现行为】依赖组合需要一起评估：viem 与 `@tanstack/react-query` 是并列依赖，升级清单应包含三者（依据：wagmi Getting Started §Manual Installation）。
+- 【工程经验】量化方法：在分支上升级依赖并跑类型检查与测试，把错误清单当作改动面与风险地图（依据：工程经验，无规范依据）。
+- 【工程经验】错误清单按路径分级：签名、交易、授权等资金路径优先处理，其余改动与其他重构合并排期（依据：工程经验，无规范依据）。
+- 【工程经验】无法被测试覆盖的分支（钱包弹窗、链切换）列出人工验证场景，并指定验证人与验收条件（依据：工程经验，无规范依据）。
+- 【工程经验】升级需要回滚点：保留旧分支、依赖版本可快速回退，并在灰度环境验证关键路径（依据：工程经验，无规范依据）。
+- 【工程经验】把升级纳入固定窗口，而不是等到被迫升级；长期落后会让单次升级跨越多个大版本（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 用「接口变化不多」这类主观判断估算工作量（依据：工程经验，无规范依据）。
+- 不先跑类型检查与测试就开始改代码（依据：工程经验，无规范依据）。
+- 【实现行为】wagmi、viem 与 TanStack Query 是并列依赖；忽略依赖生态的连锁升级会漏估改动面（依据：wagmi Getting Started §Manual Installation）。
+- 关键路径升级没有回滚方案（依据：工程经验，无规范依据）。
+- 长期不升级，导致一次跨越多个大版本（依据：工程经验，无规范依据）。
+
+## 面试官追问
+
+1. 无法被测试覆盖的钱包分支，你会怎么验证？
+2. 依赖链上的其他库不支持新版本时，你的选择是什么？
+3. 升级与业务需求冲突时，你的排序依据是什么？
+4. 你会把升级节奏固化成什么机制？
+
+## 评分标准
+
+### 初级回答
+
+- 知道升级前要看官方迁移指南。
+- 知道升级可能影响现有接口。
+
+### 中级回答
+
+- 能给出可验证的评估维度，并用类型检查与测试结果量化改动面。
+- 能说明关键路径与测试保护的判断标准。
+
+### 高级回答
+
+- 能给出包含灰度、回滚与人工验证场景的升级计划，并说明排序依据。
+- 能指出长期不升级会放大后续成本，提出固定窗口机制。
+
+## 参考资料
+
+- [wagmi：Migrate from v2 to v3（§Overview、§Install Connector Dependencies、§Bumped Minimum TypeScript Version、§Deprecations）](https://wagmi.sh/react/guides/migrate-from-v2-to-v3)
+- [wagmi：Why Wagmi（§Stability）](https://wagmi.sh/react/why)
+- [wagmi：Getting Started（§Manual Installation）](https://wagmi.sh/react/getting-started)

@@ -1,0 +1,98 @@
+---
+id: performance-ux-008
+slug: optimistic-update-boundaries
+title: 哪些操作可以「先当成功了」？
+summary: 考察乐观更新的适用条件与回滚成本，以及不可逆操作的保守处理。
+status: review
+difficulty: advanced
+category: performance-ux
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - optimistic-ui
+  - rollback
+  - risk
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1474：Ethereum JSON-RPC Specification（§Specification 的 Methods 条目 eth_getTransactionReceipt、eth_sendRawTransaction）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: Ethereum Yellow Paper（Appendix G：Fee Schedule）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+  - title: EIP-1193：Ethereum Provider JavaScript API（§Provider Errors）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: ethereum.org：Transactions（§Transaction lifecycle）
+    url: https://ethereum.org/en/developers/docs/transactions/
+---
+
+## 题目
+
+团队在讨论哪些操作可以乐观更新。有人认为链上操作都适合乐观更新以提升手感，也有人认为涉及资金就不能乐观。
+
+请给出你的判断标准，并分别举例说明适合与不适合的操作。
+
+## 考察目标
+
+- 能否给出可操作的判断标准而非笼统结论。
+- 是否理解回滚成本与用户预期。
+- 能否区分「展示层乐观」与「业务层乐观」。
+
+## 30 秒回答
+
+链上操作有两个可观测节点：`eth_sendRawTransaction` 返回交易哈希（进入待打包），收据出现才说明被打包，收据的 `status` 取 0 表示执行失败，失败交易同样按已用 gas 结算。因此「哈希已返回」不足以支撑业务层的乐观更新，展示层的乐观值可以先行，业务动作适合等收据。
+
+## 深入回答
+
+- 【协议保证】`eth_sendRawTransaction` 的返回是交易哈希，哈希可用不代表交易已经执行（依据：EIP-1474 §Specification 的 Methods 条目 eth_sendRawTransaction）
+- 【协议保证】`eth_getTransactionReceipt` 在交易未打包时返回 `null`，收据的 `status` 取 0 表示执行失败（依据：EIP-1474 §Specification 的 Methods 条目 eth_getTransactionReceipt）
+- 【协议保证】gas 按实际执行的指令计费；失败交易与成功交易一样按已用 gas 结算（依据：Yellow Paper Appendix G（Fee Schedule））
+- 【协议保证】`4001` 表示用户拒绝请求，这类失败不产生链上效果（依据：EIP-1193 §Provider Errors）
+- 【工程经验】三条判断标准：失败能否回滚、操作是否可逆、影响范围与金额是否可以承受（依据：工程经验，无规范依据）
+- 【工程经验】展示层乐观只改界面数值；业务层乐观会在订单、通知、库存等位置形成既成事实，后者适合等链上确认（依据：工程经验，无规范依据）
+- 【工程经验】适合乐观的例子：余额预览、列表排序、已读状态；不适合的例子：提现放款、跨链转移、会触发通知或库存扣减的动作（依据：工程经验，无规范依据）
+- 【工程经验】回滚时说明操作未成功并区分费用是否消耗，可以减少用户对「钱去哪了」的困惑（依据：ethereum.org Transactions §Transaction lifecycle）
+- 【工程经验】乐观值不参与额度与风控计算，用户基于乐观值继续操作会放大回滚损失（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 对全部链上操作一律乐观更新（依据：工程经验，无规范依据）
+- 认为「只是界面」就没有影响，忽略用户基于界面做决策（依据：工程经验，无规范依据）
+- 把乐观值写入业务数据或用于额度计算（依据：工程经验，无规范依据）
+- 回滚时不区分费用是否消耗（依据：Yellow Paper Appendix G（Fee Schedule））
+- 支付类操作采用乐观更新并触发下游流程（依据：EIP-1474 §Specification 的 Methods 条目 eth_getTransactionReceipt）
+
+## 面试官追问
+
+1. 你的团队如何把这条标准写进评审清单？
+2. 用户基于乐观余额发起第二笔操作，失败后如何补救？
+3. 哪些页面适合使用乐观但需要加明显标记？
+4. 你如何衡量乐观更新带来的收益与投诉变化？
+
+## 评分标准
+
+### 初级回答
+
+- 知道乐观更新需要在失败时回滚。
+- 知道大额与不可逆操作应等确认。
+
+### 中级回答
+
+- 能给出三条判断标准，并区分展示层与业务层乐观。
+- 能举例说明适合与不适合的操作类型。
+
+### 高级回答
+
+- 能说明乐观值不宜参与业务判定的原因，并给出评审清单与补救路径。
+- 能设计出回滚时的用户沟通方式，并区分费用是否消耗。
+
+## 参考资料
+
+- [EIP-1474：Ethereum JSON-RPC Specification（§Specification 的 Methods 条目 eth_getTransactionReceipt、eth_sendRawTransaction）](https://eips.ethereum.org/EIPS/eip-1474)
+- [Ethereum Yellow Paper（Appendix G：Fee Schedule）](https://ethereum.github.io/yellowpaper/paper.pdf)
+- [EIP-1193：Ethereum Provider JavaScript API（§Provider Errors）](https://eips.ethereum.org/EIPS/eip-1193)
+- [ethereum.org：Transactions（§Transaction lifecycle）](https://ethereum.org/en/developers/docs/transactions/)

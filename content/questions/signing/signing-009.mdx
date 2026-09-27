@@ -1,0 +1,99 @@
+---
+id: signing-009
+slug: siwe-message-fields-and-replay-risk
+title: 登录消息少写一个字段，会有什么后果？
+summary: 考察登录消息的必填字段、随机数要求与钱包侧域名校验，定位重放与钓鱼风险。
+status: review
+difficulty: advanced
+category: signing
+questionType: code-review
+ecosystems:
+  - evm
+tags:
+  - siwe
+  - nonce
+  - replay
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-4361：Sign-In with Ethereum（§Specification 的 ABNF Message Format 与 Message Fields、Wallet Implementer Steps 的 Verifying the Request Origin、§Security Considerations 的 Session Invalidation 与 Channel Security）"
+    url: https://eips.ethereum.org/EIPS/eip-4361
+  - title: "EIP-191：签名数据标准（§Specification 的 Version 0x45）"
+    url: https://eips.ethereum.org/EIPS/eip-191
+---
+
+## 题目
+
+下面的登录消息是同事提交的实现：
+
+```text
+请签名登录我们的平台
+地址: 0x1234...
+时间: 2026-09-27 10:00
+```
+
+请指出这段消息缺少哪些必要字段、会带来哪些具体风险，并说明钱包侧在展示这类请求时应当做哪些校验。
+
+## 考察目标
+
+- 是否知道登录消息的必填字段集合。
+- 能否指出缺失字段分别对应哪类攻击。
+- 是否了解钱包侧的域名校验要求。
+
+## 30 秒回答
+
+这段消息缺少 `domain` 与 `uri`、`nonce`、`version`、`chain-id`：域名与来源绑定用于阻止跨站重放，`nonce` 用于阻止签名被截获后重复建立会话，`chain-id` 决定会话所属链；`issued-at` 需要是 RFC 3339 日期时间。钱包侧按规范比对来源与消息中的 `scheme`、`domain`。
+
+## 深入回答
+
+- 【协议保证】消息由 ABNF 定义，字段顺序与分隔符（SP、LF）有明确规定（依据：EIP-4361 §Specification 的 ABNF Message Format）。
+- 【协议保证】必填字段包括 `domain`、`address`、`uri`、`version`、`chain-id`、`nonce`、`issued-at`；`scheme`、`statement`、`expiration-time`、`not-before`、`request-id`、`resources` 为可选（依据：EIP-4361 §Specification 的 Message Fields）。
+- 【协议保证】`nonce` 至少 8 位字母数字；`issued-at` 与 `expiration-time` 使用 RFC 3339 日期时间（依据：EIP-4361 §Specification 的 Message Fields）。
+- 【协议保证】`chain-id` 指定会话绑定的链，合约账户需要在该链上解析（依据：EIP-4361 §Specification 的 Message Fields）。
+- 【协议保证】钱包通过比对请求来源与消息中的 `scheme`、`domain` 防止钓鱼，来源取自浏览器窗口或钱包连接会话这类可信数据源（依据：EIP-4361 §Specification 的 Wallet Implementer Steps 的 Verifying the Request Origin）。
+- 【协议保证】外部账户的消息签名按 ERC-191 规定的方法生成与校验，即版本 `0x45` 的 `personal_sign` 格式（依据：EIP-4361 §Specification 的 Signing and Verifying Messages with Ethereum Accounts；EIP-191 §Specification 的 Version 0x45）。
+- 【协议保证】`resources` 内容变化或 ERC-1271 实现与依赖数据变化时，服务端宜使相关会话失效（依据：EIP-4361 §Security Considerations 的 Session Invalidation）。
+- 【工程经验】`nonce` 由服务端生成并一次性使用，固定值会削弱防重放（依据：工程经验，无规范依据）。
+- 【工程经验】服务端约定 `expiration-time`，并把过期、随机数已用、域名不匹配映射为可区分的失败提示（依据：工程经验，无规范依据）。
+- 【工程经验】全流程使用 HTTPS（依据：EIP-4361 §Security Considerations 的 Channel Security）。
+
+## 常见错误
+
+- 只写「请签名登录」加时间，缺少域名与随机数（【协议保证】`domain`、`uri`、`nonce` 等属于必填字段；依据：EIP-4361 §Specification 的 Message Fields）。
+- 随机数由前端生成且长期不变（【工程经验】）。
+- 时间使用本地化格式而非 RFC 3339（【协议保证】`issued-at` 使用 RFC 3339 日期时间；依据：EIP-4361 §Specification 的 Message Fields）。
+- 域名写成前端任意拼接的值，导致钱包判定来源不一致而拒绝（【工程经验】）。
+- 把会话绑定到域名解析结果或昵称，而不是地址（【工程经验】）。
+
+## 面试官追问
+
+1. 攻击者拿到了签名与原文，但没有随机数，他能建立会话吗？为什么？
+2. 随机数应该由前端还是服务端生成？各自的风险是什么？
+3. 用户在另一条链上签名，你的服务端如何判断该会话属于哪条链？
+4. 消息里写入了用户昵称，昵称变化后会话需要失效吗？
+
+## 评分标准
+
+### 初级回答
+
+- 能指出缺少随机数与域名，并说明会被重放。
+- 知道消息需要包含地址与时间。
+
+### 中级回答
+
+- 能列出必填字段集合，并说明链标识与版本的作用。
+- 能解释钱包为什么需要比对域名与实际来源。
+
+### 高级回答
+
+- 能给出随机数生成与一次性使用的完整方案，并说明会话失效的触发条件。
+- 能指出合约校验依赖状态变化时的会话处理，并区分「签名无效」与「会话失效」两类失败。
+
+## 参考资料
+
+- [EIP-4361：Sign-In with Ethereum（§Specification 的 ABNF Message Format 与 Message Fields、Wallet Implementer Steps 的 Verifying the Request Origin、§Security Considerations 的 Session Invalidation 与 Channel Security）](https://eips.ethereum.org/EIPS/eip-4361)
+- [EIP-191：签名数据标准（§Specification 的 Version 0x45）](https://eips.ethereum.org/EIPS/eip-191)

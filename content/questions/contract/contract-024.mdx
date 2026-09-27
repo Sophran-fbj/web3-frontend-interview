@@ -1,0 +1,92 @@
+---
+id: contract-024
+slug: manual-abi-encoding-scenarios
+title: 什么时候需要自己拼调用数据？
+summary: 考察手工构造调用数据的真实场景，以及它与常规合约调用方式的边界。
+status: review
+difficulty: intermediate
+category: contract
+questionType: coding
+ecosystems:
+  - evm
+tags:
+  - calldata
+  - encoding
+  - selector
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: Solidity 文档：Contract ABI Specification（§Function Selector、§Type Encoding）
+    url: https://docs.soliditylang.org/en/latest/abi-spec.html
+  - title: Multicall3：README（§Batch Contract Reads、§Batch Contract Writes、§Security）
+    url: https://github.com/mds1/multicall3
+---
+
+## 题目
+
+日常调用合约时，你只需要给出函数名和参数，工具会处理编码。但产品提出两个需求：一是把多个调用合并成一次交易提交，二是让合约代表用户去调用另一个合约。
+
+请说明这类需求为什么需要自己处理调用数据，以及手工拼接时要保证什么。
+
+## 考察目标
+
+- 能否识别需要手工构造调用数据的场景。
+- 是否知道调用数据的结构组成。
+- 能否说出手工拼接的校验要点。
+
+## 30 秒回答
+
+这两个需求都不是「直接调用某个函数」，而是要把「对另一个合约的调用」当作数据传递：批量调用把多个调用数据组成数组交给聚合合约，代调用把目标地址与调用数据一起交给执行合约。调用数据由 4 字节选择器与按 ABI 规则编码的参数组成，拼接时需要保证选择器由完整签名算出、参数顺序与类型与签名一致，否则链上会执行到别的入口。
+
+## 深入回答
+
+- 【协议保证】调用数据的开头 4 字节是函数选择器，其后是按 ABI 规则编码的参数，参数类型与顺序决定编码结果（依据：Solidity 文档 Contract ABI Specification §Function Selector、§Type Encoding）。
+- 【协议保证】静态类型各占 32 字节；动态类型先放偏移量，再放长度与数据，数组嵌套时偏移量按规则逐层展开（依据：Solidity 文档 Contract ABI Specification §Type Encoding）。
+- 【协议保证】地址在编码中与 160 位整数同构，占用一个 32 字节槽位（依据：Solidity 文档 Contract ABI Specification §Type Encoding）。
+- 【实现行为】Multicall3 的 `aggregate3` 接收目标地址、`allowFailure` 与 `callData` 组成的数组，并返回逐项结果，是把多个调用拼成一次提交的常见载体（依据：Multicall3 README §Batch Contract Reads）。
+- 【实现行为】从外部账户调用聚合合约时，子调用的 `msg.sender` 是聚合合约自身；只有在合约内对它 `delegatecall` 才会保留原上下文（依据：Multicall3 README §Batch Contract Writes）。
+- 【工程经验】批量调用属于「一次确认、多个动作」，界面需要能展开每个子调用的目标地址、函数与金额（依据：工程经验，无规范依据）。
+- 【工程经验】在没有 SDK 的环境里直接生成原始交易时，选择器与参数编码需要自行保证（依据：工程经验，无规范依据）。
+- 【工程经验】拼接错误通常表现为回滚，也可能落入回退函数而「成功」，发送前模拟与人工核对是主要发现手段（依据：工程经验，无规范依据）。
+- 【工程经验】复用通用聚合合约时留意其安全提示：Multicall3 未经审计，不宜让它持有资金，也不宜授予它代币授权（依据：Multicall3 README §Security）。
+
+## 常见错误
+
+- 【协议保证】选择器由完整签名算出；用函数名计算会得到错误的调用数据（依据：Solidity 文档 Contract ABI Specification §Function Selector）。
+- 【协议保证】地址在编码中占一个 32 字节槽位；漏掉这一点会让参数整体错位（依据：Solidity 文档 Contract ABI Specification §Type Encoding）。
+- 【协议保证】动态类型以偏移量定位；忘记写偏移量会让解码方按错误位置取数据（依据：Solidity 文档 Contract ABI Specification §Type Encoding）。
+- 批量调用时不展示子调用明细（依据：工程经验，无规范依据）。
+- 拼接后不做模拟直接提交（依据：工程经验，无规范依据）。
+
+## 面试官追问
+
+1. 嵌套数组的编码里偏移量是相对哪一段计算的？
+2. 批量调用中某个子调用失败，会发生什么？取决于什么？
+3. 你如何在界面上表达「一次确认里有五个动作」？
+4. 没有 SDK 时你如何自测选择器是否正确？
+
+## 评分标准
+
+### 初级回答
+
+- 知道调用数据由选择器与编码参数组成。
+- 知道批量调用需要把调用数据当参数传递。
+
+### 中级回答
+
+- 能说明静态类型与动态类型的编码差别，并列出拼接时的校验要点。
+- 能指出批量调用需要在界面上逐条展示子调用明细。
+
+### 高级回答
+
+- 能解释嵌套结构的偏移量计算方式，并说明子调用失败的传播取决于聚合合约实现。
+- 能给出无 SDK 环境下验证选择器的方法。
+
+## 参考资料
+
+- [Solidity 文档：Contract ABI Specification（§Function Selector、§Type Encoding）](https://docs.soliditylang.org/en/latest/abi-spec.html)
+- [Multicall3：README（§Batch Contract Reads、§Batch Contract Writes、§Security）](https://github.com/mds1/multicall3)

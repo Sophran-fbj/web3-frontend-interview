@@ -1,0 +1,95 @@
+---
+id: business-scenario-004
+slug: bridge-finality-ux
+title: 跨链到账提示，该等多久才算数？
+summary: 考察源链确认、目标链到账与失败回流三段体验的设计与风险提示。
+status: review
+difficulty: advanced
+category: business-scenario
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - bridge
+  - finality
+  - cross-chain
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：Blockchain bridges（§How do bridges work?、§Bridge types、§Risk with bridges）
+    url: https://ethereum.org/en/developers/docs/bridges/
+  - title: ethereum.org：Proof-of-stake（§How a Transaction Gets Executed in Ethereum PoS、§Finality）
+    url: https://ethereum.org/en/developers/docs/consensus-mechanisms/pos/
+  - title: EIP-1474：Remote procedure call specification（§eth_getTransactionReceipt）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+你们的跨链功能上线后，客服收到两类投诉：一类用户在源链交易确认后就以为「已经到账」，等了很久开始投诉；另一类用户在目标链迟迟未到账，不知道该等还是该申诉。
+
+请给出跨链流程的提示设计，并说明每个阶段用户可以做什么。
+
+## 考察目标
+
+- 能否把跨链拆解为可解释的阶段。
+- 是否理解源链确认与目标链到账是两件事。
+- 能否给出失败回流的用户路径。
+
+## 30 秒回答
+
+跨链至少拆成三段：源链提交与确认、跨链消息传递与目标链执行、目标链到账或失败回流。源链确认只说明你这一侧已经完成，不表示目标链已经收到，因此两段文案分开表达，等待时间用区间而不是精确承诺。每一段都给出用户可执行动作。
+
+## 深入回答
+
+- 【协议保证】收据是按链查询的：源链的收据只反映该链上的执行结果，无法说明目标链是否已经到账（依据：EIP-1474 §eth_getTransactionReceipt）。
+- 【工程经验】源链交易进入最终状态需要等待检查点最终化，这段时间可能明显长于交易被打包的时间，界面宜把「已打包」与「已最终化」分成两种状态（依据：ethereum.org Proof-of-stake §Finality）。
+- 【工程经验】跨链转账通常采用锁定与铸造、销毁与铸造或原子交换等机制，目标链上的资产由桥接机制发行或释放（依据：ethereum.org Blockchain bridges §How do bridges work?）。
+- 【工程经验】桥分为原生桥、验证者或预言机桥、通用消息桥与流动性网络，等待时间与风险来源随类型不同（依据：ethereum.org Blockchain bridges §Bridge types）。
+- 【工程经验】把流程拆成三段展示：源链提交与确认、跨链传递与目标链执行、目标链到账或失败回流（依据：工程经验，无规范依据）。
+- 【工程经验】用区间代替精确时间承诺，并解释影响因素：网络拥堵、桥接机制设计、目标链执行与限额（依据：工程经验，无规范依据）。
+- 【工程经验】超时后提供申诉入口，并展示当前所处阶段与所用交易哈希（依据：工程经验，无规范依据）。
+- 【工程经验】发生回流时说明资金回到哪里以及所需时间（依据：工程经验，无规范依据）。
+- 【工程经验】桥接属于第三方机制，界面不宜表述为「由我们保证到账」，风险与责任边界需要写清（依据：ethereum.org Blockchain bridges §Risk with bridges）。
+
+## 常见错误
+
+- 【协议保证】收据按链查询；源链确认就提示「已到账」会让用户误判目标链状态（依据：EIP-1474 §eth_getTransactionReceipt）。
+- 用精确时间承诺跨链耗时（依据：工程经验，无规范依据）。
+- 不提供超时后的申诉入口（依据：工程经验，无规范依据）。
+- 不展示所处阶段，用户无法判断卡在哪里（依据：工程经验，无规范依据）。
+- 把跨链失败当作普通交易失败，忽略回流流程（依据：ethereum.org Blockchain bridges §How do bridges work?）。
+
+## 面试官追问
+
+1. 你如何向用户解释「源链确认了但目标链没到账」？
+2. 超时阈值如何设定？依据是什么？
+3. 回流过程的资金状态如何展示？
+4. 桥接方不可用时，前端能做什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道源链确认与目标链到账是两件事。
+- 知道需要提供进度查询与超时入口。
+
+### 中级回答
+
+- 能拆出三个阶段并给出对应的用户文案与可用操作。
+- 能说明为什么不宜用精确时间承诺。
+
+### 高级回答
+
+- 能结合最终性差异解释等待时间差异，并给出超时、回流与申诉的完整路径。
+- 能明确跨链风险与责任边界，避免给出保证性表述。
+
+## 参考资料
+
+- [ethereum.org：Blockchain bridges（§How do bridges work?、§Bridge types、§Risk with bridges）](https://ethereum.org/en/developers/docs/bridges/)
+- [ethereum.org：Proof-of-stake（§How a Transaction Gets Executed in Ethereum PoS、§Finality）](https://ethereum.org/en/developers/docs/consensus-mechanisms/pos/)
+- [EIP-1474：Remote procedure call specification（§eth_getTransactionReceipt）](https://eips.ethereum.org/EIPS/eip-1474)

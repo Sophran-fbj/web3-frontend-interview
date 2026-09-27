@@ -1,0 +1,95 @@
+---
+id: transaction-037
+slug: insufficient-funds-causes
+title: 「余额不足」可能有几种含义？
+summary: 考察余额校验涉及的三个维度，以及界面上如何给出可执行的补充提示。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - balance
+  - gas
+  - allowance
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1559：Fee market change（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-1559
+  - title: EIP-1474：Remote procedure call 规范（§eth_getBalance、§Block Identifier）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-20：Token Standard（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-20
+---
+
+## 题目
+
+客服收到一批工单，用户都只说「提示余额不足」。你打开后台发现有的用户原生资产余额很充足。
+
+请列出「余额不足」可能对应的几种情况，并说明前端如何给出可执行的提示。
+
+## 考察目标
+
+- 能否区分转账金额、手续费、授权额度三个维度。
+- 是否理解余额校验针对的是潜在支出而不是预估支出。
+- 能否给出精确的用户提示。
+
+## 30 秒回答
+
+至少三种情况：原生资产不足以支付转账金额；原生资产够转账但不足以覆盖潜在最大费用，因为提交时的余额断言按 `gas_limit * max_fee_per_gas` 计算；代币余额不足，或代币授权额度不足被笼统读成「余额不足」。三种情况对应不同的下一步操作，因此提示需要指明对象与金额。
+
+## 深入回答
+
+- 【协议保证】交易生效前存在余额断言：签名者余额需要覆盖 `gas_limit * max_fee_per_gas` 与转账金额（依据：EIP-1559 §Specification 的交易验证断言）。
+- 【协议保证】`eth_getBalance` 返回地址余额，并支持区块参数，因此同一地址在不同区块上的读数可能不同（依据：EIP-1474 §eth_getBalance、§Block Identifier）。
+- 【协议保证】代币的授权额度由 `allowance` 记录，`transferFrom` 在授权范围内扣减（依据：EIP-20 §Specification）。
+- 【工程经验】三类失败要分开提示：原生资产不足、手续费不足（按潜在最大支出校验）、代币余额或授权额度不足（依据：工程经验，无规范依据）。
+- 【工程经验】「余额看起来够」仍被拒绝，原因通常是预留的费用上限高于预估支出；费用波动较大时这种情况更常见（依据：工程经验，无规范依据）。
+- 【工程经验】授权额度为 `0` 与额度不足需要不同文案：前者先完成授权，后者提高额度（依据：工程经验，无规范依据）。
+- 【工程经验】余额查询失败时不默认充足，阻止发送并提示重试；确认发送前再校验一次，因为这段时间内余额可能被其他交易改变（依据：工程经验，无规范依据）。
+- 【工程经验】界面展示具体数值与读取时间，而不是给出「余额足够」这类结论（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把三种情况统一提示为「余额不足」。
+- 只校验余额不校验授权额度（【协议保证】`transferFrom` 受 `allowance` 限制，依据：EIP-20 §Specification）。
+- 认为余额够转账就够付手续费（【协议保证】余额断言同时覆盖费用上限与转账金额，依据：EIP-1559 §Specification）。
+- 余额查询失败时默认充足并继续放行。
+- 授权额度不足时提示用户去补充原生资产。
+
+## 面试官追问
+
+1. 为什么手续费校验针对的是潜在最大支出而不是预估支出？
+2. 用户在两分钟内资产发生变化，你的校验还准确吗？
+3. 授权额度不足与授权额度为零，文案应该有什么不同？
+4. 你会如何在错误信息里区分「代币不足」与「原生资产不足」？
+5. 多链场景下余额校验需要注意什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道存在转账金额不足与手续费不足两种情况。
+- 知道代币场景还涉及授权额度。
+
+### 中级回答
+
+- 能说明手续费校验基于潜在最大支出，并解释「余额看起来够却被拒绝」的原因。
+- 能为三种情况给出不同的用户提示与操作入口。
+
+### 高级回答
+
+- 能给出发送前多重校验与确认时重新校验的方案，并说明查询失败时的降级策略。
+- 能指出界面不应给出结论性判断，应展示数值与读取时间。
+
+## 参考资料
+
+- [EIP-1559：Fee market change（§Specification）](https://eips.ethereum.org/EIPS/eip-1559)
+- [EIP-1474：Remote procedure call 规范（§eth_getBalance、§Block Identifier）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-20：Token Standard（§Specification）](https://eips.ethereum.org/EIPS/eip-20)

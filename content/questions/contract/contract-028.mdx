@@ -1,0 +1,92 @@
+---
+id: contract-028
+slug: non-standard-erc20-metadata-display
+title: 代币名称和精度读不出来，界面怎么办？
+summary: 考察代币元数据的可选性与异常表现，以及展示层的降级策略。
+status: review
+difficulty: intermediate
+category: contract
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - erc-20
+  - metadata
+  - decimals
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-20：Token Standard（§Specification（name、symbol、decimals））
+    url: https://eips.ethereum.org/EIPS/eip-20
+  - title: viem：formatUnits（§Parameters（value、exponent））
+    url: https://viem.sh/docs/utilities/formatUnits
+---
+
+## 题目
+
+用户导入了一个自定义代币，界面显示的名称是空白、数量是 `1000000000000000000`。用户抱怨「这是不是假币」。
+
+请说明这些字段为什么可能读不到或读出来不对，以及界面应该如何降级展示才能既不误导也不恐慌。
+
+## 考察目标
+
+- 是否知道代币元数据在标准中的可选性。
+- 能否解释精度缺失导致的数量错乱。
+- 能否给出分层的降级展示方案。
+
+## 30 秒回答
+
+标准里名称、符号与精度都属于可选方法，不是每个代币都会实现；即使实现了，也可能返回异常值。精度读不到时，直接把最小单位按整数展示会出现长数字。正确做法是把三个字段分开处理：读不到时用合约地址兜底，精度缺失时标注「按最小单位显示」，而不是默认按 18 位换算，也不在界面上给出「假币」这类结论。
+
+## 深入回答
+
+- 【协议保证】`name`、`symbol`、`decimals` 在标准中均为可选方法，标准提醒接口与其他合约不宜假定这些值存在（依据：EIP-20 §Specification（name、symbol、decimals））。
+- 【协议保证】`decimals` 返回代币使用的位数，用于把最小单位换算成用户可读的表示（依据：EIP-20 §Specification（decimals））。
+- 【实现行为】viem 的 `formatUnits` 接收最小单位数值与位数并返回字符串表示，位数需要由调用方提供（依据：viem formatUnits §Parameters（value、exponent））。
+- 【工程经验】精度读不到时，默认按 18 位换算或直接展示整数都不合适，宜标注「按最小单位显示」并说明这是原始值（依据：工程经验，无规范依据）。
+- 【工程经验】名称与符号缺失时用地址缩写兜底，同时展示合约地址便于核对（依据：工程经验，无规范依据）。
+- 【工程经验】对名称与符号做长度与字符过滤，对精度做范围校验，异常值展示地址并标注字段异常（依据：工程经验，无规范依据）。
+- 【工程经验】符号重复时同时展示合约地址，用于区分不同代币（依据：工程经验，无规范依据）。
+- 【工程经验】界面只给事实性提示（信息缺失、字段异常），不下「可信」或「骗局」的结论（依据：工程经验，无规范依据）。
+- 【工程经验】元数据读取可以合并请求以减少往返，但需要按合约隔离失败，避免一个异常代币影响整批展示（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 【协议保证】名称、符号与精度均为可选方法；把它们当作必选字段会在读不到时误报错误（依据：EIP-20 §Specification（name、symbol、decimals））。
+- 【协议保证】数量展示依赖 `decimals`；精度缺失时默认按 18 位换算会让数值相差数量级（依据：EIP-20 §Specification（decimals））。
+- 名称直接插入页面而不做长度与字符过滤（依据：工程经验，无规范依据）。
+- 仅凭符号相同就提示用户「这是同一代币」（依据：工程经验，无规范依据）。
+- 直接给出「假币」这类结论性文案（依据：工程经验，无规范依据）。
+
+## 面试官追问
+
+1. 为什么不能默认精度为 18？
+2. 符号相同但地址不同的两个代币，你如何在界面上区分？
+3. 元数据读取应该合并成一次请求还是逐个请求？
+4. 如果代币的名称包含控制字符，会带来什么风险？
+
+## 评分标准
+
+### 初级回答
+
+- 知道代币名称、符号与精度可能读不到。
+- 知道数量需要按精度换算。
+
+### 中级回答
+
+- 能说明元数据的可选性，并给出精度缺失时的正确标注方式。
+- 能对异常值做长度、字符与范围校验。
+
+### 高级回答
+
+- 能给出完整的分层降级展示方案，并强调元数据不构成可信度证据。
+- 能说明恶意代币通过元数据制造误导的方式与对应防护。
+
+## 参考资料
+
+- [EIP-20：Token Standard（§Specification（name、symbol、decimals））](https://eips.ethereum.org/EIPS/eip-20)
+- [viem：formatUnits（§Parameters（value、exponent））](https://viem.sh/docs/utilities/formatUnits)

@@ -1,0 +1,92 @@
+---
+id: signing-008
+slug: verify-signature-on-client-and-server
+title: 前端验签通过，为什么服务端还要再验一次？
+summary: 考察验签的信任边界，以及外部账户与合约账户在验签方式上的分歧。
+status: review
+difficulty: intermediate
+category: signing
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - signature-verification
+  - siwe
+  - trust-boundary
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-4361：Sign-In with Ethereum（§Specification 的 Message Fields 与 Signing and Verifying Messages with Ethereum Accounts、§Security Considerations 的 Session Invalidation 与 Channel Security）"
+    url: https://eips.ethereum.org/EIPS/eip-4361
+  - title: "EIP-191：签名数据标准（§Specification 的 Version 0x45）"
+    url: https://eips.ethereum.org/EIPS/eip-191
+---
+
+## 题目
+
+你的登录流程是：前端调用钱包拿到签名，前端先做一次「恢复地址」校验，通过后把签名发给服务端。
+
+有同事认为前端已经验过了，服务端直接信任前端上报的地址即可。请说明这个设计的问题，以及签名验签在两端各自的职责。
+
+## 考察目标
+
+- 是否理解前端验签不具备安全意义。
+- 能否说明不同账户类型需要不同的验签方式。
+- 能否指出会话绑定对象与失效条件。
+
+## 30 秒回答
+
+前端运行在用户可控环境里，其验签结论不能作为服务端的信任依据；服务端需要拿到消息原文与签名后独立校验：外部账户按 EIP-191 恢复地址，合约账户按消息声明的 `chain-id` 解析合约并采用 ERC-1271，校验通过后把会话绑定到地址。
+
+## 深入回答
+
+- 【协议保证】外部账户的签名校验按 ERC-191 规定的方法进行（依据：EIP-4361 §Specification 的 Signing and Verifying Messages with Ethereum Accounts）。
+- 【协议保证】合约账户的校验建议采用 ERC-1271；执行该校验时，合约需要按签名内容中声明的 `chain-id` 解析（依据：EIP-4361 §Specification 的 Signing and Verifying Messages with Ethereum Accounts）。
+- 【协议保证】ERC-1271 实现不要求是纯函数，同一输入可能因链上状态不同而返回不同结果，这会影响安全模型与会话校验规则（依据：EIP-4361 §Specification 的 Signing and Verifying Messages with Ethereum Accounts）。
+- 【协议保证】ERC-1271 实现或依赖数据变化、`resources` 内容变化时，服务端宜使相关会话失效（依据：EIP-4361 §Security Considerations 的 Session Invalidation）。
+- 【协议保证】消息签名使用 EIP-191 的 `0x45` 格式；前后端需要按同一格式拼接与校验（依据：EIP-191 §Specification 的 Version 0x45）。
+- 【工程经验】前端验签的用途限于即时反馈：前端代码与请求参数在用户控制之下，服务端需要拿到原文与签名后独立校验（依据：工程经验，无规范依据）。
+- 【工程经验】随机数按会话生成、一次性使用并保留足够熵（依据：EIP-4361 §Specification 的 Message Fields 中 nonce 至少 8 位字母数字；生成策略属于工程经验）。
+- 【工程经验】会话绑定地址而不是域名或昵称；全流程使用 HTTPS，签名与消息不放进 URL 或日志（依据：EIP-4361 §Security Considerations 的 Channel Security；会话绑定属于工程经验）。
+
+## 常见错误
+
+- 服务端只接收前端上报的地址并信任它（【工程经验】）。
+- 请求里只传签名不传原文，导致服务端无法独立校验（【工程经验】）。
+- 用同一个随机数允许多次登录，或随机数熵不足（【工程经验】）。
+- 把会话绑定到域名解析结果而不是地址（【工程经验】）。
+- 合约账户验签时不按签名声明的链解析合约（【协议保证】ERC-1271 校验需要从声明的 `chain-id` 解析合约；依据：EIP-4361 §Specification 的 Signing and Verifying Messages with Ethereum Accounts）。
+- 把合约验签当作纯函数调用，忽略链上状态变化导致的会话失效（【协议保证】ERC-1271 实现不要求是纯函数；依据：EIP-4361 §Specification 的 Signing and Verifying Messages with Ethereum Accounts）。
+
+## 面试官追问
+
+1. 用户换了设备登录，你的随机数与会话如何处理？
+2. 合约账户的验签结果随状态变化，你会如何避免会话被静默失效？
+3. 如果服务端需要区分「签名过期」与「签名被重放」，日志里要记录什么？
+4. 前端验签在什么场景下仍然有价值？
+
+## 评分标准
+
+### 初级回答
+
+- 知道服务端需要自己验签，不能信任前端结论。
+- 知道请求需要携带原文与签名。
+
+### 中级回答
+
+- 能区分外部账户与合约账户的验签方式，并说明合约校验需要按链解析。
+- 能说明会话应绑定地址并校验随机数与有效期。
+
+### 高级回答
+
+- 能指出合约验签可能随链上状态变化，并给出会话失效机制。
+- 能说明前端验签的价值在于即时反馈，并给出可观测的失败分类。
+
+## 参考资料
+
+- [EIP-4361：Sign-In with Ethereum（§Specification 的 Message Fields 与 Signing and Verifying Messages with Ethereum Accounts、§Security Considerations 的 Session Invalidation 与 Channel Security）](https://eips.ethereum.org/EIPS/eip-4361)
+- [EIP-191：签名数据标准（§Specification 的 Version 0x45）](https://eips.ethereum.org/EIPS/eip-191)

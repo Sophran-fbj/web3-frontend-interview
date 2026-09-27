@@ -1,0 +1,94 @@
+---
+id: signing-005
+slug: eip191-prefix-and-personal-sign-bytes
+title: personal_sign 到底签了哪些字节？
+summary: 考察签名数据的版本前缀设计，以及它为什么能防住跨用途重放。
+status: review
+difficulty: intermediate
+category: signing
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-191
+  - personal-sign
+  - signed-data
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-191：签名数据标准（§Motivation、§Specification 的 Registry of version bytes）"
+    url: https://eips.ethereum.org/EIPS/eip-191
+  - title: "EIP-712：类型化结构化数据哈希与签名（§Specification 的 domainSeparator）"
+    url: https://eips.ethereum.org/EIPS/eip-712
+  - title: "EIP-4361：Sign-In with Ethereum（§Specification 的 Message Fields）"
+    url: https://eips.ethereum.org/EIPS/eip-4361
+---
+
+## 题目
+
+你在做签名登录时发现：同一个用户用 `personal_sign` 签的内容，无法直接拿到合约里做链上校验，需要额外封装一层。同时团队里有人担心「用户签的这串字是否可能被拿去当交易用」。
+
+请说明 `personal_sign` 实际签名的字节构成，以及这套前缀设计要防的是什么。
+
+## 考察目标
+
+- 能否说出签名数据的整体格式与版本字节的含义。
+- 是否理解前缀设计的两个防护目标。
+- 是否知道不同版本字节的用途分布。
+
+## 30 秒回答
+
+`personal_sign` 使用 `0x19`、版本字节 `0x45`（字符 `E`）、其后的 `"thereum Signed Message:\n"`、消息字节长度和消息内容构造待签数据；合起来的前缀是 `"\x19Ethereum Signed Message:\n"`。`0x19` 使整段数据不构成完整 RLP 结构，版本字节区分签名用途。域、随机数与有效期仍需由业务层设计。
+
+## 深入回答
+
+- 【协议保证】签名数据格式为 `0x19` + 1 字节版本 + 版本相关数据 + 待签内容（依据：EIP-191 §Specification）。
+- 【协议保证】`0x19` 的用意是让签名数据不构成合法 RLP：取值在 `0x00`–`0x7f` 范围内的单字节是自身的 RLP 编码，因此整段数据不能是一个完整的 RLP 结构，也就不能是一笔以太坊交易（依据：EIP-191 §Specification）。
+- 【协议保证】版本字节注册表把 `0x00`（带预期验证者地址的数据）、`0x01`（EIP-712 结构化数据）、`0x45`（`personal_sign` 消息）区分开（依据：EIP-191 §Specification 的 Registry of version bytes）。
+- 【协议保证】版本 `0x45` 对应字符 `E`，版本相关数据从 `"thereum Signed Message:\n"` 开始，后接消息字节长度；组合后的前缀是 `"\x19Ethereum Signed Message:\n"`，不能重复拼入 `E`（依据：EIP-191 §Specification 的 Version 0x45）。
+- 【协议保证】动机中记录的多签钱包问题：预签名数据未与验证者绑定时，可以被搬到另一个钱包复用；版本 `0x00` 把预期验证者地址纳入签名内容正是为此（依据：EIP-191 §Motivation）。
+- 【协议保证】EIP-712 的结构化数据签名使用版本 `0x01`，域分隔符由 `EIP712Domain` 结构计算（依据：EIP-712 §Specification 的 domainSeparator）。
+- 【工程经验】后端恢复地址时需要按同一格式拼接前缀并按字节计算长度；前后端对格式理解不一致时，表现是「签名有效但校验失败」（依据：EIP-191 §Specification 的 Version 0x45；实现一致性属于工程经验）。
+- 【工程经验】前缀解决的是跨用途隔离，不覆盖同一用途内的重放；业务层需要在消息中加入域名、资源标识、随机数与有效期（依据：EIP-4361 §Specification 的 Message Fields）。
+
+## 常见错误
+
+- 认为 `personal_sign` 直接对消息原文签名，忽略长度前缀（【协议保证】`0x45` 的版本相关数据包含消息字节长度；依据：EIP-191 §Specification 的 Version 0x45）。
+- 把 `0x45` 理解成十进制「版本号 45」（【协议保证】`0x45` 是字符 `E` 的十六进制编码；依据：EIP-191 §Specification 的 Version 0x45）。
+- 认为有了前缀就不需要防重放（【工程经验】）。
+- 后端恢复地址时漏拼前缀，导致校验始终失败（【工程经验】）。
+- 把版本 `0x00` 与 `0x01` 的用途记混（【协议保证】依据：EIP-191 §Specification 的 Registry of version bytes）。
+
+## 面试官追问
+
+1. 为什么单字节 `0x19` 就能让整段数据不构成合法 RLP？
+2. 如果业务需要合约也能校验签名，你会选哪个版本字节？为什么？
+3. 用户在两个不同站点签了同样的内容，这两个签名会互相影响吗？
+4. 消息长度用字节数还是字符数？中文消息会有什么差别？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出签名数据以 `0x19` 开头并带版本字节。
+- 知道 `personal_sign` 会给消息加上固定前缀。
+
+### 中级回答
+
+- 能说明 `0x19` 的作用是让数据不构成合法 RLP，从而不能作为交易使用。
+- 能区分三个版本字节的用途，并指出前后端格式不一致会导致校验失败。
+
+### 高级回答
+
+- 能解释版本 `0x00` 如何解决跨验证者复用，并指出前缀不覆盖同用途重放。
+- 能给出消息长度按字节计算等实现层面的注意事项。
+
+## 参考资料
+
+- [EIP-191：签名数据标准（§Motivation、§Specification 的 Registry of version bytes）](https://eips.ethereum.org/EIPS/eip-191)
+- [EIP-712：类型化结构化数据哈希与签名（§Specification 的 domainSeparator）](https://eips.ethereum.org/EIPS/eip-712)
+- [EIP-4361：Sign-In with Ethereum（§Specification 的 Message Fields）](https://eips.ethereum.org/EIPS/eip-4361)

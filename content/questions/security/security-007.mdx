@@ -1,0 +1,91 @@
+---
+id: security-007
+slug: signing-domain-mismatch
+title: 钱包提示「域名不一致」，是误报吗？
+summary: 考察登录消息中的域名绑定要求，以及来源校验失败时的正确处理方式。
+status: review
+difficulty: advanced
+category: security
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - siwe
+  - domain-binding
+  - phishing
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-4361：Sign-In with Ethereum（§Specification 的 Message Fields、Relying Party Implementer Steps 的 Specifying the Request Origin、Wallet Implementer Steps 的 Verifying the Request Origin）"
+    url: https://eips.ethereum.org/EIPS/eip-4361
+  - title: "ethereum.org：Ethereum security and scam prevention（§Phishing scams）"
+    url: https://ethereum.org/en/security/
+---
+
+## 题目
+
+你们的登录页部署在 `app.example.com`，但生成的登录消息里写的域名是 `example.com`。上线后部分用户的钱包直接拒绝了签名请求。
+
+有工程师建议「把域名改成和钱包实际访问的地址一致」以临时解决，也有人担心这样会掩盖真正的问题。请分析这件事。
+
+## 考察目标
+
+- 是否理解登录消息中域名的绑定作用。
+- 能否说明钱包为什么需要校验来源与域名。
+- 能否区分「配置错误」与「攻击信号」。
+
+## 30 秒回答
+
+EIP-4361 消息中的 `domain` 为必填字段，服务端生成时需要让它与签名请求的来源一致；跨源 iframe 场景下应匹配发起请求的框架来源，而不是父页面来源。钱包按规范比对来源与消息中的 `scheme`、`domain`，这是防钓鱼机制，不是误报。
+
+## 深入回答
+
+- 【协议保证】`domain` 是必填字段，取值为 RFC 3986 authority，可以包含端口；未给出 `scheme` 时按 HTTPS 处理（依据：EIP-4361 §Specification 的 Message Fields）。
+- 【协议保证】服务端生成消息时，`domain` 与（若有的）`scheme` 需要与发出签名请求的来源一致；请求在跨源 iframe 内发起时，应匹配该框架的来源而不是父窗口来源（依据：EIP-4361 §Specification 的 Relying Party Implementer Steps 的 Specifying the Request Origin）。
+- 【协议保证】钱包实现步骤要求通过比对请求来源与消息中的 `scheme`、`domain` 防止钓鱼，来源比对使用浏览器窗口或钱包连接会话这类可信数据源（依据：EIP-4361 §Specification 的 Wallet Implementer Steps 的 Verifying the Request Origin）。
+- 【工程经验】服务端按请求来源生成 `domain`，维护包含子域与端口的允许列表，不匹配的来源不签发消息（依据：工程经验，无规范依据）。
+- 【工程经验】前端不自行拼接域名，消息模板与来源校验使用同一份配置（依据：工程经验，无规范依据）。
+- 【工程经验】钱包拒绝时给出「无法验证本站身份，请联系支持」的提示并上报，不建议用户更换钱包或忽略警告（依据：工程经验，无规范依据）。
+- 【工程经验】钓鱼站点可以复制登录页的外观，防线建立在用户核对域名与钱包侧的来源校验上，而不是页面自身的声明（依据：ethereum.org：Ethereum security and scam prevention §Phishing scams；作为背景，非协议规范）。
+- 【工程经验】域名绑定覆盖的是消息与来源的对应关系，站点被入侵或前端资源被篡改属于另一类风险，需要构建与供应链防护配合（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把钱包的域名校验当成误报（【协议保证】来源比对是 EIP-4361 钱包实现步骤的一部分；依据：EIP-4361 §Specification 的 Wallet Implementer Steps 的 Verifying the Request Origin）。
+- 把域名写死成主域名，忽略子域与端口（【协议保证】`domain` 取值为含可选端口的 RFC 3986 authority；依据：EIP-4361 §Specification 的 Message Fields）。
+- 为通过校验而放宽来源限制（【工程经验】）。
+- 前端自行拼接域名生成消息（【工程经验】）。
+- 用户被拒绝时建议更换钱包或忽略警告（【工程经验】）。
+
+## 面试官追问
+
+1. 同一站点有多个入口域名时，允许列表如何设计？
+2. 用户从二维码在手机钱包里打开页面时，来源如何确定？
+3. 域名校验通过但页面被注入脚本，签名还安全吗？
+4. 你如何监控这类校验失败的发生频率？
+
+## 评分标准
+
+### 初级回答
+
+- 知道登录消息中的域名与请求来源需要一致。
+- 知道钱包拒绝属于安全机制而不是误报。
+
+### 中级回答
+
+- 能说明来源校验防的是什么攻击，并指出应严格匹配来源。
+- 能给出服务端按来源生成域名的做法与允许列表的维护方式。
+
+### 高级回答
+
+- 能说明跨源嵌入场景下来源匹配的特殊要求，并给出允许列表与监控方案。
+- 能指出域名绑定无法覆盖前端被篡改的风险，需要配合供应链防护。
+
+## 参考资料
+
+- [EIP-4361：Sign-In with Ethereum（§Specification 的 Message Fields、Relying Party Implementer Steps 的 Specifying the Request Origin、Wallet Implementer Steps 的 Verifying the Request Origin）](https://eips.ethereum.org/EIPS/eip-4361)
+- [ethereum.org：Ethereum security and scam prevention（§Phishing scams）](https://ethereum.org/en/security/)

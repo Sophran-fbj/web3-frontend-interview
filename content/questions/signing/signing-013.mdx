@@ -1,0 +1,92 @@
+---
+id: signing-013
+slug: signature-expiration-enforcement
+title: 签名的有效期由谁来把关？
+summary: 考察截止时间字段的强制位置，以及前端判断与服务端判断的职责差异。
+status: review
+difficulty: intermediate
+category: signing
+questionType: system-design
+ecosystems:
+  - evm
+tags:
+  - expiration
+  - deadline
+  - session
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-2612：Permit 扩展（§Specification、§Rationale、§Security Considerations）
+    url: https://eips.ethereum.org/EIPS/eip-2612
+  - title: EIP-4361：Sign-In with Ethereum（§Specification、§Security Considerations）
+    url: https://eips.ethereum.org/EIPS/eip-4361
+---
+
+## 题目
+
+你在设计一个签名体系，需要决定有效期怎么加、由谁判断。团队里出现了三种意见：前端判断即可、服务端判断即可、交给链上合约判断。
+
+请分别说明链上授权与链下登录两种场景下有效期的正确强制位置，以及过期后用户应该看到什么。
+
+## 考察目标
+
+- 能否区分「链上强制执行」与「服务端校验」。
+- 是否理解前端判断只影响体验，不影响安全。
+- 能否指出「永不过期」这类取值的影响。
+
+## 30 秒回答
+
+链上授权类签名的截止时间由合约在链上判定：不满足截止条件时整笔调用回滚，前端与服务端都无法绕过。链下登录类签名不在链上执行，过期时间需要由服务端在解析后校验。前端在两处都只承担体验优化，例如提前提示即将过期。
+
+## 深入回答
+
+- 【协议保证】permit 的生效条件之一是当前区块时间不超过 `deadline`，任一条件不满足时整笔调用回滚（依据：EIP-2612 §Specification）。
+- 【协议保证】permit 要求签名里的 nonce 与合约记录的 `nonces[owner]` 一致，调用成功后该 nonce 递增，因此同一份签名无法重复使用（依据：EIP-2612 §Specification）。
+- 【协议保证】`deadline` 可以被设置为 `uint(-1)`，使授权实际上长期有效（依据：EIP-2612 §Rationale）。
+- 【协议保证】登录类消息把过期时间、生效时间列为可选字段，服务端在解析后要按预期值校验（依据：EIP-4361 §Specification 的 Message Fields 与 Relying Party Implementer Steps 的 Verifying a signed Message）。
+- 【协议保证】会话要绑定地址；当合约账户的校验结果随状态变化时，服务端应当失效对应的会话（依据：EIP-4361 §Security Considerations 的 Session Invalidation）。
+- 【工程经验】链下会话的过期判断由服务端承担：前端倒计时只影响体验，绕过页面也无法延长服务端会话的有效期（依据：工程经验，无规范依据）。
+- 【工程经验】把「已过期」与「随机数已被使用」分开提示：前者引导重新签名，后者提示可能已有他人提交（依据：工程经验，无规范依据）。
+- 【工程经验】按业务风险分级设置有效期：小额、低风险授权可用较长期限，高风险操作取较短期限；超长有效期会放大签名泄露与代付方长期持有的风险（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为前端判断有效期可以替代服务端校验。
+- 对链上授权也在服务端做过期判断并据此判断安全性（【协议保证】链上截止时间由合约在调用时判定，依据：EIP-2612 §Specification）。
+- 过期后自动复用同一份签名重试（【协议保证】permit 的 nonce 会随成功调用递增，依据：EIP-2612 §Specification）。
+- 统一使用超长有效期，不区分风险等级。
+- 把「已过期」与「已被使用」合并成同一个错误提示。
+
+## 面试官追问
+
+1. 用户签名后长时间未提交，你会用什么机制主动提示？
+2. 服务端接收到的签名已过期，但链上还未过期，你如何向用户解释？
+3. 为什么链上授权的有效期无法由前端延长？
+4. 高风险授权你会如何选择有效期，依据是什么？
+5. 如果需要支持「刷新会话」，你会怎样设计而不用重新签名？
+
+## 评分标准
+
+### 初级回答
+
+- 知道链上授权的截止时间由合约在调用时判定。
+- 知道链下登录的过期时间需要由服务端校验。
+
+### 中级回答
+
+- 能说明前端判断只影响体验，不作为安全依据。
+- 能区分「已过期」与「已被使用」两类失败并给出不同提示。
+
+### 高级回答
+
+- 能给出按风险分级的有效期策略，并说明超长有效期取值的风险。
+- 能说明服务端需要同时校验过期时间、生效时间与随机数的使用情况。
+
+## 参考资料
+
+- [EIP-2612：Permit 扩展（§Specification、§Rationale、§Security Considerations）](https://eips.ethereum.org/EIPS/eip-2612)
+- [EIP-4361：Sign-In with Ethereum（§Specification、§Security Considerations）](https://eips.ethereum.org/EIPS/eip-4361)

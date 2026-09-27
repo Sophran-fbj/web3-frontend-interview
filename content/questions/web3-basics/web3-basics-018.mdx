@@ -1,0 +1,98 @@
+---
+id: web3-basics-018
+slug: transaction-data-field-and-calldata
+title: 交易确认页上的 data 字段，怎么判断它做了什么？
+summary: 考察 calldata 的构成、ABI 编码规则，以及 to 三种取值下的语义差异。
+status: review
+difficulty: beginner
+category: web3-basics
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - calldata
+  - abi
+  - function-selector
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: Solidity 文档（ABI Specification）：§Function Selector、§Types、§Formal Specification of the Encoding
+    url: https://docs.soliditylang.org/en/latest/abi-spec.html
+  - title: ethereum.org：Transactions（§The data field、§Types of transactions）
+    url: https://ethereum.org/en/developers/docs/transactions/
+  - title: ERC-7730：Structured Data Clear Signing Format（§Abstract、§Specification 的 Selector matching）
+    url: https://eips.ethereum.org/EIPS/eip-7730
+  - title: EIP-1474：Remote procedure call specification（§eth_call）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+交易确认页要告诉用户「这笔交易到底做了什么」。你拿到的只有 `to` 和一段十六进制的 `data`，没有完整的 ABI 上下文。
+
+请说明：`data` 字段如何区分普通转账和合约调用？没有 ABI 时你还能推断出什么，不能推断出什么？
+
+## 考察目标
+
+- 结合 `to`、目标地址代码、`value` 与 `data` 判断，不能只看其中一个字段。
+- calldata 的构成与参数编码规则。
+- 反查选择器的可信范围。
+
+## 30 秒回答
+
+`to` 为空通常表示创建合约，`data` 是创建代码；`to` 有地址时，`data` 是传给该地址的输入字节。若目标执行的是符合 ABI 的函数调用，前 4 字节通常是函数签名的 Keccak-256 哈希前 4 字节，后面是编码参数；但空 `data` 也可能触发合约的接收函数，带 `data` 的目标也可能是普通账户或 EIP-7702 委托账户。要结合目标代码、`value`、ABI 和交易模拟判断，不能仅凭 `to` 或选择器断言真实效果。
+
+## 深入回答
+
+- 【协议保证】函数调用数据的前四字节是函数选择器，取函数签名 Keccak-256 哈希的前四字节（依据：Solidity 文档（abi-spec）§Function Selector）。
+- 【协议保证】签名是函数名加括号内以逗号分隔、无空格的参数类型列表；返回类型不参与签名（依据：Solidity 文档（abi-spec）§Function Selector）。
+- 【协议保证】静态类型在编码中各占 32 字节，左补零；`address` 按 `uint160` 处理（依据：Solidity 文档（abi-spec）§Types、§Formal Specification of the Encoding）。
+- 【协议保证】动态类型（`bytes`、`string`、变长数组）先放偏移量，再放长度与数据（依据：Solidity 文档（abi-spec）§Formal Specification of the Encoding）。
+- 【协议保证】`to` 为空的交易用于部署合约，`data` 是创建代码；`to` 为合约地址时 `data` 是 calldata（依据：EIP-1474 §eth_call 的 to/data 参数说明）。
+- 【协议保证】选择器只有 4 字节，同一选择器可能对应多个不同签名；区块浏览器列出的候选签名可能不止一个（依据：Solidity 文档（abi-spec）§Function Selector；ethereum.org Transactions 页面 §The data field）。
+- 【实现行为】ERC-7730 定义了一套描述符格式，把 calldata 与签名消息的字段映射为可读展示，钱包按描述符里的签名匹配选择器（依据：ERC-7730 §Abstract、§Specification 的 Selector matching）。
+- 【工程经验】没有 ABI 时，前端能做的是读出选择器并查询候选签名，把结果作为线索展示，不能据此下安全结论（依据：工程经验，无规范依据）。
+- 【工程经验】参数编码错误会导致调用回滚；选择器错误可能命中其他函数或回退函数，发送前模拟可以暴露这类问题（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为 `data` 非空就属于合约调用。
+- 说选择器是「函数名的哈希」（【协议保证】签名包含参数类型，依据：Solidity 文档（abi-spec）§Function Selector）。
+- 把选择器数据库的候选结果当成确定结论并据此提示用户「安全」或「危险」。
+- 认为向外部账户发送非空 `data` 一定只会浪费 gas；EIP-7702 委托账户可能执行代码。
+- 展示原始十六进制而不做解码，用户无从核对。
+
+## 面试官追问
+
+1. `to` 是合约但 `data` 为空会发生什么？合约没有对应入口时会怎样？
+2. 一笔 21000 gas 的普通转账如果带了 `data`，结果会怎样？
+3. 你如何向用户解释「这个选择器有多个候选签名」这件事？
+4. 钱包不展示解码后的参数时，前端还能做什么来降低盲签风险？
+
+## 评分标准
+
+### 初级回答
+
+- 知道前 4 字节是函数选择器，能在区块浏览器上找到对应函数。
+- 知道 `to` 为空表示部署合约。
+
+### 中级回答
+
+- 能解释 ABI 编码规则，说明静态类型与动态类型的差别。
+- 能指出地址在 calldata 里占 32 字节，并知道可以用选择器数据库反查。
+
+### 高级回答
+
+- 能指出反查存在多解、不能作为安全结论，并说明没有 ABI 时的推断边界。
+- 能说明 `to` 三种取值下的不同语义，以及选择器错误带来的隐性风险。
+
+## 参考资料
+
+- [Solidity 文档（ABI Specification）：§Function Selector、§Types、§Formal Specification of the Encoding](https://docs.soliditylang.org/en/latest/abi-spec.html)
+- [ethereum.org：Transactions（§The data field、§Types of transactions）](https://ethereum.org/en/developers/docs/transactions/)
+- [ERC-7730：Structured Data Clear Signing Format（§Abstract、§Specification 的 Selector matching）](https://eips.ethereum.org/EIPS/eip-7730)
+- [EIP-1474：Remote procedure call specification（§eth_call）](https://eips.ethereum.org/EIPS/eip-1474)

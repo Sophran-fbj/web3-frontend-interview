@@ -1,0 +1,92 @@
+---
+id: signing-012
+slug: sign-vs-transact-button-copy
+title: 「签名」和「发送交易」的按钮文案能混用吗？
+summary: 考察两类请求在用户预期与钱包展示上的差别，以及文案混淆带来的资金风险。
+status: review
+difficulty: beginner
+category: signing
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - ux
+  - signing
+  - confirmation
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-4361：Sign-In with Ethereum（§Specification、§Security Considerations）
+    url: https://eips.ethereum.org/EIPS/eip-4361
+  - title: EIP-191：Signed Data Standard（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-191
+---
+
+## 题目
+
+产品评审时有人提出：把「签名登录」的按钮统一改成「确认」，让流程看起来更简单，和「发送交易」保持一致的交互。
+
+请说明这两类请求在用户预期、钱包展示与后果上的差别，以及文案设计应该遵循什么原则。
+
+## 考察目标
+
+- 能否说清签名与交易在用户预期上的区别。
+- 是否理解钱包侧展示要求对前端的约束。
+- 能否给出可执行的文案与交互原则。
+
+## 30 秒回答
+
+两类请求的后果不同：签名请求签的是消息，交易会上链并改变状态、消耗费用。登录类规范把域名、地址、声明文本与资源列为钱包在签名前要展示的字段，因此这类请求需要向用户交代「是谁、为什么、签什么」，这一点难以用一个通用的「确认」按钮表达。
+
+## 深入回答
+
+- 【协议保证】登录类消息由固定字段组成：域名、地址、可选声明文本、URI、版本、链标识、随机数，以及可选的过期时间、生效时间、请求标识与资源列表（依据：EIP-4361 §Specification 的 Message Fields）。
+- 【协议保证】钱包在签名前默认展示 scheme、domain、address、statement 与 resources；其他存在的字段也要在签名前可获取（依据：EIP-4361 §Specification 的 Wallet Implementer Steps 的 Creating Sign-In with Ethereum Interfaces）。
+- 【协议保证】规范要求给消息加上 ERC-191 规定的前缀后再签名，验签也按 ERC-191 的方式执行，因此它属于消息签名而不是交易（依据：EIP-4361 §Specification 的 Overview；EIP-191 §Specification）。
+- 【协议保证】登录会话绑定地址而不是可变的解析资源；合约账户的校验结果可能随链上状态变化，服务端据此失效相关会话（依据：EIP-4361 §Specification 的 Relying Party Implementer Steps 的 Creating Sessions；§Security Considerations 的 Session Invalidation）。
+- 【工程经验】按钮文案写明动作类型（签名登录、授权额度、提交交易）与后果（是否付费、是否改变链上状态、能否撤销），让用户在钱包弹窗之外先建立判断（依据：工程经验，无规范依据）。
+- 【工程经验】用户拒绝签名属于正常路径：界面停留在原状态并保留重试入口，把拒绝提示为「操作失败」会误导用户（依据：工程经验，无规范依据）。
+- 【工程经验】高风险动作在确认层复述对象地址、金额与额度上限；用「此操作安全」这类结论替代参数展示，会放大误签风险（依据：工程经验，无规范依据）。
+- 【工程经验】钱包缺少某类签名能力时，降级到可用路径或说明原因；用统一文案抹平两类请求的差别，在多数产品里会提高误判概率（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把签名与交易的入口文案统一成「确认」，用户无法从按钮预判后果（【工程经验】文案需要区分动作与后果，依据：工程经验，无规范依据）。
+- 在签名请求里不展示域名与目标地址（【协议保证】钱包默认展示 domain 与 address 等字段，依据：EIP-4361 §Specification 的 Wallet Implementer Steps）。
+- 用「登录」描述实际是授权额度的请求，让用户误以为不动资产（【协议保证】登录消息的 statement 与授权类签名的语义不同，依据：EIP-4361 §Specification 的 Message Fields）。
+- 用户拒绝后提示「操作失败」并自动重试。
+- 用「安全」这类词替代具体参数展示。
+
+## 面试官追问
+
+1. 如果产品坚持统一文案，你会提出什么替代方案？
+2. 用户连续拒绝两次签名，界面应该怎样变化？
+3. 确认层里你会怎样展示授权额度的上限与可撤销性？
+4. 同一个按钮在不同链上后果不同，文案与校验如何处理？
+5. 你会用哪些指标判断文案分层是否有效？
+
+## 评分标准
+
+### 初级回答
+
+- 知道签名请求签的是消息，交易会上链并消耗费用。
+- 知道按钮文案应区分两类动作。
+
+### 中级回答
+
+- 能给出「动作 + 后果 + 可撤销性」的文案与交互原则。
+- 能说明用户拒绝签名属于正常路径，不应报错或自动重试。
+
+### 高级回答
+
+- 能引用规范对钱包展示字段的要求，说明前端在钱包之外要补足上下文。
+- 能指出前端文案的边界：参数未解析时不给出安全性结论，高风险动作进入二次确认。
+
+## 参考资料
+
+- [EIP-4361：Sign-In with Ethereum（§Specification、§Security Considerations）](https://eips.ethereum.org/EIPS/eip-4361)
+- [EIP-191：Signed Data Standard（§Specification）](https://eips.ethereum.org/EIPS/eip-191)

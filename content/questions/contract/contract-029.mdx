@@ -1,0 +1,95 @@
+---
+id: contract-029
+slug: allowance-stale-read-after-approve
+title: 授权刚确认，为什么读到的额度还是旧的？
+summary: 考察写入后立即读取的一致性来源，以及多端点与区块参数造成的读数偏差。
+status: review
+difficulty: advanced
+category: contract
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - allowance
+  - stale-read
+  - consistency
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1474：Remote procedure call specification（§Block Identifier、§eth_call、§eth_getTransactionReceipt）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-20：Token Standard（§Specification（allowance、approve））
+    url: https://eips.ethereum.org/EIPS/eip-20
+  - title: viem：readContract（§Parameters（blockNumber、blockTag、blockHash、requireCanonical））
+    url: https://viem.sh/docs/contract/readContract
+---
+
+## 题目
+
+用户点击「授权」并成功确认后，界面上的授权额度仍然显示为 0，用户等待十几秒后才恢复正常。有工程师建议「加个固定延时再读取」。
+
+请分析这个现象的可能原因，并给出比「加延时」更可靠的方案。
+
+## 考察目标
+
+- 能否识别读数不一致的来源。
+- 是否理解区块参数对读取结果的作用。
+- 能否给出可验证的刷新方案。
+
+## 30 秒回答
+
+先核对授权交易的收据 `status`：上链不代表执行成功。若执行成功，读取额度所用节点仍可能落后于收据区块，或者缓存尚未失效。应在不早于收据区块的链状态上重新读取 `allowance`，并按账户、代币、spender 与链刷新缓存；固定延时无法保证读到新值。
+
+## 深入回答
+
+- 【协议保证】只读调用可以携带区块参数，取值可以是区块高度、`latest`/`earliest`/`pending` 这样的标签，或包含区块号与区块哈希的区块标识对象（依据：EIP-1474 §Block Identifier、§eth_call）。
+- 【协议保证】交易收据包含 `blockNumber`，可以据此确定交易被打包的区块（依据：EIP-1474 §eth_getTransactionReceipt）。
+- 【协议保证】`allowance` 返回 `_spender` 仍可从 `_owner` 提取的额度，`approve` 会把额度覆盖为新值（依据：EIP-20 §Specification（allowance、approve））。
+- 【实现行为】viem 的 `readContract` 支持 `blockNumber`、`blockTag`（默认 `'latest'`）与 `blockHash` 参数，并支持按 EIP-1898 的 `requireCanonical` 做区块归属校验（依据：viem readContract §Parameters（blockNumber、blockTag、blockHash、requireCanonical））。
+- 【工程经验】读到旧值有两类直接来源：读取使用的高度早于交易所在区块，或请求路由到的节点尚未同步到该高度（依据：工程经验，无规范依据）。
+- 【工程经验】固定延时只是掩盖问题；更可靠的做法是记录交易所在区块并在其后读取，或校验数据对应的区块高度是否足够新（依据：工程经验，无规范依据）。
+- 【工程经验】读写走不同端点会放大延迟差异；负载均衡把连续请求分发到不同节点时，数值会反复跳动（依据：工程经验，无规范依据）。
+- 【工程经验】刷新完成前展示「已授权，正在刷新额度」这类中间状态，避免旧值先出现再跳变（依据：工程经验，无规范依据）。
+- 【工程经验】授权额度属于链上事实，本地乐观更新只用于展示，不用于业务判定（例如据此直接发起扣款）（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 用固定延时掩盖同步延迟，节点稍慢就会复现（依据：工程经验，无规范依据）。
+- 【协议保证】`approve` 覆盖 allowance；授权成功后直接把本地缓存置为目标额度会与链上状态脱节（依据：EIP-20 §Specification（allowance、approve））。
+- 【协议保证】只读调用携带区块参数、由具体节点按其视图返回；认为收据到手即每个被查询的节点都能读到新状态会误判刷新时机（依据：EIP-1474 §Block Identifier）。
+- 读请求与写请求走不同的端点且不做校验（依据：工程经验，无规范依据）。
+- 刷新失败后无限重试（依据：工程经验，无规范依据）。
+
+## 面试官追问
+
+1. 你如何在接口层面判断「这次读取的状态足够新」？
+2. 如果端点无法返回读取时的区块高度，你会怎么处理？
+3. 多个标签页同时操作同一额度，界面如何收敛？
+4. 什么情况下你会允许界面展示乐观额度？
+
+## 评分标准
+
+### 初级回答
+
+- 知道只读调用读取的是某个高度上的状态。
+- 知道收据到手不表示所查询的节点都已同步。
+
+### 中级回答
+
+- 能指出高度选择与节点进度是两个直接原因，并给出基于区块高度的刷新方案。
+- 能说明刷新期间的中间状态展示。
+
+### 高级回答
+
+- 能设计出带区块高度校验与有限退避重试的读取流程，并说明读写端点一致性的取舍。
+- 能明确乐观额度只用于展示、不用于业务判定。
+
+## 参考资料
+
+- [EIP-1474：Remote procedure call specification（§Block Identifier、§eth_call、§eth_getTransactionReceipt）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-20：Token Standard（§Specification（allowance、approve））](https://eips.ethereum.org/EIPS/eip-20)
+- [viem：readContract（§Parameters（blockNumber、blockTag、blockHash、requireCanonical））](https://viem.sh/docs/contract/readContract)

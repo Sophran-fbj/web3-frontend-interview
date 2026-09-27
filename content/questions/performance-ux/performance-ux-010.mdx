@@ -1,0 +1,100 @@
+---
+id: performance-ux-010
+slug: loading-state-vs-empty-state
+title: 怎么区分「加载中」「没有数据」和「加载失败」？
+summary: 考察三态区分的必要性，以及把失败渲染成空数据带来的误导。
+status: review
+difficulty: beginner
+category: performance-ux
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - loading
+  - empty-state
+  - error-state
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-1474：Ethereum JSON-RPC 规范（§Concepts 的 Error codes）"
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: "wagmi：useReadContract（§Return Type 的 status、isLoading、isRefetchError、error）"
+    url: https://wagmi.sh/react/api/hooks/useReadContract
+  - title: "wagmi：TanStack Query 指南（§Queries & Mutations、§Invalidating Queries）"
+    url: https://wagmi.sh/react/guides/tanstack-query
+  - title: "ethereum.org：7 heuristics for Web3 interface design（§1. Feedback follows action、§3. The most important info is obvious）"
+    url: https://ethereum.org/en/developers/docs/design-and-ux/heuristics-for-web3/
+---
+
+## 题目
+
+用户反馈：「我的资产列表是空的，但我明明有资产。」排查发现是 RPC 短暂失败，界面把失败当成了空列表。
+
+请说明这类问题为什么常见，以及界面应该如何区分三种状态才能避免误导。
+
+## 考察目标
+
+- 能否识别失败与空数据的语义差别。
+- 是否理解默认值处理掩盖问题的风险。
+- 能否给出三态设计与重试入口。
+
+## 30 秒回答
+
+「没有数据」是一次成功查询的有效结果，「读取失败」表示这次读取没有拿到结果；JSON-RPC 规范要求错误响应的 `error` 成员携带 `code` 与 `message`，因此两者在数据层就可以区分。把失败渲染成空列表，用户会以为资产消失。
+
+## 深入回答
+
+- 【协议保证】RPC 方法失败时，响应对象中的 `error` 成员是包含 `code` 与 `message` 的对象，与成功响应的结果分支不同（依据：EIP-1474 §Concepts 的 Error codes）。
+- 【实现行为】wagmi 查询的 `status` 区分 `pending`、`success` 与 `error`，`isLoading` 仅在首次请求进行中为真，`error` 保存错误对象、失败后默认保持为空值（依据：wagmi useReadContract §Return Type 的 status、isLoading、error）。
+- 【实现行为】`isRefetchError` 用于区分「首次加载失败」与「后台重取失败」，后台重取失败时组件仍能拿到上一次成功的数据字段，可据此保留旧数据并单独提示（依据：wagmi useReadContract §Return Type 的 isRefetchError、data）。
+- 【工程经验】数据获取层避免「失败时返回空数组」的默认值写法，否则错误与空结果在类型上无法区分（依据：工程经验，无规范依据）。
+- 【工程经验】聚合多个来源的页面出现部分失败时，保留成功部分并在顶部标注「部分数据加载失败」，而不是整页清空（依据：工程经验，无规范依据）。
+- 【工程经验】不显示「你没有资产」这类结论性文案，除非查询成功返回且结果为空（依据：工程经验，无规范依据）。
+- 【工程经验】重试设置次数上限与退避间隔，避免在 RPC 故障时形成请求风暴（依据：工程经验，无规范依据）。
+- 【工程经验】读取失败的页面上不进入资金操作确认流程，把操作入口与数据状态绑定（依据：工程经验，无规范依据）。
+- 【工程经验】加载骨架与空状态使用不同层级与文案，避免用户把占位内容读成结论（依据：ethereum.org：7 heuristics for Web3 interface design §1. Feedback follows action；作为背景，非协议规范）。
+- 【实现行为】wagmi 的查询构建在 TanStack Query 之上，重取、失效与缓存语义由该层提供，状态字段与后台重取行为都来自这一层（依据：wagmi：TanStack Query 指南 §Queries & Mutations）。
+
+## 常见错误
+
+- 失败时返回空数组，让错误与空结果在类型上无法区分（【工程经验】）。
+- 加载过程中显示「暂无数据」这类结论性文案（【工程经验】）。
+- 后台刷新失败时清空已展示的数据，而不是保留并标注可能过期（【实现行为】`isRefetchError` 可区分后台失败；依据：wagmi useReadContract §Return Type 的 isRefetchError）。
+- 重试没有上限与退避（【工程经验】）。
+- 数据处于失败状态时仍允许进入资金操作（【工程经验】）。
+
+## 面试官追问
+
+1. 缓存刷新失败时你会保留旧数据吗？如何在界面上标注「可能过期」？
+2. 部分数据源加载失败时，哪些操作应该被禁用？
+3. 监控上如何区分「真的没有数据」与「读取失败」？
+4. 用户反复看到失败时，界面还应该提供哪些信息？
+
+## 评分标准
+
+### 初级回答
+
+- 知道需要区分加载中、空数据与失败三种状态。
+- 知道失败时应提供重试入口。
+
+### 中级回答
+
+- 能指出「失败时返回空值」是常见反模式，并说明部分失败的处理方式。
+- 能说明失败状态下应禁用资金相关操作。
+
+### 高级回答
+
+- 能给出缓存刷新失败时的保留与过期标注策略，并说明重试的退避与上限。
+- 能在监控与文案两个层面区分空数据与失败，并说明各自的判断依据。
+
+## 参考资料
+
+- [EIP-1474：Ethereum JSON-RPC 规范（§Concepts 的 Error codes）](https://eips.ethereum.org/EIPS/eip-1474)
+- [wagmi：useReadContract（§Return Type 的 status、isLoading、isRefetchError、error）](https://wagmi.sh/react/api/hooks/useReadContract)
+- [wagmi：TanStack Query 指南（§Queries & Mutations、§Invalidating Queries）](https://wagmi.sh/react/guides/tanstack-query)
+- [ethereum.org：7 heuristics for Web3 interface design（§1. Feedback follows action、§3. The most important info is obvious）](https://ethereum.org/en/developers/docs/design-and-ux/heuristics-for-web3/)

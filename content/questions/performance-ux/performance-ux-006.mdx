@@ -1,0 +1,98 @@
+---
+id: performance-ux-006
+slug: defer-account-read-until-after-paint
+title: 什么时候读取账户状态，首屏才不被拖慢？
+summary: 考察连接状态读取的时序安排，以及服务端渲染与客户端恢复的分工。
+status: review
+difficulty: intermediate
+category: performance-ux
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - first-paint
+  - timing
+  - ssr
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1193：Ethereum Provider JavaScript API（§Events）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: wagmi：SSR（§Persistence using Cookies）
+    url: https://wagmi.sh/react/guides/ssr
+  - title: wagmi：useConnection（§Return Type 的 status、isConnecting / isReconnecting / isConnected / isDisconnected）
+    url: https://wagmi.sh/react/api/hooks/useConnection
+  - title: wagmi：createConfig（§Parameters 的 ssr）
+    url: https://wagmi.sh/react/api/createConfig
+---
+
+## 题目
+
+你们的首屏指标不理想，排查发现页面一加载就同步读取钱包状态与余额，并且这些读取阻塞了主要内容渲染。
+
+请说明这类读取应该安排在什么时机，以及服务端渲染与客户端恢复各自负责什么。
+
+## 考察目标
+
+- 能否区分「首屏可见内容」与「连接后才有的内容」。
+- 是否理解钱包状态依赖浏览器环境。
+- 能否给出分阶段的加载策略。
+
+## 30 秒回答
+
+provider 通过事件通知连接、账户与链的变化，这些事件只在浏览器环境产生，服务端渲染阶段拿不到。可行的顺序是：先输出与连接无关的静态内容，客户端挂载后读取连接状态，确认连接与链之后再加载账户相关数据。连接状态有多个中间值，用占位渲染中间态可以避免界面在「未连接」与「已连接」之间跳变。
+
+## 深入回答
+
+- 【协议保证】provider 通过事件通知连接、账户与链的变化，应用在客户端挂载后订阅这些事件（依据：EIP-1193 §Events）
+- 【实现行为】wagmi 的 SSR 指南用 cookie 持久化连接状态，让服务端渲染阶段可以读到一份连接快照（依据：wagmi：SSR §Persistence using Cookies）
+- 【实现行为】`useConnection` 的 `status` 与 `isConnecting / isReconnecting / isConnected / isDisconnected` 覆盖了连接过程中的多个中间值（依据：wagmi：useConnection §Return Type 的 status、isConnecting / isReconnecting / isConnected / isDisconnected）
+- 【实现行为】`createConfig` 的 `ssr` 参数用于服务端渲染场景下的状态传递（依据：wagmi：createConfig §Parameters 的 ssr）
+- 【工程经验】把 `reconnecting` 渲染成「未连接」会造成按钮文案跳变，用骨架或中性占位过渡更稳（依据：工程经验，无规范依据）
+- 【工程经验】读取失败时保留中性占位并给重试入口，回退到「未连接」会让用户误以为被登出（依据：工程经验，无规范依据）
+- 【工程经验】公开链上数据（例如合约元信息）可以在服务端预取；与用户账户相关的数据不适合放在服务端（依据：工程经验，无规范依据）
+- 【工程经验】把账户相关读取全部推迟会让已连接用户看到较长骨架，把连接相关内容放进首屏又会拖慢全部用户，取舍点在于首屏结构与账户内容的分离（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 在服务端渲染阶段尝试读取钱包状态（依据：EIP-1193 §Events）
+- 让账户数据的加载阻塞首屏结构渲染（依据：工程经验，无规范依据）
+- 把重连中渲染成未连接，造成状态闪烁（依据：wagmi：useConnection §Return Type 的 status、isConnecting / isReconnecting / isConnected / isDisconnected）
+- 读取失败时回退到未连接（依据：工程经验，无规范依据）
+- 把用户相关数据放在服务端预取（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 已连接用户看到骨架的时间如何缩短？
+2. 服务端可以安全预取哪些数据？
+3. 产品要求首屏就显示余额时，你会怎么解释代价？
+4. 你如何衡量这次时序调整的效果？
+
+## 评分标准
+
+### 初级回答
+
+- 知道钱包状态依赖浏览器环境读取。
+- 知道不应让连接读取阻塞首屏。
+
+### 中级回答
+
+- 能给出分阶段加载策略，并指出重连中不宜渲染为未连接。
+- 能说明服务端可预取与不可预取的数据边界。
+
+### 高级回答
+
+- 能按未连接与已连接两类用户设计不同的首屏过渡，并说明取舍依据。
+- 能给出可观测的指标来衡量改进效果。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§Events）](https://eips.ethereum.org/EIPS/eip-1193)
+- [wagmi：SSR（§Persistence using Cookies）](https://wagmi.sh/react/guides/ssr)
+- [wagmi：useConnection（§Return Type 的 status、isConnecting / isReconnecting / isConnected / isDisconnected）](https://wagmi.sh/react/api/hooks/useConnection)
+- [wagmi：createConfig（§Parameters 的 ssr）](https://wagmi.sh/react/api/createConfig)

@@ -1,0 +1,92 @@
+---
+id: contract-023
+slug: abi-formats-and-mismatch
+title: 手写的 ABI 和编译产物对不上，会怎样？
+summary: 考察两种 ABI 表述形式的取舍，以及不匹配时暴露出的症状与排查路径。
+status: review
+difficulty: intermediate
+category: contract
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - abi
+  - encoding
+  - mismatch
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: Solidity 文档：Contract ABI Specification（§Function Selector、§Type Encoding、§JSON）
+    url: https://docs.soliditylang.org/en/latest/abi-spec.html
+  - title: Solidity 文档：Contracts（§Fallback Function、§Events）
+    url: https://docs.soliditylang.org/en/latest/contracts.html
+---
+
+## 题目
+
+接入一个已经上线的合约时，你拿不到编译产物，手上只有文档里一份人类可读的函数签名清单，于是手工写了一份 ABI。
+
+上线后出现两类问题：部分调用反复回滚，另一部分调用能成功但界面显示的数据明显不对。请说明可能的原因与排查顺序。
+
+## 考察目标
+
+- 能否说明两种 ABI 表述形式的差异与适用场景。
+- 是否理解 ABI 不匹配会在编码与解码两个方向出错。
+- 能否给出可执行的排查路径。
+
+## 30 秒回答
+
+ABI 描述函数签名、参数和返回类型。输入 ABI 写错可能算出错误选择器、编码出错误参数，最终命中别的入口或回滚；返回 ABI 写错时，解码可能直接失败，也可能在类型兼容的字段之间静默读错。先核对部署地址和链，尽可能取得可验证的编译产物或公开源码；若确实没有，再用原始调用与返回字节、已知样本逐项核对手写 ABI。
+
+## 深入回答
+
+- 【协议保证】参数按类型规则编码：静态类型各占 32 字节，动态类型通过偏移量、长度与数据表达（依据：Solidity 文档 Contract ABI Specification §Type Encoding）。
+- 【协议保证】JSON 形式的 ABI 用结构化字段记录参数与返回值的名称与类型，工具依据其中的顺序与类型完成编解码（依据：Solidity 文档 Contract ABI Specification §JSON）。
+- 【协议保证】选择器未匹配到函数时，调用会落到回退函数（若合约定义了回退函数）（依据：Solidity 文档 Contracts §Fallback Function）。
+- 【协议保证】事件签名与参数类型决定日志主题与数据区的划分，类型不符会导致解码结果与原始日志对不上（依据：Solidity 文档 Contracts §Events）。
+- 【工程经验】人类可读形式便于书写与阅读，但结构化信息有限，尤其是返回值的元组结构与命名（依据：工程经验，无规范依据）。
+- 【工程经验】参数类型写错（把定长数组写成动态数组、整数位宽写错）会改变选择器或参数编码，表现为回滚或落入回退函数（依据：工程经验，无规范依据）。
+- 【工程经验】排查顺序：先核对函数名与参数类型的规范书写，再取原始返回数据按不同结构试解析并比较字段含义（依据：工程经验，无规范依据）。
+- 【工程经验】合约提供已验证源码或官方 ABI 时，以它为唯一来源替换手工版本，并把 ABI 纳入版本管理（依据：工程经验，无规范依据）。
+- 【工程经验】拿不到权威 ABI 时记录该风险，并避免在界面上展示依赖它的关键数据（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 人类可读 ABI 可以经工具解析成完整 ABI，但手写声明若遗漏重载、元组组件或返回类型，工具仍会按错误的声明编解码（依据：Solidity 文档 Contract ABI Specification §JSON；工程经验）。
+- 【协议保证】选择器由签名算出；只核对函数名而不核对参数类型，会在重载时落到别的入口（依据：Solidity 文档 Contract ABI Specification §Function Selector）。
+- 【协议保证】返回值按 ABI 中的顺序与类型切分；解码出错时不校验数量与结构，会拿到错位的数据（依据：Solidity 文档 Contract ABI Specification §JSON）。
+- 把手工 ABI 当作长期方案且不做版本管理（依据：工程经验，无规范依据）。
+- 在关键数据展示上使用未经验证的 ABI（依据：工程经验，无规范依据）。
+
+## 面试官追问
+
+1. 只有原始返回数据时，你如何判断解析是否合理？
+2. 合约升级后 ABI 变化，你的应用如何感知？
+3. 事件解码出错会有什么表现？
+4. 你会如何把 ABI 的权威来源固化到流程里？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 ABI 描述函数与参数类型。
+- 知道参数类型不匹配会导致调用失败。
+
+### 中级回答
+
+- 能区分编码方向与解码方向的不匹配及其不同症状。
+- 能给出「先核对签名、再核对返回值」的排查顺序。
+
+### 高级回答
+
+- 能说明解码错位为什么没有报错且更难发现，并给出原始数据比对的方法。
+- 能提出 ABI 权威来源与版本管理的流程，并说明无权威 ABI 时的展示风险控制。
+
+## 参考资料
+
+- [Solidity 文档：Contract ABI Specification（§Function Selector、§Type Encoding、§JSON）](https://docs.soliditylang.org/en/latest/abi-spec.html)
+- [Solidity 文档：Contracts（§Fallback Function、§Events）](https://docs.soliditylang.org/en/latest/contracts.html)

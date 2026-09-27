@@ -1,0 +1,96 @@
+---
+id: business-scenario-005
+slug: account-abstraction-frontend-impact
+title: EIP-7702 委托执行后，前端要改什么？
+summary: 考察委托执行类交易对前端状态与确认流程的影响，以及能力探测的必要性。
+status: review
+difficulty: advanced
+category: business-scenario
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - eip-7702
+  - account-abstraction
+  - transaction-type
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-7702：Set Code for EOAs（§Abstract、§Motivation、§Specification（Set code transaction、Behavior、Delegation indicator）、§Security Considerations）
+    url: https://eips.ethereum.org/EIPS/eip-7702
+  - title: EIP-5792：Wallet Call API（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-5792
+  - title: EIP-1193：Ethereum Provider JavaScript API（§request、§Provider Errors）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+---
+
+## 题目
+
+产品计划支持 EIP-7702：账户可以授权把执行委托给合约。某些钱包还提供批量调用或代付服务。
+
+请说明这类能力会给前端带来哪些变化：交易类型、确认信息、状态跟踪与降级路径。
+
+## 考察目标
+
+- 能否说明委托执行类交易的基本机制。
+- 是否理解它对前端状态与确认流程的影响。
+- 能否给出能力探测与降级的方案。
+
+## 30 秒回答
+
+EIP-7702 允许账户通过授权设置委托指示码，让后续执行使用目标合约的代码；它本身不保证批量执行或代付，具体能力取决于委托代码、钱包和服务。前端要分别跟踪授权是否生效与业务调用结果，核对委托目标，并在支持批量调用时展示每项操作。
+
+## 深入回答
+
+- 【协议保证】EIP-7702 引入一笔新交易类型（`SET_CODE_TX_TYPE` 为 `0x04`），其载荷包含授权列表，每个授权元组给出委托目标地址（依据：EIP-7702 §Specification（Set code transaction））。
+- 【协议保证】处理授权列表时会把授权账户的代码写为委托指示 `0xef0100 || address`；目标地址为零地址时则清除委托（依据：EIP-7702 §Specification（Behavior、Delegation indicator））。
+- 【协议保证】执行类操作会跟随委托指示取目标合约的代码执行，而 `EXTCODEHASH` 一类读取操作针对委托指示本身（依据：EIP-7702 §Specification（Delegation indicator））。
+- 【协议保证】交易执行失败时，已处理的委托指示不回滚，委托结果与业务操作结果相互独立（依据：EIP-7702 §Specification（Behavior））。
+- 【协议保证】授权列表逐个处理，某个元组失败时跳过并继续下一个；同一授权账户出现多个元组时，以最后一个有效元组为准（依据：EIP-7702 §Specification（Behavior））。
+- 【工程经验】批量执行与由其他账户付费是 EIP-7702 可以支持的用例，具体能否使用取决于委托代码、钱包和交易提交服务，不能仅凭链支持 EIP-7702 就向用户承诺这些能力（依据：EIP-7702 §Motivation；工程实现）。
+- 【协议保证】委托代码对账户有不受限的访问权限，规范提示应用不应假设可以引导用户签署授权，钱包需要审计被委托的代码（依据：EIP-7702 §Security Considerations）。
+- 【协议保证】EIP-5792 另行定义批量调用的提交、进度查询与能力探测方法：`wallet_sendCalls`、`wallet_getCallsStatus`、`wallet_getCapabilities`；不能把支持 EIP-7702 与支持这些钱包方法画等号（依据：EIP-5792 §Specification）。
+- 【协议保证】`4001` 表示用户拒绝；对不支持的已定稿 EIP 方法，EIP-1193 建议返回 `4200`，但调用方仍需处理方法自身规定的错误与其他钱包实现差异（依据：EIP-1193 §Supported RPC Methods、§Provider Errors）。
+- 【工程经验】确认界面逐条展示子调用的目标、方法与金额；委托对象作为高敏感参数限定为可信配置；不支持该能力的钱包回退到逐笔操作（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 【协议保证】批量能力通过 `wallet_getCapabilities` 等方法查询；假设钱包都支持该能力会让入口无法降级（依据：EIP-5792 §Specification）。
+- 【协议保证】委托代码对账户有不受限的访问权限；确认界面只显示「批量操作」会掩盖子调用（依据：EIP-7702 §Security Considerations）。
+- 【协议保证】委托在处理授权列表时写入，业务操作在之后执行；把两者混为一谈会错判失败原因（依据：EIP-7702 §Specification（Behavior））。
+- 把 EIP-7702 的委托能力直接写成「已支持代付」，未确认提交服务与费用承担方（依据：EIP-7702 §Motivation；工程经验）。
+- 【协议保证】委托对象决定后续执行逻辑；接受运行时输入且不校验会让账户暴露给不可信代码（依据：EIP-7702 §Security Considerations）。
+
+## 面试官追问
+
+1. 你如何探测钱包是否支持这类交易？
+2. 批量确认界面如何避免信息过载？
+3. 委托对象不是配置中的可信地址时，你会怎么做？
+4. 代付方失败时用户能看到什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道存在让普通账户具备合约能力的机制。
+- 知道批量操作需要在界面上逐条展示。
+
+### 中级回答
+
+- 能说明该机制对交易类型、确认界面与状态跟踪的影响。
+- 能给出能力探测与逐笔降级的方案。
+
+### 高级回答
+
+- 能设计出高敏感参数（委托对象）的校验与展示要求，并说明费用承担的呈现。
+- 能区分委托设置失败与业务操作失败的后续处理。
+
+## 参考资料
+
+- [EIP-7702：Set Code for EOAs（§Abstract、§Motivation、§Specification（Set code transaction、Behavior、Delegation indicator）、§Security Considerations）](https://eips.ethereum.org/EIPS/eip-7702)
+- [EIP-5792：Wallet Call API（§Specification）](https://eips.ethereum.org/EIPS/eip-5792)
+- [EIP-1193：Ethereum Provider JavaScript API（§request、§Provider Errors）](https://eips.ethereum.org/EIPS/eip-1193)

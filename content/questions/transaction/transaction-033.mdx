@@ -1,0 +1,92 @@
+---
+id: transaction-033
+slug: eth-call-on-pending-block
+title: 使用 pending 模拟一定更准吗？
+summary: 考察区块参数的语义差别，以及模拟在哪种状态下最接近即将上链的情形。
+status: review
+difficulty: advanced
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - block-tag
+  - simulation
+  - eth-call
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1474：Remote procedure call 规范（§Block Identifier、§eth_call）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: ethereum.org：Transactions（§Transaction lifecycle）
+    url: https://ethereum.org/en/developers/docs/transactions/
+---
+
+## 题目
+
+你在做「发送前模拟」，需要选择一个区块参数来执行只读调用。
+
+同事说用最新区块就行，你更倾向于使用待处理状态。请说明两者的差别，以及选择不同参数会对模拟结果产生什么影响。
+
+## 考察目标
+
+- 能否说明各区块参数的语义差别。
+- 是否理解模拟结果与真实执行之间仍然存在差距。
+- 能否指出这种差距无法通过选择参数消除。
+
+## 30 秒回答
+
+`eth_call` 可以指定 `latest` 或 `pending` 等区块标识。`latest` 基于最新已出块状态；`pending` 请求节点的待处理状态，但它包含哪些交易取决于节点实现与本地交易池，不能保证覆盖全部待打包交易，也不能保证更接近最终执行。应把两种模拟结果都视为当前节点的预测。
+
+## 深入回答
+
+- 【协议保证】`eth_call`、`eth_getBalance`、`eth_getCode`、`eth_getTransactionCount` 等方法把区块标识作为参数，取值包括区块号、`latest`、`earliest`、`pending` 与区块标识对象（依据：EIP-1474 §Block Identifier 的说明与方法列表）。
+- 【协议保证】`eth_call` 表示立即执行一次消息调用而不提交交易，返回执行结果；该结果不落链（依据：EIP-1474 §eth_call）。
+- 【工程经验】`pending` 是节点提供的待处理视图；节点可能计入本地已知交易，也可能将其近似为最新已出块状态，因此不同端点结果可能不同（依据：EIP-1474 §Block Identifier；具体内容取决于节点实现）。
+- 【工程经验】如果节点确实计入了相关待处理交易，`pending` 模拟可能提前暴露额度或库存冲突；交易池不完整、排序变化及私有交易仍会使预测失准（依据：工程经验，无规范依据）。
+- 【工程经验】模拟与打包之间存在时间窗口，其他交易仍可能改变状态，因此模拟结论需要表述为「按当前已知状态预计成功或失败」（依据：工程经验，无规范依据）。
+- 【工程经验】前端负责选择更贴近真实执行的状态，并把失败原因解析后展示；不承诺执行结果（依据：工程经验，无规范依据）。
+- 【工程经验】模拟失败通常表示该调用在当前状态下会回滚，应阻止发送并说明原因；模拟通过而上链失败时，结果页要如实展示失败与费用（依据：工程经验，无规范依据）。
+- 【工程经验】模拟不能当作安全审查：它反映的是当前状态下的执行结果，调用是否符合用户意图仍要由参数解析与用户确认保障（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为模拟通过就表示上链会成功（【协议保证】`eth_call` 的结果不落链，依据：EIP-1474 §eth_call）。
+- 把模拟结果当作安全性结论展示给用户。
+- 使用过于陈旧的区块参数做模拟，忽略待打包交易的影响。
+- 认为 `pending` 视图在各节点上一致。
+- 模拟失败时仍然允许用户直接提交。
+
+## 面试官追问
+
+1. 为什么 `pending` 视图在不同节点上可能不同？这对实现有什么影响？
+2. 模拟成功但上链失败时，你如何向用户解释？
+3. 什么场景下你会刻意使用更陈旧的区块参数？
+4. 你会在模拟中把用户待发送的交易也叠加进去吗？怎么做？
+5. 用户拒绝签名后，模拟结果还能复用吗？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 `latest` 不包含未打包交易，`pending` 是否计入相关待处理交易取决于节点。
+- 知道模拟通过不代表上链会成功。
+
+### 中级回答
+
+- 能说明 `pending` 可能更接近某些待处理状态，也可能与最终执行偏离，并指出它是节点本地视角。
+- 能说明模拟失败时应阻止发送并给出原因。
+
+### 高级回答
+
+- 能指出模拟与真实执行之间的时间窗口无法通过参数选择消除，并给出叠加待发送交易的做法。
+- 能明确模拟的能力边界，不把它当作安全结论。
+
+## 参考资料
+
+- [EIP-1474：Remote procedure call 规范（§Block Identifier、§eth_call）](https://eips.ethereum.org/EIPS/eip-1474)
+- [ethereum.org：Transactions（§Transaction lifecycle）](https://ethereum.org/en/developers/docs/transactions/)

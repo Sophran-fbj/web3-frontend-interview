@@ -1,0 +1,92 @@
+---
+id: wallet-045
+slug: walletconnect-new-chains-stale
+title: 给 DApp 加了新链，扫码用户为什么连不上？
+summary: 考察 WalletConnect 的链授权模型，以及新增链对既有连接的影响与发布策略。
+status: review
+difficulty: advanced
+category: wallet
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - walletconnect
+  - chains
+  - connector
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：walletConnect connector（§Parameters 的 isNewChainsStale、§Install）
+    url: https://wagmi.sh/react/api/connectors/walletConnect
+  - title: wagmi：Connectors（§Available Connectors）
+    url: https://wagmi.sh/react/api/connectors
+---
+
+## 题目
+
+你们上线了第二期功能，DApp 新增支持一条链。发布后发现：浏览器钱包用户可以正常使用新链，而用扫码方式连接的移动端用户在新链上操作时要么没有反应，要么需要重新连接。
+
+请说明这类连接方式与浏览器注入钱包在「链」上的处理差别，以及新增链时应该怎么做发布与引导。
+
+## 考察目标
+
+- 扫码连接需要为每条链建立会话层面的关系。
+- 「过期链」这一概念及其默认处理。
+- 技术约束到发布流程与用户引导的转化。
+
+## 30 秒回答
+
+WalletConnect v2 会话通常需要预先批准链；DApp 后来新增的链可能不在旧会话范围内。wagmi 的 `walletConnect` 连接器默认将这种链标为 stale（`isNewChainsStale: true`）；对于不支持动态链授权的钱包，自动重连时可能断开，需要用户重新连接并批准。前端应检查会话支持的链，给出明确的重连入口，而不是假设新增链立即可用。
+
+## 深入回答
+
+- 【实现行为】`walletConnect` 连接器的 `isNewChainsStale` 参数决定：在已存在的连接器配置里新增链时，该链是否被视为过期链，默认值为 `true`（依据：wagmi walletConnect connector 页面 §Parameters 的 isNewChainsStale）。
+- 【实现行为】该页面把过期链定义为「WalletConnect 尚未与之建立关系的链，例如用户还没有批准或拒绝过该链」（依据：wagmi walletConnect connector 页面 §Parameters 的 isNewChainsStale）。
+- 【实现行为】调整这一行为需要在连接器配置中显式传入 `false`（依据：wagmi walletConnect connector 页面 §Parameters 的 isNewChainsStale）。
+- 【实现行为】该连接器依赖第三方包 `@walletconnect/ethereum-provider`，其许可证被标注为非 OSI 兼容（依据：wagmi walletConnect connector 页面 §Install）。
+- 【实现行为】wagmi 的连接器列表提示：部分连接器需要第三方包，安装页各连接器条目会给出许可证与版本信息（依据：wagmi Connectors 页面 §Available Connectors）。
+- 【工程经验】把新增链当作需要用户操作的版本变更处理：提示重新连接、保留回滚路径、按连接方式分维度监控失败率（依据：工程经验，无规范依据）。
+- 【工程经验】连接是否支持目标链宜主动检查，而不是仅凭「有没有报错」判断（依据：工程经验，无规范依据）。
+- 【工程经验】关闭过期链判定会跳过用户对新链的确认环节，涉及资产操作的链路宜保留确认（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为新增链对面向该连接器的既有会话自动生效（【实现行为】默认按过期链处理，依据：wagmi walletConnect connector 页面 §Parameters 的 isNewChainsStale）。
+- 把「过期链」理解成连接过期，提示用户断开重连即可。
+- 关闭过期链判定但未评估是否跳过用户对链的确认。
+- 把扫码用户在新链上的无响应当作 SDK 缺陷，忽略会话模型。
+- 默认第三方连接依赖的许可与主框架一致（【实现行为】该依赖的许可证被标注为非 OSI 兼容，依据：wagmi walletConnect connector 页面 §Install）。
+
+## 面试官追问
+
+1. 用户在新链上操作无响应时，如何区分是连接范围问题还是 RPC 问题？
+2. 关闭过期链判定会带来什么风险？你会怎么向产品解释？
+3. 新增链的发布流程里，你会加哪些监控指标？
+4. 第三方连接服务的许可不兼容时，你的替代方案是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道扫码连接需要建立会话，会话包含链与账户范围。
+- 知道新增链后既有会话可能需要重新连接。
+
+### 中级回答
+
+- 能解释过期链的定义与默认行为，并给出用户引导方案。
+- 能指出关闭该判定属于体验与安全的取舍。
+
+### 高级回答
+
+- 能把该约束转化为发布流程（提示、回滚、分维度监控），并说明主动检查连接支持链的必要性。
+- 能提出对第三方依赖许可的评估要求。
+
+## 参考资料
+
+- [wagmi：walletConnect connector（§Parameters 的 isNewChainsStale、§Install）](https://wagmi.sh/react/api/connectors/walletConnect)
+- [wagmi：Connectors（§Available Connectors）](https://wagmi.sh/react/api/connectors)

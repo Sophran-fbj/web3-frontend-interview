@@ -1,0 +1,90 @@
+---
+id: security-013
+slug: provider-tampering-and-verification
+title: 页面里的钱包对象被换掉了，能发现吗？
+summary: 考察运行期对象劫持的检测思路，以及多钱包发现机制提供的可核对信息。
+status: review
+difficulty: advanced
+category: security
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - provider
+  - tampering
+  - runtime
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-1193：Ethereum Provider JavaScript API（§request、§Events、§Security Considerations 的 Handling Adversarial Behavior）"
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: "EIP-1474：Ethereum JSON-RPC 规范（§Methods 的 eth_call）"
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+你们在做安全加固。有人提出：「如果恶意脚本把页面里的钱包对象替换成自己的实现，用户的请求都会经过它，我们能不能检测出来？」
+
+请分析这种攻击的可行性、可检测程度，以及在没有理想方案时应当把资源投到哪里。
+
+## 考察目标
+
+- 能否说明对象劫持为何难以彻底防御。
+- 是否理解规范对此类威胁的定位。
+- 能否在难以彻底防御时给出优先级合理的方案。
+
+## 30 秒回答
+
+页面内的钱包对象可以被同环境脚本替换；EIP-1193 把 Provider 描述为不受信环境中的对象，其属性可被读取或覆盖，因此页面内的自检不构成可靠防线，能观察到的只是能力缺失、声明不一致一类迹象。资源更适合投入到减少注入面与构建治理。
+
+## 深入回答
+
+- 【协议保证】EIP-1193 要求 Provider 实现并暴露 `request` 方法与相关事件，消费方按这套接口形状调用（依据：EIP-1193 §request、§Events）。
+- 【协议保证】EIP-1193 说明 Provider 是页面中的 JavaScript 对象，其属性可以被读取或覆盖，宜当作受对手控制的对象；钱包与客户端需要限流并校验数据（依据：EIP-1193 §Security Considerations 的 Handling Adversarial Behavior）。
+- 【工程经验】同一运行环境下页面脚本不比其他页面代码拥有更高权限，攻击者可以保留真实对象的行为，只在关键参数上做手脚（依据：工程经验，无规范依据）。
+- 【工程经验】能力探测与一致性检查仅适合作为辅助信号：例如缺少 `request` 或事件接口、与钱包发现机制声明的信息出现无法解释的差异（依据：工程经验，无规范依据）。
+- 【工程经验】发送前用 `eth_call` 模拟可以验证调用结果，但模拟请求同样经过待验证的 Provider，因此模拟结果不能作为防替换的保证（依据：EIP-1474 §Methods 的 eth_call；能力边界属于工程判断）。
+- 【工程经验】更有效的投入方向是减少注入面、依赖治理、构建完整性，以及服务端与合约侧校验（依据：工程经验，无规范依据）。
+- 【工程经验】把页面内自检定位为监控手段而不是防线，避免给团队「已经防护」的错觉（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为可以做可靠的运行时自检（【工程经验】）。
+- 把检测逻辑当作主要防线（【工程经验】）。
+- 只在开发环境验证检测逻辑，生产环境的注入面未做治理（【工程经验】）。
+- 依赖用户逐字核对钱包弹窗（【工程经验】）。
+- 忽略构建期与依赖侧的注入路径（【工程经验】）。
+
+## 面试官追问
+
+1. 你会如何用模拟降低参数被改的影响？
+2. 多钱包共存时，一致性检查能提供什么信号？
+3. 内容安全策略在钱包场景下有哪些限制？
+4. 如果资源只够做一件事来降低注入风险，你会选什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道页面脚本可以替换钱包对象。
+- 知道用户确认是最后一道防线。
+
+### 中级回答
+
+- 能说明为什么同一运行环境下的自检不可靠，并给出至少两种辅助检测思路。
+- 能指出资源应优先投入减少注入面。
+
+### 高级回答
+
+- 能给出「监控而非防线」的定位，并说明发送前模拟与结果核对的实际价值。
+- 能列出构建期与依赖侧的注入路径及对应治理措施。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§request、§Events、§Security Considerations 的 Handling Adversarial Behavior）](https://eips.ethereum.org/EIPS/eip-1193)
+- [EIP-1474：Ethereum JSON-RPC 规范（§Methods 的 eth_call）](https://eips.ethereum.org/EIPS/eip-1474)

@@ -1,0 +1,96 @@
+---
+id: architecture-017
+slug: testnet-and-mainnet-config-management
+title: 测试网和主网的配置，怎么组织才不出事故？
+summary: 考察环境矩阵的建模方式，以及误发到错误网络的组织级防护。
+status: review
+difficulty: intermediate
+category: architecture
+questionType: system-design
+ecosystems:
+  - evm
+tags:
+  - environments
+  - config
+  - release
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：createConfig（§Parameters（chains、transports）、§Config（getClient））
+    url: https://wagmi.sh/react/api/createConfig
+  - title: EIP-155：Simple replay attack protection（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-155
+  - title: EIP-1193：Ethereum Provider JavaScript API（§request、§Provider Errors）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+---
+
+## 题目
+
+你们的应用同时支持主网与两条测试网。有一次发版把测试网的合约地址带到了主网环境，用户在界面上看到的是别人家的合约，所幸只是只读页面。
+
+请给出配置组织方案，并说明如何在流程上防止这类事故。
+
+## 考察目标
+
+- 能否给出兼顾可读与安全的配置结构。
+- 是否理解「按环境构建」与「运行时切换」的差别与风险。
+- 能否给出组织级防护措施。
+
+## 30 秒回答
+
+配置按「环境 × 链」组织，明确每条链的 RPC、合约地址与版本。涉及资金的地址需要受控发布和审计：可以随构建产物固定，也可以使用有完整性校验及回滚机制的运行时配置。启动和发送交易前都要核对链标识、目标地址及预期合约版本。
+
+## 深入回答
+
+- 【协议保证】按 EIP-155 格式签名的交易，其签名输入包含 chain ID，因此在一条链上签好的交易无法在 chain ID 不同的另一条链上生效（依据：EIP-155 §Specification）。
+- 【协议保证】页面发往钱包的调用经 `request` 处理，被拒绝时返回带 `code` 与 `message` 的错误对象（依据：EIP-1193 §request、§Provider Errors）。
+- 【实现行为】`createConfig` 用 `chains` 数组声明支持的链，用链 ID 作为 `transports` 映射的键，内部按链选择传输与 client（依据：wagmi createConfig §Parameters（chains、transports））。
+- 【实现行为】`config.getClient({ chainId })` 可以按链取到内部 client，适合在自检脚本里逐链核对端点是否可达（依据：wagmi createConfig §Config（getClient））。
+- 【工程经验】涉及资金的地址条目按「环境 × 链」建模并在构建期写入产物，产物与环境一一对应，回滚时切换产物（依据：工程经验，无规范依据）。
+- 【工程经验】运行期注入适合非关键参数（例如遥测开关）；把地址来源放到远端会引入新的注入面与错配可能（依据：工程经验，无规范依据）。
+- 【工程经验】启动自检至少覆盖：地址是否存在且格式合法、每个链 ID 对应的地址集合是否齐全、缺失时是否阻断资金相关入口（依据：工程经验，无规范依据）。
+- 【工程经验】地址变更进入代码评审并记录「哪条链、为什么变、谁核对」，发版清单包含目标网络核对与一次小额真实验证（依据：工程经验，无规范依据）。
+- 【工程经验】自检失败时不静默降级为只读继续运行，宜阻断资金相关操作并给出维护提示；灰度与回滚路径预先演练（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 一份产物在运行期注入地址（依据：工程经验，无规范依据）。
+- 【实现行为】`createConfig` 的 `chains` 与 `transports` 以链 ID 为键；只按环境区分而不按链区分，多链地址会互相覆盖（依据：wagmi createConfig §Parameters（chains、transports））。
+- 缺少启动自检，错配在用户操作时才暴露（依据：工程经验，无规范依据）。
+- 地址变更不写变更记录（依据：工程经验，无规范依据）。
+- 出问题后没有可快速切换的回滚产物（依据：工程经验，无规范依据）。
+
+## 面试官追问
+
+1. 多链场景下地址与链标识如何建立对应关系？
+2. 运行期注入在什么情况下可以接受？
+3. 带地址变更的发布清单包含哪些项？
+4. 灰度期间发现错配，你的止血步骤是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道配置需要按环境区分。
+- 知道地址错配会让用户看到错误的合约。
+
+### 中级回答
+
+- 能给出「环境 × 链」的配置结构，并解释构建期配置或受控运行时配置各自的发布与回滚取舍。
+- 能列出启动自检的关键项。
+
+### 高级回答
+
+- 能设计出包含评审、核对、灰度与回滚的发布流程，并说明自检失败时不宜静默降级。
+- 能区分关键参数与非关键参数的注入方式。
+
+## 参考资料
+
+- [wagmi：createConfig（§Parameters（chains、transports）、§Config（getClient））](https://wagmi.sh/react/api/createConfig)
+- [EIP-155：Simple replay attack protection（§Specification）](https://eips.ethereum.org/EIPS/eip-155)
+- [EIP-1193：Ethereum Provider JavaScript API（§request、§Provider Errors）](https://eips.ethereum.org/EIPS/eip-1193)

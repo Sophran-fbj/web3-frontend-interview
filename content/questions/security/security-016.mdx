@@ -1,0 +1,95 @@
+---
+id: security-016
+slug: contract-address-source-governance
+title: 前端里的合约地址，谁来定、怎么改？
+summary: 考察地址配置的来源治理，避免硬编码与运行时推断带来的风险。
+status: review
+difficulty: intermediate
+category: security
+questionType: system-design
+ecosystems:
+  - evm
+tags:
+  - address
+  - config
+  - governance
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-55：混合大小写校验和地址编码（§Specification）"
+    url: https://eips.ethereum.org/EIPS/eip-55
+  - title: "EIP-1014：CREATE2 地址计算（§Specification）"
+    url: https://eips.ethereum.org/EIPS/eip-1014
+  - title: "ethereum.org：Deploying smart contracts（§How to deploy a smart contract）"
+    url: https://ethereum.org/en/developers/docs/smart-contracts/deploying/
+---
+
+## 题目
+
+安全评审发现你的代码里有几处合约地址：有的写死在组件里，有的在运行时从接口获取，还有一处由合约调用返回。
+
+请说明这种多来源混用的风险，并给出一套地址配置的治理方案。
+
+## 考察目标
+
+- 能否识别不同来源在可信度与可维护性上的差异。
+- 是否理解运行时获取地址被篡改的后果。
+- 能否给出包含变更流程的治理方案。
+
+## 30 秒回答
+
+地址决定资金流向与授权对象，因此应来自受控来源：组件内硬编码会在升级时漏改，运行时接口下发会被中间层改写且难以审计，合约返回的地址属于该合约的声明。合理做法是按链集中配置、纳入评审，并在启动时校验地址格式与校验和（EIP-55）及链标识。
+
+## 深入回答
+
+- 【协议保证】EIP-55 定义了混合大小写校验和地址编码，可以据此校验地址书写是否与校验和一致（依据：EIP-55 §Specification）。
+- 【协议保证】CREATE2 根据部署者、盐与初始化代码计算合约地址，因此预期地址可以在部署前算出并与部署记录核对（依据：EIP-1014 §Specification）。
+- 【工程经验】三类来源的风险不同：组件内硬编码分散、易漏改；运行时接口下发可被中间层改写、审计困难；合约返回的地址只代表该合约的声明（依据：工程经验，无规范依据）。
+- 【工程经验】把地址集中到按链划分的配置文件，组件只引用配置，避免多处重复定义（依据：工程经验，无规范依据）。
+- 【工程经验】启动时校验地址格式与校验和、链标识，并对缺失配置阻止相关操作并告警，而不是回退到默认值（依据：EIP-55 §Specification 的校验和规则；失败策略属于工程经验）。
+- 【工程经验】界面展示的地址与请求使用的地址来自同一处配置，保证两者一致（依据：工程经验，无规范依据）。
+- 【工程经验】合约返回的地址即使来自链上，也只作为路由依据；把它用作资金目标前与配置核对（依据：工程经验，无规范依据）。
+- 【工程经验】涉及资金目标的地址变更走代码评审，同步客服与运营，并单独评估旧版本客户端继续使用旧地址的行为（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把地址硬编码在多个组件里（【工程经验】）。
+- 运行时从接口取地址且不做校验（【工程经验】）。
+- 直接把合约返回的地址作为资金目标（【工程经验】）。
+- 配置缺失时回退到默认地址或上次缓存（【工程经验】）。
+- 地址变更不走评审与沟通流程（【工程经验】）。
+- 用未经校验的地址字符串同时做展示与请求（【协议保证】EIP-55 提供大小写校验和用于核对地址书写；依据：EIP-55 §Specification）。
+
+## 面试官追问
+
+1. 多链部署时你如何组织这份配置？
+2. 接口下发地址在什么场景下可以接受？
+3. 你如何在启动阶段发现「配置指向了错误的链」？
+4. 地址变更时如何避免用户端的旧版本继续发送到旧地址？
+
+## 评分标准
+
+### 初级回答
+
+- 知道地址不应分散硬编码在组件里。
+- 知道运行时获取的地址需要校验。
+
+### 中级回答
+
+- 能对比三类来源的风险，并给出集中配置与启动校验方案。
+- 能说明展示与请求需要使用同一地址来源。
+
+### 高级回答
+
+- 能给出包含变更评审、沟通与旧版本兼容的完整治理流程。
+- 能指出合约返回地址只适合作为路由依据，不适合直接作为资金目标。
+
+## 参考资料
+
+- [EIP-55：混合大小写校验和地址编码（§Specification）](https://eips.ethereum.org/EIPS/eip-55)
+- [EIP-1014：CREATE2 地址计算（§Specification）](https://eips.ethereum.org/EIPS/eip-1014)
+- [ethereum.org：Deploying smart contracts（§How to deploy a smart contract）](https://ethereum.org/en/developers/docs/smart-contracts/deploying/)

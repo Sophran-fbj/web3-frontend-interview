@@ -1,0 +1,98 @@
+---
+id: contract-025
+slug: abi-return-value-mapping
+title: 返回值里的嵌套结构，怎么解才不出错？
+summary: 考察返回值解码的结构差异，以及命名与顺序在解码中的作用。
+status: review
+difficulty: intermediate
+category: contract
+questionType: code-review
+ecosystems:
+  - evm
+tags:
+  - abi
+  - decoding
+  - tuple
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: Solidity 文档：Contract ABI Specification（§Type Encoding、§JSON）
+    url: https://docs.soliditylang.org/en/latest/abi-spec.html
+  - title: viem：readContract（§Return Value、§Parameters（abi））
+    url: https://viem.sh/docs/contract/readContract
+---
+
+## 题目
+
+下面的解码代码来自一次代码评审：
+
+```ts
+// ABI 片段
+// readPoolInfo 已使用实际部署合约的 ABI 读取并解码，返回一个元组。
+const [token, reserve, , fee] = await readPoolInfo();
+```
+
+评审意见是「能跑但不可靠」。请说明这类解码在什么情况下会出错，以及应该怎么改。
+
+## 考察目标
+
+- 能否识别按位置解构的风险。
+- 是否理解命名返回值与结构化解码的差别。
+- 能否说明嵌套结构解码时的常见错误。
+
+## 30 秒回答
+
+ABI 返回值按类型和顺序编码，字段名不在返回字节里。若部署合约与前端 ABI 的返回顺序变了，但相邻字段类型兼容，解码可能成功却读错含义；类型或长度不兼容时也可能直接报错。应把 ABI 与部署版本绑定，解码后显式映射为业务字段并校验关键值；命名返回值只改善描述，不能自动消除版本不匹配。
+
+## 深入回答
+
+- 【协议保证】返回值是按类型顺序切分的字节序列：静态类型各占 32 字节，动态类型以偏移量加长度与数据表达（依据：Solidity 文档 Contract ABI Specification §Type Encoding）。
+- 【协议保证】返回值名称属于 ABI 的结构化信息；没有名称时需要按位置与类型解析（依据：Solidity 文档 Contract ABI Specification §JSON）。
+- 【协议保证】元组与数组按类型树逐层编码；ABI 类型树不匹配时可能解码失败，也可能在类型兼容的位置读出错误含义（依据：Solidity 文档 Contract ABI Specification §Type Encoding）。
+- 【实现行为】viem 的 `readContract` 按提供的 ABI 解码并推断 TypeScript 返回类型；ABI 若与部署合约不匹配，静态类型也会给出错误的安全感（依据：viem readContract §Return Value、§Parameters（abi））。
+- 【工程经验】两个类型兼容的返回字段互换时可能静默读错；返回长度或类型不兼容时通常会解码失败，不能一概称为静默错误（依据：Solidity ABI 编码规则；工程经验）。
+- 【工程经验】把 ABI 绑定到部署地址与版本，按位置解码后显式映射业务字段；命名输出属于 ABI 元数据，不随返回字节一起传输（依据：Solidity ABI 规范 §JSON）。
+- 【工程经验】空数组与「解码失败」是两种不同结果，不宜互相兜底（依据：工程经验，无规范依据）。
+- 【工程经验】关键路径对解码结果做合理性校验：地址非零、数值在合理区间、数组长度符合预期（依据：工程经验，无规范依据）。
+- 【工程经验】解码可能得到合法但错误的数据，异常值需要进监控，便于发现 ABI 与合约之间的漂移（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为所有 ABI 结构变化都会静默错位；类型或长度不兼容时也可能直接解码失败（依据：Solidity 文档 Contract ABI Specification §Type Encoding）。
+- 认为类型检查能发现返回值顺序变化（依据：工程经验，无规范依据）。
+- 把嵌套元组按扁平字段解析，忽略 ABI 类型树；结果可能解码失败或读错含义（依据：Solidity 文档 Contract ABI Specification §Type Encoding）。
+- 解码后不做合理性校验（依据：工程经验，无规范依据）。
+- 把空数组与「读取失败」当作同一种情况（依据：工程经验，无规范依据）。
+
+## 面试官追问
+
+1. 合约新增一个返回值，你的旧代码会怎样？
+2. 你会在哪些关键字段上做合理性校验？
+3. 如何区分「合约真的返回了空数组」与「解码失败」？
+4. 如果 ABI 里缺少返回值名称，你会怎么处理？
+
+## 评分标准
+
+### 初级回答
+
+- 知道返回值按顺序与类型切分。
+- 知道顺序变化会导致取到错误的字段。
+
+### 中级回答
+
+- 能说明 ABI 字段名不在返回字节中，指出兼容字段调序与嵌套结构的解码风险。
+- 能给出关键字段的合理性校验方案。
+
+### 高级回答
+
+- 能区分静默读错与解码失败，并给出 ABI 版本校验和监控思路。
+- 能区分空数组与解码失败，并说明 ABI 缺少名称时的处理方式。
+
+## 参考资料
+
+- [Solidity 文档：Contract ABI Specification（§Type Encoding、§JSON）](https://docs.soliditylang.org/en/latest/abi-spec.html)
+- [viem：readContract（§Return Value、§Parameters（abi））](https://viem.sh/docs/contract/readContract)

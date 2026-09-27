@@ -1,0 +1,94 @@
+---
+id: security-012
+slug: xss-impact-in-dapp
+title: DApp 里的脚本注入，后果和普通网站一样吗？
+summary: 考察页面内脚本在钱包环境下的额外能力，以及它对资金操作的影响。
+status: review
+difficulty: intermediate
+category: security
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - xss
+  - provider
+  - impact
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-1193：Ethereum Provider JavaScript API（§request、§Security Considerations 的 Handling Adversarial Behavior）"
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: "EIP-1102：账户访问授权（§Specification 的 Protocol 与 eth_requestAccounts）"
+    url: https://eips.ethereum.org/EIPS/eip-1102
+  - title: "EIP-1474：Ethereum JSON-RPC 规范（§Methods 的 eth_sendTransaction、eth_signTypedData）"
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+安全评审在你们的 DApp 里发现了一个脚本注入漏洞，评级是「中危」。
+
+有工程师认为「中危而已，先排到下一个迭代」。请说明在 DApp 环境下这类漏洞的后果与普通网站有什么不同，以及你会如何向团队说明其优先级。
+
+## 考察目标
+
+- 能否说明注入脚本在钱包环境中的额外能力。
+- 是否理解用户确认环节能挡住什么、挡不住什么。
+- 能否给出优先级判断依据。
+
+## 30 秒回答
+
+在 DApp 里，注入的脚本还能访问页面中的 Provider，调用签名与交易方法，或篡改页面展示的交易参数。钱包可能要求用户确认，但 EIP-1193 不保证每次请求都有独立的确认界面；已有授权、钱包策略和用户判断都会影响后果。前端必须把页面脚本当作资金操作的高风险入口。
+
+## 深入回答
+
+- 【协议保证】页面脚本通过 Provider 的 `request` 方法调用 RPC 方法，`eth_requestAccounts`、`eth_sendTransaction`、`eth_signTypedData` 等方法属于这套接口（依据：EIP-1193 §request；EIP-1474 §Methods 的 eth_sendTransaction、eth_signTypedData）。
+- 【协议保证】Provider 不负责私钥与账户管理，账户安全与用户隐私在钱包侧的中间件实现；账户访问可以触发用户批准界面（依据：EIP-1193 §Security Considerations 的 Handling Adversarial Behavior；EIP-1102 §Specification 的 Protocol 与 eth_requestAccounts）。
+- 【协议保证】Provider 是页面中的 JavaScript 对象，属性可以被读取或覆盖，因此注入脚本访问它不需要额外权限（依据：EIP-1193 §Security Considerations 的 Handling Adversarial Behavior）。
+- 【工程经验】攻击者可以通过替换被授权地址、在用户正常操作瞬间插入请求、或用文案制造紧迫感来提高确认成功率（依据：工程经验，无规范依据）。
+- 【工程经验】常规漏洞评级关注数据泄露与权限提升，而 DApp 的资产由用户签名控制，因此这类漏洞容易被评为中低危（依据：工程经验，无规范依据）。
+- 【工程经验】优先级判断依据包括：是否存在资金相关操作路径、诱导确认的难度、能否通过替换参数获得持续权限、影响范围是单用户还是全部访问者（依据：工程经验，无规范依据）。
+- 【工程经验】涉及无限额授权、地址替换或影响全部访问者的注入按高危处理并立即修复；仅影响展示且无法触发请求的注入可按中低危排期（依据：工程经验，无规范依据）。
+- 【工程经验】修复后做回归验证，并检查同类注入路径是否仍然存在（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 按普通网站的评级标准判断优先级（【工程经验】）。
+- 认为有钱包确认就可以延后修复（【工程经验】）。
+- 只考虑数据泄露，忽略「诱导确认」这一攻击面（【工程经验】）。
+- 忽略被污染的第三方脚本会影响全部访问者（【工程经验】）。
+- 修复后不做回归验证（【工程经验】）。
+
+## 面试官追问
+
+1. 你会如何评估「诱导确认」的成功率？
+2. 无限额授权的注入为什么比一次性转账更严重？
+3. 第三方脚本被污染时，你的排查与止血步骤是什么？
+4. 如何在不牺牲开发效率的前提下降低注入面？
+
+## 评分标准
+
+### 初级回答
+
+- 知道页面脚本可以调用钱包接口发起请求。
+- 知道用户确认仍然是一道防线。
+
+### 中级回答
+
+- 能说明注入脚本的额外能力，并指出攻击者可通过参数替换与时机诱导提高成功率。
+- 能给出按资金路径与影响范围划分优先级的依据。
+
+### 高级回答
+
+- 能解释为什么常规评级会低估这类漏洞，并给出分级处理规则。
+- 能说明无限额授权类注入的长期危害与止血步骤。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§request、§Security Considerations 的 Handling Adversarial Behavior）](https://eips.ethereum.org/EIPS/eip-1193)
+- [EIP-1102：账户访问授权（§Specification 的 Protocol 与 eth_requestAccounts）](https://eips.ethereum.org/EIPS/eip-1102)
+- [EIP-1474：Ethereum JSON-RPC 规范（§Methods 的 eth_sendTransaction、eth_signTypedData）](https://eips.ethereum.org/EIPS/eip-1474)

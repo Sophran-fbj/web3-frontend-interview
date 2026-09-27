@@ -1,0 +1,94 @@
+---
+id: transaction-026
+slug: estimate-gas-vs-gas-limit
+title: 估算出来的 gas 能直接当上限用吗？
+summary: 考察估算与上限的区别，以及估算不足与估算过高各自的后果。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - gas
+  - estimation
+  - gas-limit
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1474：Remote procedure call 规范（§eth_estimateGas、§eth_call）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-1559：Fee market change（§Abstract、§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-1559
+  - title: EIP-140：REVERT instruction（§Abstract、§Motivation）
+    url: https://eips.ethereum.org/EIPS/eip-140
+---
+
+## 题目
+
+你的下单流程是：先调用估算接口拿到 gas 数量，直接作为交易的上限提交。
+
+上线后出现两类工单：一类是用户看到「执行失败但扣了手续费」，另一类是用户抱怨「手续费比预估高很多」。请说明估算值为什么不能直接当上限，以及这两类现象分别是怎么产生的。
+
+## 考察目标
+
+- 能否区分估算值与上限的语义。
+- 是否知道估算不足与估算过高分别导致什么。
+- 能否给出余量的合理做法与它的代价。
+
+## 30 秒回答
+
+估算返回的是「按当前状态执行所需的 gas」，上限是交易字段 `gas_limit`，表示允许消耗的最大值。未使用的 gas 会退还，结算按实际消耗计算；估算值直接当上限时，执行路径与估算时略有差异就会在半途耗尽 gas，状态回滚而已消耗的 gas 照收。
+
+## 深入回答
+
+- 【协议保证】交易生效前存在余额断言：签名者余额需要覆盖 `gas_limit * max_fee_per_gas` 与转账金额（依据：EIP-1559 §Specification 的交易验证断言）。
+- 【协议保证】未使用的 gas 会退还：结算按 `gas_used` 与成交价格扣费，`gas_limit` 与实际消耗的差额退回（依据：EIP-1559 §Specification 的 gas 结算逻辑）。
+- 【协议保证】执行阶段的失败分两种：REVERT 会退回剩余 gas 并在返回数据里给出原因；gas 耗尽属于 out-of-gas 异常，会消耗全部剩余 gas（依据：EIP-140 §Abstract、§Motivation）。
+- 【协议保证】估算接口返回完成这笔交易所需的 gas 数量，规范同时提示结果可能显著高于实际使用量（依据：EIP-1474 §eth_estimateGas 的说明）。
+- 【工程经验】估算失败可能来自合约回滚、节点限制或 RPC 故障，不能直接断定交易一定会回滚；可结合错误详情与 `eth_call` 排查，但模拟结果也不保证最终上链结果（依据：EIP-1474 §eth_estimateGas、§eth_call）。
+- 【工程经验】估算基于某一时刻的状态：打包之前的费用水平、授权额度、合约内部条件与同一区块内其他交易都可能改变执行路径，因此余量是对状态变化的缓冲（依据：工程经验，无规范依据）。
+- 【工程经验】前端在发送前估算、加上按场景设定的余量，把上限与预估费用分开展示；估算失败时阻止发送并给出可读原因（依据：工程经验，无规范依据）。
+- 【工程经验】上限偏高影响的是余额校验而不是最终费用，余额紧张的用户会被拒绝提交；上限压低则会提高执行失败的风险，余量策略需要在这两者之间取平衡（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把估算值直接作为上限提交，不留余量（【协议保证】估算是所需量的模拟结果，与允许消耗的最大值不是同一语义，依据：EIP-1474 §eth_estimateGas）。
+- 认为上限设高会多扣钱，因此刻意压低上限（【协议保证】未使用的 gas 会退还，最终按实际消耗结算，依据：EIP-1559 §Specification）。
+- 把估算结果当作「最终手续费」展示。
+- 估算失败时忽略错误，仍然让用户确认发送。
+- 在状态可能剧烈变化的场景沿用固定余量。
+
+## 面试官追问
+
+1. 估算失败与执行失败，用户的处理路径有什么不同？
+2. 你会如何向用户解释「失败也扣费」？
+3. 高波动场景下你会怎样调整余量策略，依据是什么？
+4. 如果用户余额恰好只够覆盖估算值与费用上限的差额部分，会发生什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道上限是允许消耗的最大值，未使用部分会退还。
+- 知道估算值不能直接作为上限使用。
+
+### 中级回答
+
+- 能区分估算不足导致的两种失败分支及其后果。
+- 能说明上限偏高影响的是余额校验而不是最终费用。
+
+### 高级回答
+
+- 能解释估算失准的原因（打包前状态变化），并给出按场景调整余量的思路。
+- 能说明估算失败时应阻止发送，并提供可读原因与替代路径。
+
+## 参考资料
+
+- [EIP-1474：Remote procedure call 规范（§eth_estimateGas、§eth_call）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-1559：Fee market change（§Abstract、§Specification）](https://eips.ethereum.org/EIPS/eip-1559)
+- [EIP-140：REVERT instruction（§Abstract、§Motivation）](https://eips.ethereum.org/EIPS/eip-140)

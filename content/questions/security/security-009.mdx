@@ -1,0 +1,90 @@
+---
+id: security-009
+slug: never-handle-seed-phrase-in-web
+title: 为什么网页不该碰助记词？
+summary: 考察密钥与页面环境的边界，以及「导入助记词」类需求的处理方式。
+status: review
+difficulty: beginner
+category: security
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - seed-phrase
+  - boundary
+  - key-management
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "ethereum.org：Ethereum accounts（§Externally-owned accounts and key pairs、§A note on wallets）"
+    url: https://ethereum.org/en/developers/docs/accounts/
+  - title: "ethereum.org：Ethereum security and scam prevention（§Wallet security 的 Never share your recovery phrase）"
+    url: https://ethereum.org/en/security/
+---
+
+## 题目
+
+产品希望做一个「导入已有钱包」的功能，让新用户在网页里粘贴助记词即可使用，省去安装扩展的步骤。
+
+请给出你的技术意见，并在不直接否定的前提下给出替代方案。
+
+## 考察目标
+
+- 能否说明助记词与页面环境的安全边界。
+- 是否理解密钥保管责任的归属。
+- 能否给出可落地的替代方案。
+
+## 30 秒回答
+
+助记词对应账户的控制权，而网页代码、第三方依赖、浏览器扩展与注入脚本都处于页面可读取的范围。把助记词交给网页，密钥就进入了产品无法控制的环境；网页适合承担展示与请求签名的角色，密钥留在钱包侧。
+
+## 深入回答
+
+- 【工程经验】页面运行在用户设备上，脚本、第三方依赖、浏览器扩展与被注入的代码都可能读取页面中的输入内容，这些风险不在产品团队的控制范围内（依据：ethereum.org：Ethereum security and scam prevention §Wallet security 的 Never share your recovery phrase；作为背景，非协议规范）。
+- 【工程经验】即使只在前端本地处理，表单内容仍可能被自动填充、密码管理器、录屏或错误上报带走；传输加密只保护链路，不保护页面本身（依据：工程经验，无规范依据）。
+- 【工程经验】助记词泄露后的账户控制权缺少回滚手段，与托管账户的找回流程不同（依据：工程经验，无规范依据）。
+- 【工程经验】账户模型把私钥作为控制权来源，钱包的职责是保管密钥并执行签名；网页承担的是发起请求与展示（依据：ethereum.org：Ethereum accounts §Externally-owned accounts and key pairs、§A note on wallets；作为背景，非协议规范）。
+- 【工程经验】替代方案一：引导用户安装浏览器扩展或使用移动端钱包，通过标准接口连接（依据：工程经验，无规范依据）。
+- 【工程经验】替代方案二：面向新用户提供创建流程引导，或提供只读浏览模式；需要免安装体验时，可由托管方案承担密钥责任，并在产品上明确告知这是托管账户（依据：工程经验，无规范依据）。
+- 【工程经验】如果业务已经上线这类表单，处理顺序是尽快下线、提示用户迁移资产，并说明风险（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为「只在前端本地处理、不上传」就规避了风险（【工程经验】）。
+- 用加密传输作为继续收集的理由（【工程经验】）。
+- 把助记词输入框做成普通表单字段，触发自动填充与错误上报（【工程经验】）。
+- 以「用户体验」为由接受这一风险（【工程经验】）。
+- 为硬件钱包用户保留网页助记词导入入口，认为这类用户风险更低（【工程经验】）。
+
+## 面试官追问
+
+1. 托管方案下，用户资产的风险如何向用户说明？
+2. 只读模式能覆盖哪些业务价值？
+3. 如果竞品都提供网页导入，你会怎么向产品解释差异？
+4. 已经收集过助记词的业务，补救步骤是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道助记词对应账户控制权，不应进入网页。
+- 知道应引导用户使用钱包扩展或移动端钱包。
+
+### 中级回答
+
+- 能说明页面环境为何不可信（依赖链、运行时篡改、采集风险）。
+- 能给出至少两种替代方案并说明各自的责任归属。
+
+### 高级回答
+
+- 能指出「本地处理」不降低风险，并给出已上线业务的补救步骤。
+- 能把密钥保管责任与托管方案的产品告知义务讲清楚。
+
+## 参考资料
+
+- [ethereum.org：Ethereum accounts（§Externally-owned accounts and key pairs、§A note on wallets）](https://ethereum.org/en/developers/docs/accounts/)
+- [ethereum.org：Ethereum security and scam prevention（§Wallet security 的 Never share your recovery phrase）](https://ethereum.org/en/security/)

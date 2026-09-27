@@ -1,0 +1,95 @@
+---
+id: transaction-034
+slug: custom-error-vs-require-string-decoding
+title: 合约报错信息为什么有的能读、有的读不出来？
+summary: 考察自定义错误与字符串错误在编码与解码上的差异，以及前端如何拿到可读信息。
+status: review
+difficulty: advanced
+category: transaction
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - custom-error
+  - decoding
+  - revert
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: Solidity：Contract ABI Specification（§Function Selector、§Basic Design、§Errors）
+    url: https://docs.soliditylang.org/en/latest/abi-spec.html
+  - title: EIP-140：REVERT instruction（§Abstract、§Motivation、§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-140
+  - title: EIP-1474：Remote procedure call 规范（§Error codes、§eth_call）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+你在统一错误提示时发现：同样是合约拒绝，有的能直接拿到「余额不足」这类文字，有的只显示一串十六进制，还有的什么都拿不到。
+
+请说明这几类拒绝在编码层面有什么不同，以及前端要具备什么条件才能把十六进制还原成可读文字。
+
+## 考察目标
+
+- 能否区分字符串错误与自定义错误的数据形态。
+- 是否理解解码依赖 ABI 定义。
+- 能否说明「什么都拿不到」的原因。
+
+## 30 秒回答
+
+`Error(string)` 和自定义错误都使用 4 字节选择器加 ABI 编码参数；自定义错误需要相应 ABI 才能解释。gas 耗尽通常没有可解码的回滚数据；节点在执行前拒绝交易时返回的是 RPC 错误，是否附带模拟数据取决于实现。前端应区分可解码回滚、RPC 拒绝与网络故障，不能把所有失败都显示成「合约报错」。
+
+## 深入回答
+
+- 【协议保证】调用数据的前四字节是签名（含错误签名的规范化表达式）的 Keccak-256 哈希的前四字节；错误数据与函数调用的数据布局相同（依据：Solidity 文档（abi-spec）§Function Selector、§Errors）。
+- 【协议保证】ABI 编码不是自描述的，解码需要对应的 schema，因此自定义错误要先匹配到错误定义才能还原名字与参数（依据：Solidity 文档（abi-spec）§Basic Design、§Errors）。
+- 【协议保证】错误数据会沿外部调用链冒泡，可能来自未直接调用的合约，也可以按已知签名伪造（依据：Solidity 文档（abi-spec）§Errors 的警告）。
+- 【协议保证】REVERT 会把错误信息写入返回数据缓冲区，调用方可以读取该数据（依据：EIP-140 §Specification）。
+- 【协议保证】gas 耗尽的处理与 REVERT 不同，返回数据里没有可供解读的原因（依据：EIP-140 §Motivation）。
+- 【工程经验】优先在发送前用 `eth_call` 做模拟：模拟失败时通常能拿到回滚数据，比等上链失败再从收据里找原因更早（依据：EIP-1474 §eth_call；工程实现）。
+- 【工程经验】模拟与广播阶段的失败还可能来自节点本身：参数无效、方法不支持等通用错误由 `-32xxx` 错误码表达，此时没有合约回滚数据（依据：EIP-1474 §Error codes）。
+- 【工程经验】解码失败时降级为中性提示与「查看详情」，保留原始错误用于排查；解码出的文字来自合约，属于不可信内容，插入页面前要按文本处理并转义（依据：Solidity 文档（abi-spec）§Errors 的警告；工程实现）。
+
+## 常见错误
+
+- 认为只要交易失败就能拿到可读原因（【协议保证】gas 耗尽的异常结束不保留原因数据，依据：EIP-140 §Motivation）。
+- 用字符串匹配判断错误类型。
+- 解码失败时把十六进制原样展示给用户。
+- 忽略自定义错误需要错误定义才能解码（【协议保证】ABI 编码不是自描述的，依据：Solidity 文档（abi-spec）§Basic Design）。
+- 把回滚数据里的字符串直接插入页面而不做转义。
+
+## 面试官追问
+
+1. 合约内部把底层错误吞掉时，前端还能做什么？
+2. 你如何在发送前尽量拿到可读原因，而不是等上链失败？
+3. 自定义错误相比字符串错误，在 gas 与类型安全上有什么好处？
+4. 展示合约返回的文字时，你会做哪些处理？
+5. 面对多个合约组成的调用链，你如何决定先用哪份 ABI 解码？
+
+## 评分标准
+
+### 初级回答
+
+- 知道字符串错误能直接解出文字，自定义错误需要错误定义。
+- 知道收据本身通常不带可读原因。
+
+### 中级回答
+
+- 能说明两种错误的数据形态一致而解码条件不同，并列出「拿不到原因」的常见情形。
+- 能说明解码失败时应降级展示，而不是抛出二次错误。
+
+### 高级回答
+
+- 能给出「优先模拟获取原因」的完整排查路径，并说明 gas 耗尽等特殊情形。
+- 能指出回滚数据属于不可信内容，展示前要转义并保留原始数据用于诊断。
+
+## 参考资料
+
+- [Solidity：Contract ABI Specification（§Function Selector、§Basic Design、§Errors）](https://docs.soliditylang.org/en/latest/abi-spec.html)
+- [EIP-140：REVERT instruction（§Abstract、§Motivation、§Specification）](https://eips.ethereum.org/EIPS/eip-140)
+- [EIP-1474：Remote procedure call 规范（§Error codes、§eth_call）](https://eips.ethereum.org/EIPS/eip-1474)

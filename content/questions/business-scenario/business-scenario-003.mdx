@@ -1,0 +1,98 @@
+---
+id: business-scenario-003
+slug: staking-batch-operation-failures
+title: 批量领取奖励，失败一半怎么办？
+summary: 考察部分失败处理的取舍，以及状态对账与重试设计。
+status: review
+difficulty: advanced
+category: business-scenario
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - staking
+  - batch
+  - partial-failure
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1474：Remote procedure call specification（§eth_getTransactionReceipt）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-20：Token Standard（§Specification（transfer、transferFrom、Transfer 事件））
+    url: https://eips.ethereum.org/EIPS/eip-20
+  - title: Multicall3：README（§Batch Contract Reads（aggregate、aggregate3、tryAggregate））
+    url: https://github.com/mds1/multicall3
+  - title: EIP-5792：Wallet Call API（§wallet_sendCalls、§wallet_getCallsStatus）
+    url: https://eips.ethereum.org/EIPS/eip-5792
+---
+
+## 题目
+
+用户在多个池子里有奖励需要领取。目前实现是「一键全部领取」，把多个领取调用合并成一笔交易。
+
+上线后出现问题：其中某个池子的领取失败，导致整笔交易回滚，用户一个都没领到，还付了手续费。请给出改进方案。
+
+## 考察目标
+
+- 能否识别原子批量与逐项失败传播的差别。
+- 是否理解部分失败在业务上的可接受性。
+- 能否给出对账与重试设计。
+
+## 30 秒回答
+
+先确认「一键领取」实际使用的批量机制。若合约只支持原子整批，前端无法让其中一项失败后其余继续，应拆成可逐项重试的交易；若钱包或业务合约支持非原子批次，仍需逐项核对结果。不能直接把 Multicall3 的读取聚合当作替用户领取奖励的通用方案。
+
+## 深入回答
+
+- 【协议保证】收据中的 `status` 用 `1` 与 `0` 表示交易成功或失败，可作为逐笔判定的依据（依据：EIP-1474 §eth_getTransactionReceipt）。
+- 【协议保证】EIP-5792 的 `wallet_sendCalls` 可以请求批量调用；未要求原子性时，钱包可以采用非原子执行，不能据此假定批次会部分成功或整批成功（依据：EIP-5792 §wallet_sendCalls）。
+- 【协议保证】`wallet_getCallsStatus` 返回批次状态，并提供原子性与收据等结果信息，前端仍需区分各调用的链上结果（依据：EIP-5792 §wallet_getCallsStatus）。
+- 【实现行为】Multicall3 的 `aggregate3` 支持按项返回失败结果，但普通账户直接调用它时，目标合约看到的 `msg.sender` 是 Multicall3；依赖用户地址鉴权的领取方法不能直接套用它（依据：Multicall3 README §Batch Contract Reads、§Batch Contract Writes）。
+- 【工程经验】先判断各项是否彼此独立：独立操作适合允许局部失败的批量语义，需要同时生效的操作才用原子批量（依据：工程经验，无规范依据）。
+- 【工程经验】拆成多笔会增加交易笔数与总费用，也可能拉长流程；若采用一次确认、内部允许局部失败的方案，先验证钱包与执行合约是否提供对应能力（依据：工程经验，无规范依据）。
+- 【工程经验】提交后以链上结果逐项更新状态，不以「提交成功」作为完成（依据：工程经验，无规范依据）。
+- 【工程经验】对失败项提供单独重试入口，重试范围与用户确认的范围一致，避免把未选中的池子一起领取（依据：工程经验，无规范依据）。
+- 【工程经验】记录每次尝试的交易哈希与结果；局部失败时展示「成功几项、失败几项」与原因分类（例如尚未到期、已领取）（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把 Multicall3 的 `aggregate3` 当作所有领取合约都能使用的批量写入口，忽略 `msg.sender` 已变为聚合合约（依据：Multicall3 README §Batch Contract Writes）。
+- 【协议保证】收据的 `status` 反映交易成败；提交成功后直接标记全部完成会掩盖失败项（依据：EIP-1474 §eth_getTransactionReceipt）。
+- 失败后整批重试，包括已经成功的项（依据：工程经验，无规范依据）。
+- 只展示整体成功或失败，不展示逐项结果（依据：工程经验，无规范依据）。
+- 重试范围与用户确认的范围不一致（依据：工程经验，无规范依据）。
+
+## 面试官追问
+
+1. 你如何解析局部失败模式下每一项的结果？
+2. 已成功的项在重试时如何避免重复领取？
+3. 用户看到「失败一半」时，你的文案与入口怎么设计？
+4. 如果合约只提供原子批量，你的前端方案是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道原子批量中一条失败会导致整体回滚。
+- 知道需要向用户展示逐项结果。
+
+### 中级回答
+
+- 能按「是否彼此独立」选择批量语义，并给出逐项对账与单独重试的方案。
+- 能说明交易已上链但回滚时的费用提示。
+
+### 高级回答
+
+- 能说明局部失败结果的解析方式与幂等要求，避免重复领取。
+- 能在合约只支持原子批量时给出前端侧的替代方案。
+
+## 参考资料
+
+- [EIP-1474：Remote procedure call specification（§eth_getTransactionReceipt）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-20：Token Standard（§Specification（transfer、transferFrom、Transfer 事件））](https://eips.ethereum.org/EIPS/eip-20)
+- [Multicall3：README（§Batch Contract Reads（aggregate、aggregate3、tryAggregate））](https://github.com/mds1/multicall3)
+- [EIP-5792：Wallet Call API（§wallet_sendCalls、§wallet_getCallsStatus）](https://eips.ethereum.org/EIPS/eip-5792)

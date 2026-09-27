@@ -1,0 +1,94 @@
+---
+id: security-015
+slug: value-and-data-together-misreading
+title: 转账和调用混在一起时，用户最容易误解什么？
+summary: 考察同时存在金额与调用数据时的语义呈现，以及界面的澄清责任。
+status: review
+difficulty: intermediate
+category: security
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - value
+  - calldata
+  - confirmation
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "Solidity 文档：Contracts（§Special Functions 的 Receive Ether Function 与 Fallback Function）"
+    url: https://docs.soliditylang.org/en/latest/contracts.html
+  - title: "Solidity 文档：Units and Global Variables（§Block and Transaction Properties 的 msg.value）"
+    url: https://docs.soliditylang.org/en/latest/units-and-global-variables.html
+  - title: "ethereum.org：Transactions（§The data field、§Smart contract interactions）"
+    url: https://ethereum.org/en/developers/docs/transactions/
+---
+
+## 题目
+
+有一类交易同时带有金额与调用数据，例如「发送 1 个原生资产并调用合约的某个函数」。
+
+用户反馈看不懂：「这到底是转账还是调用合约？我的钱去哪了？」请分析用户的误解来源，并给出界面设计建议。
+
+## 考察目标
+
+- 能否解释金额与数据同时存在时的执行语义。
+- 是否理解金额进入合约后可能被进一步处理。
+- 能否给出不误导的呈现方式。
+
+## 30 秒回答
+
+这类交易的本质是调用合约并同时把金额发送过去：金额作为本次调用的附带价值进入合约，处理方式由合约代码决定，可能记录、转发或拒绝。Solidity 文档说明了接收 Ether 需要 `receive` 或 `payable` 入口，因此界面应呈现为「调用某合约方法并附带金额」而不是普通转账。
+
+## 深入回答
+
+- 【协议保证】调用合约时可以同时携带 value 与 data，`msg.value` 表示随消息发送的 wei 数量，且每次外部调用都可能变化（依据：Solidity 文档（units-and-global-variables）§Block and Transaction Properties 的 msg.value）。
+- 【协议保证】合约没有 `receive` 函数也没有 `payable` 的 `fallback` 时，不构成 payable 函数调用的交易无法向其转入 Ether，并抛出异常（依据：Solidity 文档（contracts）§Special Functions 的 Receive Ether Function）。
+- 【协议保证】`receive` 在空 calldata 的调用上执行，纯转账会触发它；存在 `payable` 的 `fallback` 时，纯转账会走 `fallback`（依据：Solidity 文档（contracts）§Special Functions 的 Receive Ether Function）。
+- 【协议保证】`fallback` 在调用数据不匹配合约中已有函数签名时执行，需要标记 `payable` 才能同时接收 Ether（依据：Solidity 文档（contracts）§Special Functions 的 Fallback Function）。
+- 【工程经验】文案写成转账会暗示资金进入对方账户后可直接使用，属于误导来源之一（依据：工程经验，无规范依据）。
+- 【工程经验】界面把动作描述为「调用某合约方法并附带金额」，写明方法名并注明金额去向由合约逻辑决定（依据：工程经验，无规范依据；背景：ethereum.org：Transactions §Smart contract interactions）。
+- 【工程经验】失败时分开说明「金额未转出」与「gas 已消耗」，避免用户以为资金已经离开账户（依据：工程经验，无规范依据）。
+- 【工程经验】已知协议语义时提示金额可能被转发给第三方；未知语义时避免给出资金流向结论，只说明目标合约地址（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把「附带金额的合约调用」显示为普通转账（【工程经验】）。
+- 只展示金额，不展示被调用的方法（【工程经验】）。
+- 暗示金额进入合约后可以原样取回（【工程经验】）。
+- 失败时只说「操作失败」，不区分金额是否转出（【工程经验】）。
+- 忽略合约缺少 `receive` 或 `payable` 入口时交易会失败（【协议保证】没有相应入口时转入 Ether 会抛出异常；依据：Solidity 文档（contracts）§Special Functions 的 Receive Ether Function）。
+
+## 面试官追问
+
+1. 如何在不知道协议语义的情况下尽量准确描述？
+2. 金额被合约转发时，界面能提供什么线索？
+3. 用户质疑「为什么转给合约还能被取走」，你怎么解释？
+4. 这类交易的模拟结果能提供哪些额外信息？
+
+## 评分标准
+
+### 初级回答
+
+- 知道存在「调用合约并附带金额」这类交易。
+- 知道金额由合约处理，并不代表直接到账给对方。
+
+### 中级回答
+
+- 能说明金额进入合约后的三种可能（记录、转发、拒收），并给出对应的界面呈现。
+- 能区分失败时金额不转出与费用已消耗。
+
+### 高级回答
+
+- 能指出仅展示目标合约不足以说明资金流向，并给出补充提示的条件与方式。
+- 能说明模拟在这类交易中的作用与局限。
+
+## 参考资料
+
+- [Solidity 文档：Contracts（§Special Functions 的 Receive Ether Function 与 Fallback Function）](https://docs.soliditylang.org/en/latest/contracts.html)
+- [Solidity 文档：Units and Global Variables（§Block and Transaction Properties 的 msg.value）](https://docs.soliditylang.org/en/latest/units-and-global-variables.html)
+- [ethereum.org：Transactions（§The data field、§Smart contract interactions）](https://ethereum.org/en/developers/docs/transactions/)

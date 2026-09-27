@@ -1,0 +1,91 @@
+---
+id: signing-011
+slug: permit-signed-but-not-consumed-state
+title: 用户签了授权但额度没变，界面该怎么显示？
+summary: 考察签名授权的中间态：签名已产出、链上状态未变，判断依据是随机数而非额度。
+status: review
+difficulty: advanced
+category: signing
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - eip-2612
+  - permit
+  - state
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-2612：permit 扩展（§Specification、§Security Considerations）"
+    url: https://eips.ethereum.org/EIPS/eip-2612
+  - title: "EIP-712：类型化结构化数据哈希与签名（§Specification 的 domainSeparator）"
+    url: https://eips.ethereum.org/EIPS/eip-712
+---
+
+## 题目
+
+你们接入了签名授权：用户签一段结构化数据即可授权，由后台提交链上交易。
+
+上线后出现两类反馈：一是用户签完名后界面仍显示「未授权」，二是用户重复签名后提示失败。请说明这个中间态的本质，以及界面应该以什么作为「授权是否已生效」的判断依据。
+
+## 考察目标
+
+- 是否理解签名授权与链上授权之间的时间差。
+- 能否找到判断「是否已被消费」的正确依据。
+- 能否设计出不误导用户的中间态 UI。
+
+## 30 秒回答
+
+签名本身不改变链上额度；有人成功调用 `permit` 后，EIP-2612 合约才会设置 `allowance` 并递增 `nonces[owner]`。界面应区分「已签名」「提交中」「已生效」和「失败」。核对具体交易的收据、目标代币的 nonce 与 allowance；只看 nonce 变化不能证明这份签名被消费，也可能是另一份授权先上链。
+
+## 深入回答
+
+- 【协议保证】`permit` 成功执行时把 `allowance[owner][spender]` 设为签名中的 `value`，并把 `nonces[owner]` 加一，同时发出对应的 `Approval` 事件（依据：EIP-2612 §Specification）。
+- 【协议保证】执行条件包括：区块时间不超过 `deadline`、`owner` 不是零地址、`nonces[owner]` 与签名中的 nonce 一致、签名有效；不满足则回滚（依据：EIP-2612 §Specification）。
+- 【协议保证】签名是锚定域的结构化数据，包含 `owner`、`spender`、`value`、`nonce`、`deadline` 字段（依据：EIP-2612 §Specification；EIP-712 §Specification 的 domainSeparator）。
+- 【协议保证】签名可以被抢先提交，也可以被接收方扣住；`deadline` 是缓解方式之一，签名人可自行提交使先前签名失效（依据：EIP-2612 §Security Considerations）。
+- 【工程经验】同时核对提交该签名的交易收据、`nonces[owner]` 与 `allowance`；nonce 增长可能由另一份 `permit` 导致，额度也可能被普通 `approve` 或 `transferFrom` 改变（依据：EIP-2612 §Specification；工程经验）。
+- 【工程经验】界面状态机覆盖「已签名未提交」「已提交待确认」「已生效」「已失效」，并为前两种状态提供重试或查询入口（依据：工程经验，无规范依据）。
+- 【工程经验】多设备同时签名会竞争同一个 `nonce`，先提交的一份生效，需要向用户说明（依据：EIP-2612 §Specification 的 nonce 语义；多设备场景属于工程经验）。
+- 【工程经验】界面不把本地持有签名当作授权生效，额度显示以链上读取为准（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 用额度是否变化判断签名是否被消费（【工程经验】）。
+- 签完名就把界面标记为已授权（【工程经验】）。
+- 不提供提交失败或超时后的重试入口（【工程经验】）。
+- 允许多份签名共存而不提示 `nonce` 竞争（【协议保证】`nonces[owner]` 与签名一致是执行条件之一；依据：EIP-2612 §Specification）。
+- 本地缓存额度并在签名后直接更新缓存（【工程经验】）。
+
+## 面试官追问
+
+1. 用户在另一台设备上提交了同一份签名，本机界面如何感知？
+2. 截止时间设为很长会带来什么风险？你会怎么设定？
+3. 如果代付方长期不提交，用户的资金会受影响吗？
+4. 你如何向用户解释「签名没生效但也不能重复用」？
+
+## 评分标准
+
+### 初级回答
+
+- 知道签名不改变链上状态，需要有人提交才生效。
+- 知道额度要从链上读取。
+
+### 中级回答
+
+- 能指出随机数是判断签名是否被消费的依据，并列出执行成功的条件。
+- 能设计出「已签名未提交」「已生效」「已失效」三类状态的界面。
+
+### 高级回答
+
+- 能解释重复签名失败与随机数竞争的因果关系，并说明多设备场景下的处理。
+- 能给出截止时间的取值取舍与代付失败的用户可操作路径。
+
+## 参考资料
+
+- [EIP-2612：permit 扩展（§Specification、§Security Considerations）](https://eips.ethereum.org/EIPS/eip-2612)
+- [EIP-712：类型化结构化数据哈希与签名（§Specification 的 domainSeparator）](https://eips.ethereum.org/EIPS/eip-712)

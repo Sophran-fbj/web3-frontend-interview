@@ -1,0 +1,97 @@
+---
+id: contract-032
+slug: decoding-bytes-and-string-safely
+title: 合约返回的字符串，能直接渲染吗？
+summary: 考察链上字符串与字节数据的处理，以及把合约数据当输入渲染时的注入风险。
+status: review
+difficulty: intermediate
+category: contract
+questionType: code-review
+ecosystems:
+  - evm
+tags:
+  - decoding
+  - xss
+  - untrusted-data
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: Solidity 文档 abi-spec（§Formal Specification of the Encoding）
+    url: https://docs.soliditylang.org/en/latest/abi-spec.html
+  - title: EIP-721：Non-Fungible Token Standard（§Specification 的 Metadata 扩展、ERC-721 Metadata JSON Schema）
+    url: https://eips.ethereum.org/EIPS/eip-721
+  - title: EIP-20：Token Standard（§Specification 的 name、symbol、decimals）
+    url: https://eips.ethereum.org/EIPS/eip-20
+  - title: ethereum.org：Ethereum security and scam prevention（§Double check transactions before sending）
+    url: https://ethereum.org/en/security/
+---
+
+## 题目
+
+你在做 NFT 详情页，需要展示链上返回的名字与描述。测试同学提交了一个问题：把某个特殊构造的合约名字渲染到页面上，会触发脚本执行。
+
+请说明这类数据在渲染前需要经过哪些处理，以及哪些链上数据属于不可信输入。
+
+## 考察目标
+
+- 能否识别链上数据的不可信性质。
+- 是否知道字符串与字节数据在解码后的处理差别。
+- 能否给出可执行的渲染防护清单。
+
+## 30 秒回答
+
+ABI 的 `string` 与 `bytes` 都可能包含不可信内容。React 普通文本插值会转义字符，可以作为文本展示；把它交给 `dangerouslySetInnerHTML`、富文本解析器或 URL 属性时需按对应上下文做安全处理。无法可靠解释的 `bytes` 可以按十六进制展示，不应把任意链上字符串当作可信 HTML。
+
+## 深入回答
+
+- 【协议保证】ABI 中 `string` 按 UTF-8 字节序列编码，`bytes` 按原始字节序列编码，二者编码形式相近，差别在内容是否可解释为文本（依据：Solidity 文档 abi-spec §Formal Specification of the Encoding）
+- 【协议保证】EIP-721 的 Metadata 扩展属于可选部分，`name`、`symbol`、`tokenURI` 由实现自行返回，规范不校验内容真实性（依据：EIP-721 §Specification 的 Metadata 扩展）
+- 【协议保证】EIP-721 的 `tokenURI` 返回字符串，指向的内容按 Metadata JSON Schema 解释，其中的 `image` 是 URI 字段（依据：EIP-721 §Specification 的 ERC-721 Metadata JSON Schema）
+- 【协议保证】EIP-20 的 `name`、`symbol`、`decimals` 标为 OPTIONAL，规范说明接口与其他合约不应假定这些值存在（依据：EIP-20 §Specification 的 name、symbol、decimals）
+- 【工程经验】把链上字符串拼进标记语言会带来脚本执行风险，统一走框架的文本渲染而不是拼接标记（依据：工程经验，无规范依据）
+- 【工程经验】字节数据未必是合法文本编码，无法解释时按十六进制展示并标注，不要强行按文本解码（依据：工程经验，无规范依据）
+- 【工程经验】控制字符与双向文本控制符可以改变显示顺序，展示前做归一化与长度上限能降低地址、数值被伪装的空间（依据：工程经验，无规范依据）
+- 【工程经验】转义只覆盖渲染层，防不住内容本身的误导；配合合约地址这类用户可核对的字段与风险提示更有效（依据：ethereum.org Ethereum security and scam prevention §Double check transactions before sending）
+
+## 常见错误
+
+- 认为链上返回的数据「来自区块链所以可信」（依据：工程经验，无规范依据）
+- 把合约返回的字符串直接插入页面而不转义（依据：工程经验，无规范依据）
+- 把任意字节按文本解码展示（依据：Solidity 文档 abi-spec §Formal Specification of the Encoding）
+- 假定代币的 `name`、`decimals` 都存在，调用失败时页面变成空白（依据：EIP-20 §Specification 的 OPTIONAL 说明）
+- 忽略双向文本控制符对显示顺序的影响（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 除了渲染层，链上字符串还可能影响哪些下游系统？
+2. 展示层怎样缓解「名称伪装」这类误导？
+3. 字节数据在什么情况下应当拒绝展示？
+4. 如果 NFT 的图片地址来自链上，还需要注意什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道合约返回的数据属于外部输入，需要转义。
+- 知道字节数据未必是文本。
+
+### 中级回答
+
+- 能列出字符串处理中的控制字符、长度与归一化问题，并给出渲染防护清单。
+- 能说明无法解释的字节应按十六进制展示。
+
+### 高级回答
+
+- 能指出转义的边界（防不住内容误导），并给出用不可伪造信息缓解误导的方法。
+- 能分析链上字符串对下游系统（导出、日志、通知）的连带影响。
+
+## 参考资料
+
+- [Solidity 文档 abi-spec（§Formal Specification of the Encoding）](https://docs.soliditylang.org/en/latest/abi-spec.html)
+- [EIP-721：Non-Fungible Token Standard（§Specification 的 Metadata 扩展、ERC-721 Metadata JSON Schema）](https://eips.ethereum.org/EIPS/eip-721)
+- [EIP-20：Token Standard（§Specification 的 name、symbol、decimals）](https://eips.ethereum.org/EIPS/eip-20)
+- [ethereum.org：Ethereum security and scam prevention（§Double check transactions before sending）](https://ethereum.org/en/security/)

@@ -1,0 +1,98 @@
+---
+id: data-015
+slug: recent-transactions-without-time-index
+title: 链上没有「按时间查交易」的接口，怎么做最近记录？
+summary: 考察历史记录的获取路径，以及区块扫描与索引服务在成本上的取舍。
+status: review
+difficulty: intermediate
+category: data
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - history
+  - indexer
+  - logs
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1474：Ethereum JSON-RPC Specification（§Specification 的 Methods：eth_getLogs、eth_getBlockByNumber、eth_getTransactionReceipt）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-20：Token Standard（§Specification 的 Transfer 事件）
+    url: https://eips.ethereum.org/EIPS/eip-20
+  - title: JSON-RPC 2.0 Specification（§Batch）
+    url: https://www.jsonrpc.org/specification
+  - title: ethereum.org：Block explorers（§Data 的 Transactions、Accounts）
+    url: https://ethereum.org/en/developers/docs/data-and-analytics/block-explorers/
+---
+
+## 题目
+
+产品要求「我的交易记录」页面按时间倒序展示最近 20 条，并且要能翻页。
+
+你发现标准接口按交易哈希或区块查询，没有「按地址列出交易」的方法。请说明可以怎么做，以及各自的成本与限制。
+
+## 考察目标
+
+- 能否识别标准接口在历史查询上的能力缺口。
+- 是否理解区块扫描的成本与限制。
+- 能否在自建与第三方之间做出取舍。
+
+## 30 秒回答
+
+JSON-RPC 的方法按哈希、区块号或区块哈希查询交易，没有按地址枚举交易的条目；按地址取数据要靠 `eth_getLogs` 过滤事件，或按高度扫描区块再过滤。事件路径要求目标合约发出了带地址索引的事件，原生资产转账不经过代币合约，不产生这类事件。
+
+## 深入回答
+
+- 【协议保证】EIP-1474 的方法集合按交易哈希、区块号或区块哈希查询交易，没有按地址枚举交易的条目（依据：EIP-1474 §Specification 的 Methods 列表）
+- 【协议保证】`eth_getLogs` 的 `address` 过滤的是发出日志的合约地址；检索 ERC-20 转账参与者还要按 `Transfer` 事件中索引化的 `from` 或 `to` topic 过滤，且不能用这一路径找原生资产转账（依据：EIP-1474 §eth_getLogs；EIP-20 §Events）。
+- 【协议保证】`eth_getBlockByNumber` 的第二参数为 true 时返回完整交易对象，可用于按高度扫描并过滤地址（依据：EIP-1474 §Specification 的 Methods 条目 eth_getBlockByNumber）
+- 【协议保证】EIP-20 为代币转账定义了 `Transfer` 事件；原生资产转账由协议层处理，不经过代币合约，不产生该事件（依据：EIP-20 §Specification 的 Events）
+- 【协议保证】JSON-RPC 2.0 的批量请求可以把多个高度或多次读取合并到一次往返（依据：JSON-RPC 2.0 Specification §Batch）
+- 【工程经验】区块扫描的请求量随回溯深度增长，并受端点区间限制影响，适合作为兜底路径而不是首屏方案（依据：工程经验，无规范依据）
+- 【协议保证】`eth_getTransactionReceipt` 按交易哈希返回收据，收据包含 `blockHash`、`blockNumber`、`from`、`to`、`logs` 等字段，可用于核对某笔交易是否已上链（依据：EIP-1474 §Specification 的 Methods 条目 eth_getTransactionReceipt）
+- 【工程经验】分页游标基于区块高度而不是时间偏移，重组后判断与回退都有明确依据（依据：工程经验，无规范依据）
+- 【工程经验】首屏取最近区间或由索引服务提供，翻页再按高度继续；索引返回用于展示，资金类判断回到链上核对（依据：ethereum.org Block explorers §Data）
+
+## 常见错误
+
+- 认为存在按地址列出交易的标准接口（依据：EIP-1474 §Specification 的 Methods 列表）
+- 只依赖事件日志，忽略原生资产转账不产生该事件（依据：EIP-20 §Specification 的 Events）
+- 用时间偏移做分页游标，忽略重组（依据：工程经验，无规范依据）
+- 在前端直接做深度扫描，导致限流与超时（依据：工程经验，无规范依据）
+- 把索引服务的返回直接用于资金判断（依据：EIP-1474 §Specification 的 Methods 条目 eth_getTransactionReceipt）
+
+## 面试官追问
+
+1. 你会如何设计基于高度的分页游标？
+2. 需要展示「全部类型的转账」时，方案会怎么变？
+3. 索引服务与链上数据不一致时，以哪边为准？
+4. 首次进入页面就要展示最近 20 条，你会怎样避免大范围扫描？
+
+## 评分标准
+
+### 初级回答
+
+- 知道标准接口不能按地址列交易。
+- 知道可以用事件日志或扫描区块获取历史。
+
+### 中级回答
+
+- 能对比三条路径的前提与成本，并指出原生资产转账可能不产生事件。
+- 能说明分页游标应基于区块高度。
+
+### 高级回答
+
+- 能按覆盖范围、延迟与依赖三个维度给出选型，并说明索引数据与链上数据的信任关系。
+- 能给出首次加载与翻页的差异化策略，避免深度扫描。
+
+## 参考资料
+
+- [EIP-1474：Ethereum JSON-RPC Specification（§Specification 的 Methods：eth_getLogs、eth_getBlockByNumber、eth_getTransactionReceipt）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-20：Token Standard（§Specification 的 Transfer 事件）](https://eips.ethereum.org/EIPS/eip-20)
+- [JSON-RPC 2.0 Specification（§Batch）](https://www.jsonrpc.org/specification)
+- [ethereum.org：Block explorers（§Data 的 Transactions、Accounts）](https://ethereum.org/en/developers/docs/data-and-analytics/block-explorers/)

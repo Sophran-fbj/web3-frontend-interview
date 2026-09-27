@@ -1,0 +1,95 @@
+---
+id: signing-014
+slug: signature-proves-key-control-not-identity
+title: 地址签名能证明「他是谁」吗？
+summary: 考察密钥控制与身份声明的边界，以及自托管身份在恢复与隐私上的固有代价。
+status: review
+difficulty: advanced
+category: signing
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - identity
+  - key-management
+  - trust
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-4361：Sign-In with Ethereum（§Specification、§Security Considerations）
+    url: https://eips.ethereum.org/EIPS/eip-4361
+  - title: Ethereum Yellow Paper：World State（§4.1）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+  - title: ethereum.org：Ethereum Accounts（§Account types）
+    url: https://ethereum.org/en/developers/docs/accounts/
+---
+
+## 题目
+
+运营希望把「连接钱包 + 签名」当作实名认证的替代方案，理由是「私钥只有本人有，签了名就证明是本人」。
+
+请在尊重产品目标的前提下给出技术意见：签名到底证明什么、不能证明什么，以及自托管身份会带来哪些需要由产品承担的后果。
+
+## 考察目标
+
+- 能否区分密钥控制与身份归属。
+- 是否了解自托管身份在恢复与隐私上的固有代价。
+- 能否给出可落地的替代方案而不是一句「不安全」。
+
+## 30 秒回答
+
+验签只能证明签名符合该地址当时的验证规则：外部账户通常由私钥签名，合约账户可按 ERC-1271 在链上验证，结果可能随状态变化。账户状态不包含现实身份信息，因此签名适合做账户控制权证明，不能直接当作实名认证；会话还需校验域名、随机数和有效期。
+
+## 深入回答
+
+- 【协议保证】账户在状态中由 nonce、余额、存储根与代码哈希描述，这些字段不包含现实身份信息（依据：Yellow Paper §4.1 World State）。
+- 【协议保证】验签分两类：外部账户按 ERC-191 指定的方法验证，合约账户推荐按 ERC-1271 验证，且后者并不要求是纯函数，同一输入在不同状态下可能得到不同结果（依据：EIP-4361 §Specification 的 Signing and Verifying Messages with Ethereum Accounts）。
+- 【协议保证】登录会话要绑定地址，而不是绑定可能变化的解析资源（依据：EIP-4361 §Specification 的 Relying Party Implementer Steps 的 Creating Sessions）。
+- 【协议保证】该规范把自己定位为集中式身份服务的自托管替代，并指出密钥管理责任转移到用户，缺少集中式身份常见的找回机制（依据：EIP-4361 §Abstract、§Security Considerations 的 Key Management）。
+- 【协议保证】规范提示标识复用会带来隐私代价，并建议尽量减少钱包与服务端的交互、按需披露信息（依据：EIP-4361 §Security Considerations 的 Identifier Reuse、Minimizing Wallet and Server Interaction）。
+- 【工程经验】把签名结果限定为「账户控制权证明」，实名核对交给独立流程（证件或第三方核验），两者组合使用（依据：工程经验，无规范依据）。
+- 【工程经验】账户体系按「一个用户可以绑定多个地址」设计：用户主体另有主键，地址作为凭据表中的一行，并提供地址迁移与解绑路径（依据：工程经验，无规范依据）。
+- 【工程经验】不要用地址作为用户主键去关联敏感个人信息；链上记录长期公开可查，这种关联会成为可被追踪的线索（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为「签名通过」表示「本人操作」。
+- 用地址作为用户唯一主键，并把实名信息直接绑定到地址。
+- 忽略一个用户可以持有多个地址，导致账号重复与风控口径混乱。
+- 不提供密钥丢失后的处理路径，把责任全部推给用户。
+- 把合约账户的验签结果当作长期稳定的事实（【协议保证】ERC-1271 的实现并不要求是纯函数，依据：EIP-4361 §Specification 的 Signing and Verifying Messages with Ethereum Accounts）。
+
+## 面试官追问
+
+1. 用户声称地址被盗用，你的风控如何区分「地址被盗」与「用户反悔」？
+2. 一个用户绑定多个地址时，账户体系的主键如何设计？
+3. 签名作为控制权证明，配合什么手段才能完成实名核对？
+4. 合约账户的验签结果随状态变化，对已建立的登录会话有什么影响？
+5. 如果监管要求留存身份信息，你会怎样设计存储以降低隐私风险？
+
+## 评分标准
+
+### 初级回答
+
+- 知道签名只证明私钥控制，不证明现实身份。
+- 知道地址本身不携带身份信息。
+
+### 中级回答
+
+- 能说明自托管身份缺少找回机制，以及一个用户持有多个地址带来的账号问题。
+- 能提出把签名作为控制权证明、配合独立流程完成身份核对的方案。
+
+### 高级回答
+
+- 能指出合约账户验签依赖链上状态，削弱「签名即实名」的推论。
+- 能给出地址变更、密钥丢失场景下的产品处理路径，并说明避免把身份信息与地址直接关联的隐私理由。
+
+## 参考资料
+
+- [EIP-4361：Sign-In with Ethereum（§Specification、§Security Considerations）](https://eips.ethereum.org/EIPS/eip-4361)
+- [Ethereum Yellow Paper：World State（§4.1）](https://ethereum.github.io/yellowpaper/paper.pdf)
+- [ethereum.org：Ethereum Accounts（§Account types）](https://ethereum.org/en/developers/docs/accounts/)

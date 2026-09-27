@@ -1,0 +1,95 @@
+---
+id: signing-006
+slug: why-eth-sign-is-deprecated
+title: 为什么不应默认让用户签任意摘要？
+summary: 考察对任意摘要签名的风险，以及它与带前缀签名的安全差别。
+status: review
+difficulty: intermediate
+category: signing
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-191
+  - eth-sign
+  - phishing
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-191：签名数据标准（§Motivation、§Specification 的 Registry of version bytes）"
+    url: https://eips.ethereum.org/EIPS/eip-191
+  - title: "EIP-712：类型化结构化数据哈希与签名（§Specification 的 domainSeparator、§Security Considerations 的 Replay attacks）"
+    url: https://eips.ethereum.org/EIPS/eip-712
+  - title: "MetaMask 文档：Sign data（页面中的 eth_sign 弃用说明）"
+    url: https://docs.metamask.io/wallet/concepts/signing-methods/
+---
+
+## 题目
+
+有合作方要求你接入一个「对 32 字节哈希签名」的老接口，理由是他们的合约里就是用 `ecrecover` 直接校验的。你的钱包测试却发现主流钱包都拒绝了这个请求。
+
+请说明这类请求的风险在哪里，以及正确的替代做法是什么。
+
+## 考察目标
+
+- 是否理解「对任意摘要签名」会让用户失去对签名用途的判断。
+- 能否说清带前缀签名如何降低风险。
+- 能否给出可迁移到链上校验的替代方案。
+
+## 30 秒回答
+
+对裸摘要签名时用户看不到内容与用途；EIP-191 用 `0x19` 前缀让签名数据不构成合法 RLP，并用版本字节区分不同签名用途，因此带前缀的消息签名或 EIP-712 结构化签名可以在链上按对应格式校验。
+
+## 深入回答
+
+- 【协议保证】EIP-191 的动机说明：若签名数据没有语法约束，一笔以太坊交易的 RLP 部分可以作为合法的预签名交易被执行（依据：EIP-191 §Motivation）。
+- 【协议保证】`0x19` 的引入让签名数据不构成完整 RLP 结构，从而无法作为以太坊交易使用（依据：EIP-191 §Specification）。
+- 【协议保证】版本字节把消息签名（`0x45`）、结构化数据签名（`0x01`）、带预期验证者的签名（`0x00`）区分开，避免一类签名被搬到另一类场景（依据：EIP-191 §Specification 的 Registry of version bytes）。
+- 【协议保证】EIP-712 的域可包含 `verifyingContract`，用户代理可以据此做合约级防钓鱼；域中链标识与当前链不一致时宜拒绝签名（依据：EIP-712 §Specification 的 domainSeparator）。
+- 【协议保证】实现需要保证同一份签名再次出现时行为正确，例如拒绝重复提交或让操作幂等（依据：EIP-712 §Security Considerations 的 Replay attacks）。
+- 【实现行为】MetaMask 文档把 `eth_sign` 标注为已弃用，推荐的替代是 `eth_signTypedData_v4` 与 `personal_sign`（依据：MetaMask 文档：Sign data）。
+- 【工程经验】前端对这类请求的合适动作是拒绝并解释原因，而不是引导用户更换钱包（依据：工程经验，无规范依据）。
+- 【工程经验】用户拒绝签名属于需要支持的正常结果，反复重试会损害信任（依据：工程经验，无规范依据）。
+- 【工程经验】合作方合约已经上线时，可以评估在链上按带前缀或结构化数据格式校验，或通过中继层适配，并向对方说明残余风险（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为「对哈希签名更安全，因为哈希不可逆」（【协议保证】签名内容是待签数据的授权凭证，缺少自描述信息时用户无法判断用途；依据：EIP-191 §Motivation）。
+- 把这类请求当成钱包兼容性问题，转而引导用户换钱包（【工程经验】）。
+- 用拼接说明文字的方式替代结构化签名，仍然对裸摘要签名（【工程经验】）。
+- 认为合约里能校验就说明该签名方式可以接受（【工程经验】）。
+- 忽略签名与验证者、用途的绑定，把老接口直接接入登录流程（【协议保证】版本 `0x00` 设计用于把预期验证者纳入签名内容；依据：EIP-191 §Specification 的 Registry of version bytes）。
+
+## 面试官追问
+
+1. 如果合作方的合约早已上线，无法修改校验逻辑，你会给出什么折中方案？
+2. 用户拒绝签名时，界面应该提供哪些信息帮助他判断？
+3. 结构化数据签名相比消息签名，在链上校验上有什么优势？
+4. 你如何在代码评审中识别出这类签名请求？
+
+## 评分标准
+
+### 初级回答
+
+- 知道对任意摘要签名会让用户无法判断内容与用途。
+- 知道应改用带前缀的消息签名或结构化数据签名。
+
+### 中级回答
+
+- 能说明前缀机制如何避免签名数据被当作交易，并指出签名应与用途绑定。
+- 能给出可迁移到链上校验的替代方案。
+
+### 高级回答
+
+- 能引用规范中的历史风险（预签名数据被复用）说明结构性约束的必要性。
+- 能在既有合约束缚下给出可行的折中方案，并明确其残余风险。
+
+## 参考资料
+
+- [EIP-191：签名数据标准（§Motivation、§Specification 的 Registry of version bytes）](https://eips.ethereum.org/EIPS/eip-191)
+- [EIP-712：类型化结构化数据哈希与签名（§Specification 的 domainSeparator、§Security Considerations 的 Replay attacks）](https://eips.ethereum.org/EIPS/eip-712)
+- [MetaMask 文档：Sign data（页面中的 eth_sign 弃用说明）](https://docs.metamask.io/wallet/concepts/signing-methods/)

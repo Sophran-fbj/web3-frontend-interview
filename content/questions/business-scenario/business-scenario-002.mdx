@@ -1,0 +1,99 @@
+---
+id: business-scenario-002
+slug: nft-mint-flow-states
+title: 铸造页面的状态怎么设计才不翻车？
+summary: 考察供应量变化、抢购失败与重复提交三类问题在铸造流程中的处理。
+status: review
+difficulty: intermediate
+category: business-scenario
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - nft
+  - mint
+  - concurrency
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-28
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-721：Non-Fungible Token Standard（§Specification（Events、Transfer））
+    url: https://eips.ethereum.org/EIPS/eip-721
+  - title: EIP-161：State trie clearing（§Specification（nonce 递增））
+    url: https://eips.ethereum.org/EIPS/eip-161
+  - title: EIP-1193：Ethereum Provider JavaScript API（§Provider Errors）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: wagmi：TanStack Query 指南（§Queries & Mutations）
+    url: https://wagmi.sh/react/guides/tanstack-query
+---
+
+## 题目
+
+你们的铸造活动要做到「限量、先到先得」。压测时出现了三个问题：用户看到还有库存但提交后失败；用户在等待期间重复点击导致多笔交易；活动开始瞬间页面卡死。
+
+请给出铸造页面的状态设计与并发处理方案。
+
+## 考察目标
+
+- 能否识别库存展示的时效性问题。
+- 是否处理了重复提交与并发峰值。
+- 能否给出失败后的用户路径。
+
+## 30 秒回答
+
+库存是链上状态，页面数字只是某一时刻的读数；「看到有货」不保证提交成功。等待钱包响应和交易确认时禁用重复入口，并按账户、链与活动记录待处理交易。前端防重只能减少误操作；真正的幂等需要合约提供可识别的操作标识或相应限制。高峰时预加载静态资源、减少非必要轮询，并对售罄、拒绝和交易失败分别给出后续操作。
+
+## 深入回答
+
+- 【协议保证】ERC-721 通常用 `from` 为零地址的 `Transfer` 事件表示铸造；但合约创建期间铸造的 NFT 可以不发出该事件，不能仅凭日志推断所有历史铸造（依据：EIP-721 §Specification（Events、Transfer））。
+- 【协议保证】账户 nonce 随交易递增，同一 nonce 无法在链上重复使用，交易确认后该 nonce 即被消耗（依据：EIP-161 §Specification）。
+- 【协议保证】用户在钱包里拒绝请求时错误码为 `4001`，界面可据此把「已取消」与其他失败区分开（依据：EIP-1193 §Provider Errors）。
+- 【实现行为】写操作以 mutation 形式提供，等待期间的 pending 状态可用于禁用提交入口（依据：wagmi TanStack Query 指南 §Queries & Mutations）。
+- 【工程经验】库存读数与链上状态之间存在窗口，界面文案写成「预计剩余」并附读取时间，提交前重新校验（依据：工程经验，无规范依据）。
+- 【工程经验】资格条件（白名单、限购数量）同样可能变化，界面给出读取时间或提示可能变化（依据：工程经验，无规范依据）。
+- 【工程经验】活动开始前完成静态资源与元数据加载，开始后暂停次要数据轮询，避免请求叠加（依据：工程经验，无规范依据）。
+- 【工程经验】提交失败后不做自动重试或延长退避时间，避免瞬时重试洪峰（依据：工程经验，无规范依据）。
+- 【工程经验】售罄、资格不足、提交失败但已消耗费用、等待过久四类结果分别给出不同文案与入口（依据：工程经验，无规范依据）。
+- 【工程经验】不用「保证抢到」这类表述引导付费或授权无限额度，铸造类操作保持一次确认一笔（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把库存读数展示为确定值并承诺可购买（依据：工程经验，无规范依据）。
+- 【实现行为】写操作以 mutation 提供 pending 状态；等待期间不禁用按钮会让用户重复提交（依据：wagmi TanStack Query 指南 §Queries & Mutations）。
+- 活动开始时同时发起大量非必要请求（依据：工程经验，无规范依据）。
+- 失败后自动重试，造成请求洪峰（依据：工程经验，无规范依据）。
+- 售罄与资格不足使用同一提示（依据：工程经验，无规范依据）。
+
+## 面试官追问
+
+1. 你如何在不增加请求的前提下降低「看到有货却失败」的观感落差？
+2. 跨标签页重复提交如何用幂等拦住？
+3. 峰值期间你会牺牲哪些功能来保证主流程？
+4. 用户已支付费用但铸造失败，产品上如何补偿或说明？
+
+## 评分标准
+
+### 初级回答
+
+- 知道库存会变化，界面数字只是瞬时读数。
+- 知道等待期间需要禁用提交入口。
+
+### 中级回答
+
+- 能给出重复提交的三层防护，并区分售罄与资格不足的提示。
+- 能说明峰值期间减少非必要请求的做法。
+
+### 高级回答
+
+- 能设计出包含预加载、限流、退避与幂等的完整方案，并说明提交前的重新校验。
+- 能给出失败后费用与用户路径的清晰说明，避免承诺性文案。
+
+## 参考资料
+
+- [EIP-721：Non-Fungible Token Standard（§Specification（Events、Transfer））](https://eips.ethereum.org/EIPS/eip-721)
+- [EIP-161：State trie clearing（§Specification（nonce 递增））](https://eips.ethereum.org/EIPS/eip-161)
+- [EIP-1193：Ethereum Provider JavaScript API（§Provider Errors）](https://eips.ethereum.org/EIPS/eip-1193)
+- [wagmi：TanStack Query 指南（§Queries & Mutations）](https://wagmi.sh/react/guides/tanstack-query)
