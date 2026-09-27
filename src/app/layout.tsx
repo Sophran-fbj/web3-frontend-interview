@@ -6,7 +6,7 @@ import { getSiteUrl } from "@/lib/site-url";
 import "./globals.css";
 
 const siteUrl = getSiteUrl();
-const siteTitle = "Web3 前端面试题库｜钱包、签名与交易实战";
+const siteTitle = "Web3 前端面试题库";
 const siteDescription =
   "中文 Web3 前端面试题库，覆盖钱包连接、签名、交易、合约交互、链上数据与安全。每题包含简答、深入分析、常见错误和参考资料。";
 
@@ -14,14 +14,14 @@ export const metadata: Metadata = {
   metadataBase: siteUrl,
   title: {
     default: siteTitle,
-    template: "%s | Web3 前端面试手册",
+    template: "%s | Web3 前端面试题库",
   },
   description: siteDescription,
   alternates: siteUrl ? { canonical: "/" } : undefined,
   openGraph: {
     type: "website",
     locale: "zh_CN",
-    siteName: "Web3 前端面试手册",
+    siteName: "Web3 前端面试题库",
     title: siteTitle,
     description: siteDescription,
     url: siteUrl?.toString(),

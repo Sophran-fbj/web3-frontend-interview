@@ -56,13 +56,13 @@ export async function generateMetadata({
   );
 
   return {
-    title,
+    title: { absolute: title },
     description,
     alternates: { canonical: hasActiveFilters ? undefined : url },
     openGraph: {
       type: "website",
       locale: "zh_CN",
-      siteName: "Web3 前端面试手册",
+      siteName: "Web3 前端面试题库",
       title,
       description,
       url: hasActiveFilters ? undefined : url,
@@ -147,7 +147,7 @@ export default async function QuestionsPage({
     >
       <header className="max-w-3xl border-l-2 border-[var(--accent)] pl-5 sm:pl-7">
         <h1 className="text-3xl font-semibold tracking-[-0.035em] text-[var(--text-strong)] sm:text-5xl">
-          Web3 前端题库
+          Web3 前端面试题库
         </h1>
         <p className="mt-5 max-w-2xl text-base leading-7 text-[var(--text-muted)] sm:text-lg">
           从单一知识点到完整业务场景。先尝试口述答案，再进入详情对照思路、常见错误和评分标准。
@@ -330,7 +330,7 @@ export default async function QuestionsPage({
             {pageQuestions.map(({ frontmatter }, index) => (
               <li
                 key={frontmatter.id}
-                className="grid gap-4 py-7 sm:grid-cols-[3.5rem_minmax(0,1fr)_11rem] sm:items-start sm:gap-5"
+                className="grid grid-cols-[2rem_minmax(0,1fr)_2.75rem] items-start gap-x-3 gap-y-3 py-7 sm:grid-cols-[3.5rem_minmax(0,1fr)_11rem_2.75rem] sm:gap-5"
               >
                 <span className="font-mono text-sm text-[var(--text-faint)] tabular-nums">
                   {String(
@@ -350,7 +350,7 @@ export default async function QuestionsPage({
                     {frontmatter.summary}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-3 text-sm sm:flex-col sm:items-end sm:gap-1">
+                <div className="col-start-2 row-start-2 flex flex-wrap gap-x-3 gap-y-1 text-sm sm:col-start-3 sm:row-start-1 sm:flex-col sm:items-end sm:gap-1">
                   <span className="font-medium text-[var(--accent-bright)]">
                     {difficultyLabels[frontmatter.difficulty]}
                   </span>
@@ -360,6 +360,8 @@ export default async function QuestionsPage({
                   <span className="text-[var(--text-faint)]">
                     {questionTypeLabels[frontmatter.questionType]}
                   </span>
+                </div>
+                <div className="col-start-3 row-span-2 row-start-1 self-center sm:col-start-4 sm:row-span-1">
                   <BookmarkButton questionId={frontmatter.id} />
                 </div>
               </li>

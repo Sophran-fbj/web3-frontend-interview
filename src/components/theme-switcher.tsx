@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 const themes = ["cold-white", "graphite", "warm-sand"] as const;
 type Theme = (typeof themes)[number];
@@ -92,6 +92,7 @@ function getServerThemeSnapshot(): Theme {
 }
 
 export function ThemeSwitcher() {
+  const [showLabel, setShowLabel] = useState(false);
   const theme = useSyncExternalStore(
     subscribeToTheme,
     getThemeSnapshot,
@@ -105,7 +106,11 @@ export function ThemeSwitcher() {
     <div
       role="group"
       aria-label={`阅读主题，当前为${label}`}
-      className="group relative size-11 shrink-0"
+      onPointerEnter={() => setShowLabel(true)}
+      onPointerLeave={() => setShowLabel(false)}
+      onFocus={() => setShowLabel(true)}
+      onBlur={() => setShowLabel(false)}
+      className="relative size-11 shrink-0"
     >
       <svg
         aria-hidden="true"
@@ -149,8 +154,10 @@ export function ThemeSwitcher() {
               type="button"
               aria-label={`切换为${sectorLabel}主题`}
               aria-pressed={active}
-              title={sectorLabel}
-              onClick={() => applyTheme(sector.theme)}
+              onClick={() => {
+                applyTheme(sector.theme);
+                setShowLabel(false);
+              }}
               className="absolute inset-0 cursor-pointer bg-transparent focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--accent)]"
               style={{ clipPath: sector.hitArea }}
             />
@@ -158,9 +165,11 @@ export function ThemeSwitcher() {
         })}
       </div>
 
-      <span className="pointer-events-none absolute top-[calc(100%+0.35rem)] right-0 z-40 hidden rounded-md border border-[var(--line)] bg-[var(--canvas-raised)] px-2 py-1 text-xs whitespace-nowrap text-[var(--text-muted)] shadow-[0_8px_24px_var(--shadow)] group-focus-within:block group-hover:block">
-        {label}
-      </span>
+      {showLabel && (
+        <span className="pointer-events-none absolute top-[calc(100%+0.35rem)] right-0 z-40 rounded-md border border-[var(--line)] bg-[var(--canvas-raised)] px-2 py-1 text-xs whitespace-nowrap text-[var(--text-muted)] shadow-[0_8px_24px_var(--shadow)]">
+          {label}
+        </span>
+      )}
     </div>
   );
 }

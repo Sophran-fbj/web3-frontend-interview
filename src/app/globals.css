@@ -108,6 +108,12 @@ button {
   -webkit-tap-highlight-color: var(--tap-highlight);
 }
 
+a[href],
+button:not(:disabled),
+summary {
+  cursor: pointer;
+}
+
 ::selection {
   background: var(--selection);
   color: var(--text-strong);

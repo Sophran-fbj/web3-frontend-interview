@@ -23,4 +23,8 @@ it("selects a theme from its own sector and persists it", async () => {
   expect(
     container.querySelector('[data-theme-sector="cold-white"]'),
   ).toHaveAttribute("stroke", "#4169e1");
+  expect(screen.queryByText("冷白")).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "切换为冷白主题" }),
+  ).not.toHaveAttribute("title");
 });

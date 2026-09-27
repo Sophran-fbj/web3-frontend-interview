@@ -46,7 +46,7 @@ export async function generateMetadata({
     openGraph: {
       type: "article",
       locale: "zh_CN",
-      siteName: "Web3 前端面试手册",
+      siteName: "Web3 前端面试题库",
       title: question.frontmatter.title,
       description: question.frontmatter.summary,
       url,

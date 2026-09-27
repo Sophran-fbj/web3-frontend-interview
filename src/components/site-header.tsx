@@ -10,7 +10,7 @@ export function SiteHeader() {
           href="/"
           className="text-sm font-semibold tracking-[-0.01em] text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
         >
-          Web3 前端面试手册
+          Web3 前端面试题库
         </Link>
         <nav aria-label="个人工具" className="flex items-center gap-3 sm:gap-5">
           <Link
