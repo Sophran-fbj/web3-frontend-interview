@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AnswerDisclosure } from "@/components/answer-disclosure";
+import { BookmarkButton } from "@/components/bookmark-button";
 import { LearningStatusControl } from "@/components/learning-status-control";
 import { QuestionBody } from "@/components/question-body";
 import {
@@ -97,9 +98,12 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
             {questionTypeLabels[frontmatter.questionType]}
           </span>
         </div>
-        <h1 className="mt-5 text-3xl leading-tight font-semibold tracking-[-0.04em] text-[var(--text-strong)] sm:text-5xl">
-          {frontmatter.title}
-        </h1>
+        <div className="mt-5 flex items-start gap-4">
+          <h1 className="min-w-0 flex-1 text-3xl leading-tight font-semibold tracking-[-0.04em] text-[var(--text-strong)] sm:text-5xl">
+            {frontmatter.title}
+          </h1>
+          <BookmarkButton questionId={frontmatter.id} />
+        </div>
         <p className="mt-5 max-w-3xl text-base leading-7 text-[var(--text-muted)] sm:text-lg">
           {frontmatter.summary}
         </p>

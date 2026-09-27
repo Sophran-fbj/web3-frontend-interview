@@ -152,6 +152,35 @@ button {
   -webkit-appearance: none;
 }
 
+.bookmark-button[aria-pressed="true"] {
+  color: #ee6682;
+}
+
+.bookmark-heart-pulse {
+  animation: bookmark-heart-pulse 560ms cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+
+@keyframes bookmark-heart-pulse {
+  0% {
+    transform: scale(1);
+  }
+  38% {
+    transform: scale(0.3);
+  }
+  68% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bookmark-heart-pulse {
+    animation: none;
+  }
+}
+
 .question-prose {
   min-width: 0;
   max-width: 46rem;

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { BookmarkButton } from "@/components/bookmark-button";
 import { QuestionFilterMenu } from "@/components/question-filter-menu";
 import { QuestionPagination } from "@/components/question-pagination";
 import { RandomQuestionButton } from "@/components/random-question-button";
@@ -349,7 +350,7 @@ export default async function QuestionsPage({
                     {frontmatter.summary}
                   </p>
                 </div>
-                <div className="flex gap-3 text-sm sm:flex-col sm:items-end sm:gap-1">
+                <div className="flex flex-wrap items-center gap-3 text-sm sm:flex-col sm:items-end sm:gap-1">
                   <span className="font-medium text-[var(--accent-bright)]">
                     {difficultyLabels[frontmatter.difficulty]}
                   </span>
@@ -359,6 +360,7 @@ export default async function QuestionsPage({
                   <span className="text-[var(--text-faint)]">
                     {questionTypeLabels[frontmatter.questionType]}
                   </span>
+                  <BookmarkButton questionId={frontmatter.id} />
                 </div>
               </li>
             ))}

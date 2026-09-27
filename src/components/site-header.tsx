@@ -12,7 +12,15 @@ export function SiteHeader() {
         >
           Web3 前端面试手册
         </Link>
-        <ThemeSwitcher />
+        <nav aria-label="个人工具" className="flex items-center gap-3 sm:gap-5">
+          <Link
+            href="/bookmarks"
+            className="text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+          >
+            我的收藏
+          </Link>
+          <ThemeSwitcher />
+        </nav>
       </div>
     </header>
   );
