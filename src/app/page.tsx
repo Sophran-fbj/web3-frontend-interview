@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { StrokeHeading } from "@/components/stroke-heading";
 import { getVisibleQuestions } from "@/content/question-repository";
 
 export default async function Home() {
@@ -29,8 +30,11 @@ export default async function Home() {
       className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl items-center gap-16 px-5 py-16 sm:px-8 lg:grid-cols-[minmax(0,1fr)_19rem] lg:py-24"
     >
       <section>
-        <h1 className="max-w-4xl text-4xl leading-[1.08] font-semibold tracking-[-0.045em] text-[var(--text-strong)] sm:text-6xl">
-          Web3 前端面试题库
+        <h1
+          aria-label="Web3 前端面试题库"
+          className="max-w-4xl text-4xl leading-[1.08] font-semibold tracking-[-0.045em] text-[var(--text-strong)] sm:text-6xl"
+        >
+          <StrokeHeading />
         </h1>
         <p className="mt-7 max-w-2xl text-lg leading-8 text-[var(--text-muted)]">
           围绕钱包连接、签名、交易和合约交互等工作场景整理。每题提供简答、深入分析、常见错误和参考资料，方便按主题查找和自测。

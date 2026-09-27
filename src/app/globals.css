@@ -119,6 +119,75 @@ summary {
   color: var(--text-strong);
 }
 
+.stroke-heading-char {
+  position: relative;
+  display: inline-block;
+  color: transparent;
+  white-space: pre;
+}
+
+.stroke-heading-latin {
+  display: inline-flex;
+  white-space: nowrap;
+}
+
+.stroke-heading-char::before,
+.stroke-heading-char::after {
+  position: absolute;
+  inset: 0;
+  content: attr(data-char);
+  white-space: pre;
+}
+
+.stroke-heading-char::before {
+  color: transparent;
+  -webkit-text-stroke: 1.4px var(--accent-bright);
+  clip-path: inset(0 100% 0 0);
+  animation: stroke-heading-draw 900ms cubic-bezier(0.22, 1, 0.36, 1)
+    var(--stroke-delay) both;
+}
+
+.stroke-heading-char::after {
+  color: var(--text-strong);
+  clip-path: inset(0 100% 0 0);
+  animation: stroke-heading-fill 650ms cubic-bezier(0.22, 1, 0.36, 1)
+    var(--fill-delay) both;
+}
+
+@keyframes stroke-heading-draw {
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes stroke-heading-fill {
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@supports not (-webkit-text-stroke: 1px red) {
+  .stroke-heading-char {
+    color: var(--text-strong);
+  }
+
+  .stroke-heading-char::before,
+  .stroke-heading-char::after {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stroke-heading-char {
+    color: var(--text-strong);
+  }
+
+  .stroke-heading-char::before,
+  .stroke-heading-char::after {
+    display: none;
+  }
+}
+
 .filter-options {
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
