@@ -1,0 +1,92 @@
+---
+id: wallet-029
+slug: walletconnect-relay-trust
+title: WalletConnect 中继能看到什么、不能看到什么
+summary: 端到端加密与邮箱暂存决定了中继的职责边界，但加密之外仍有风险与可用性依赖。
+status: review
+difficulty: advanced
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - walletconnect
+  - relay
+  - security
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: WalletConnect：Crypto Keys（§Key Types、§Key Algorithms）
+    url: https://specs.walletconnect.com/2.0/specs/clients/core/crypto/crypto-keys
+  - title: WalletConnect：Relay Client Auth（§Motivation、§Overview、§Specification）
+    url: https://specs.walletconnect.com/2.0/specs/clients/core/relay/relay-client-auth
+---
+
+## 题目
+
+安全评审上出现两种说法：一种认为「消息都经过第三方中继，用户签什么中继都能看到」；另一种认为「消息端到端加密，所以这条链路就是安全的」。请给出你对中继信任模型的判断与依据，并说明它对前端选型的影响。
+
+## 考察目标
+
+- 协议中端到端加密覆盖的范围与所用密钥、算法。
+- 中继客户端的认证方式与中继承担的具体职责。
+- 加密之外仍然存在的风险与可用性依赖。
+
+## 30 秒回答
+
+WalletConnect 规范把自己描述为客户端之间端到端加密的通信协议。规范定义了三类密钥：用于客户端或区块链账户认证的认证密钥对、仅用于消息的临时加密密钥对，以及用于消息加密的对称密钥；对称密钥可以来自随机源，也可以由 X25519 交换后经 HKDF 派生，消息加密与认证使用 ChaCha20-Poly1305 等算法。中继客户端通过签名的 JWT 认证，收件人离线期间中继邮箱里存放的是加密消息。因此不能据此认为中继能够读取签名请求的内容，也不能把端到端加密外推为整体安全。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】规范把 WalletConnect 描述为客户端之间端到端加密的通信协议，并说明其中也使用认证机制（依据：WalletConnect Crypto Keys §Key Types 开头的描述）。
+- 【协议保证】密钥类型包括认证公钥对（持久生成，用于客户端自身或区块链账户的认证）、临时生成的加密公钥对（Curve25519，仅用于消息）与对称密钥（来源为随机源，或 X25519 交换后经 HKDF 派生）（依据：WalletConnect Crypto Keys §Key Types）。
+- 【协议保证】算法集合包括 Ed25519（认证）、SHA-256（把密钥哈希为 topic）、Curve25519、X25519（密钥交换）、HKDF（对称密钥派生）与 ChaCha20-Poly1305（消息加密与认证）（依据：WalletConnect Crypto Keys §Key Algorithms）。
+- 【协议保证】中继连接携带签名的 JWT：WebSocket 头使用 Authorization: Bearer，浏览器这类不方便自定义头的环境使用 ?auth= 查询参数（依据：WalletConnect Relay Client Auth §Overview）。
+- 【协议保证】client_id 是客户端公钥的 DID；JWT 的声明包括 iss（client_id）、aud（中继服务器 URL）、sub（每次连接唯一的随机 nonce）、iat、exp 与 act=client_auth（依据：WalletConnect Relay Client Auth §Specification）。
+- 【协议保证】收件人离线时，中继把加密消息存入其邮箱，直到收件人重新连接（依据：WalletConnect Relay Client Auth §Motivation）。
+- 【工程经验】中继属于可用性与运维层面的依赖：中继不可用时依赖它的会话就不工作，需要提示与降级路径（工程经验，无规范依据）。
+- 【工程经验】端到端加密保护的是传输中的消息内容，不能替代钱包侧的确认界面，也无法消除钓鱼钱包、恶意客户端与过度授权带来的风险（工程经验，无规范依据）。
+- 【工程经验】评估隐私属性时，应把中继视为能看到连接与流量元数据的外部依赖，具体范围取决于部署与网络（工程经验，无规范依据）。
+
+## 常见错误
+
+- 声称中继能直接读到用户签名请求的内容（【协议保证】规范把协议描述为端到端加密，中继邮箱存放的是加密消息；依据：WalletConnect Crypto Keys §Key Types；Relay Client Auth §Motivation）。
+- 反过来把端到端加密外推为整体安全（【工程经验】钓鱼与恶意客户端不在加密保护范围内）。
+- 把 client_id 与链上账户地址混为一谈（【协议保证】client_id 是客户端公钥的 DID；依据：WalletConnect Relay Client Auth §Specification）。
+- 忽略中继不可用时的会话可用性问题（【工程经验】）。
+- 忽略 JWT 的过期时间，异常时缺少重新认证路径（【协议保证】JWT 声明包含 exp；依据：WalletConnect Relay Client Auth §Specification）。
+
+## 面试官追问
+
+1. 中继不可用时，用户还能完成哪些操作？
+2. client_id 与链上地址的关系是什么？
+3. 端到端加密为什么不能替代钱包侧的确认界面？
+4. 团队打算自建中继时，需要评估哪些成本与兼容性问题？
+5. 从隐私角度，你会在威胁模型里额外关注哪些信息？
+
+## 评分标准
+
+### 初级回答
+
+- 知道协议描述为端到端加密，中继处理的是加密消息。
+- 知道中继是外部依赖，会影响可用性。
+
+### 中级回答
+
+- 能区分配对加密、会话加密与客户端认证各自使用的能力。
+- 能说明加密之外仍存在钓鱼、恶意客户端与过度授权风险。
+
+### 高级回答
+
+- 能从可用性、隐私与运维成本出发给出中继相关的选型结论。
+- 能说明自建中继的兼容性代价与适用条件。
+
+## 参考资料
+
+- [WalletConnect：Crypto Keys（§Key Types、§Key Algorithms）](https://specs.walletconnect.com/2.0/specs/clients/core/crypto/crypto-keys)
+- [WalletConnect：Relay Client Auth（§Motivation、§Overview、§Specification）](https://specs.walletconnect.com/2.0/specs/clients/core/relay/relay-client-auth)

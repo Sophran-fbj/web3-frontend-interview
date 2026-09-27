@@ -1,0 +1,89 @@
+---
+id: transaction-020
+slug: wallet-rpc-send-methods
+title: eth_sendTransaction、eth_signTransaction、eth_sendRawTransaction 的分工
+summary: 区分由客户端签名并发送、只签名不广播、以及广播已签名原始交易三条路径，并说明按能力选择与降级。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - json-rpc
+  - signing
+  - security
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1474：Remote Procedure Call Specification（§eth_sendTransaction、§eth_signTransaction、§eth_sendRawTransaction、§Error codes）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: ethereum.org：JSON-RPC（§eth_sendRawTransaction）
+    url: https://ethereum.org/en/developers/docs/apis/json-rpc/
+---
+
+## 题目
+
+团队要在浏览器里发交易，同时有服务端批量代发的需求。有人提议在页面上用 eth_signTransaction 拿到签名再自行广播，也有人建议直接调用 eth_sendTransaction。请说明这三种方法的分工与选择依据。
+
+## 考察目标
+
+- 三种发送路径各自的责任方与返回值。
+- 能力探测与错误分类。
+- 私钥存放位置带来的风险边界。
+
+## 30 秒回答
+
+三种方法对应三条不同的边界：由客户端完成签名与广播、只返回签名后的交易数据、以及接收已经签名好的原始交易并广播。它们返回的内容与责任方不同，调用能否成功取决于所连接的钱包或节点实现。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】eth_sendTransaction 接收一个交易对象并返回交易哈希，签名与广播由被调用的客户端完成（依据：EIP-1474 §eth_sendTransaction）
+- 【协议保证】eth_signTransaction 返回签名后的交易数据，调用方可以自行决定是否广播（依据：EIP-1474 §eth_signTransaction）
+- 【协议保证】eth_sendRawTransaction 接收已经签名的原始交易字节并返回交易哈希，这一路径既可用于本地签名后的广播，也可用于服务端转发（依据：EIP-1474 §eth_sendRawTransaction）
+- 【协议保证】方法不存在时，EIP-1474 定义的错误码为 -32601，可以与参数错误、内部错误区分开（依据：EIP-1474 §Error codes）
+- 【工程经验】eth_signTransaction 的可用性取决于钱包实现；调用前应做能力探测，并对不支持的情况给出降级路径（依据：工程经验，无规范依据）
+- 【工程经验】浏览器页面内避免持有私钥后再调用 eth_sendRawTransaction；需要自建签名流程时，把签名放在受控的服务端或离线环境（依据：工程经验，无规范依据）
+- 【工程经验】把三条路径的失败原因分别提示：用户拒绝、方法不支持、参数或余额问题、节点拒绝广播，便于用户与客服定位（依据：工程经验，无规范依据）
+- 【工程经验】调用前先探测能力，并对不支持的情况给出降级路径，而不是把错误直接抛给用户（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 在未做能力探测的情况下依赖 eth_signTransaction，遇到不支持的钱包时无法降级（依据：工程经验，无规范依据）
+- 把浏览器环境当成保存私钥的地方（依据：工程经验，无规范依据）
+- 把三种方法的失败统一提示成「交易失败」（依据：EIP-1474 §Error codes 对错误分类的定义）
+- 用 eth_sendTransaction 的返回哈希推断交易已被打包（依据：EIP-1474 §eth_sendTransaction 的返回定义）
+- 遇到方法不存在类错误时循环重试（依据：EIP-1474 §Error codes 的 -32601 语义）
+
+## 面试官追问
+
+1. 服务端代发交易时，怎么降低私钥暴露面？
+2. 用户钱包不支持「只签名不广播」的路径时，产品可以怎么降级？
+3. 自建签名服务与依赖钱包签名，成本与风险各在哪里？
+4. 广播失败与打包失败如何区分并提示？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出三种方法各自返回什么、由谁签名与广播。
+- 知道方法可能不被实现。
+
+### 中级回答
+
+- 能用错误码区分方法不支持、用户拒绝与参数问题。
+- 能说明能力探测与降级的意义。
+
+### 高级回答
+
+- 能按「钱包签名、服务端签名、离线签名」三种部署形态说明边界与降级路径。
+- 能说明密钥管理、审计与限流在同一套流程中的位置。
+
+## 参考资料
+
+- [EIP-1474：Remote Procedure Call Specification（§eth_sendTransaction、§eth_signTransaction、§eth_sendRawTransaction、§Error codes）](https://eips.ethereum.org/EIPS/eip-1474)
+- [ethereum.org：JSON-RPC（§eth_sendRawTransaction）](https://ethereum.org/en/developers/docs/apis/json-rpc/)

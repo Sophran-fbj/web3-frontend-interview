@@ -1,0 +1,116 @@
+---
+id: architecture-009
+slug: wagmi-typescript-abi-inference
+title: wagmi + TypeScript 的 ABI 类型推断
+summary: 说明 ABI 声明方式对类型推断的影响、human-readable ABI 的使用场景，以及类型安全的边界。
+status: review
+difficulty: intermediate
+category: architecture
+questionType: coding
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - typescript
+  - abi
+stacks:
+  wagmi: "3.x"
+  viem: "2.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：TypeScript（§Const-Assert ABIs & Typed Data）
+    url: https://wagmi.sh/react/typescript
+  - title: viem：parseAbi（§Usage）
+    url: https://viem.sh/docs/abi/parseAbi
+---
+
+## 题目
+
+团队里有人直接粘贴 ABI JSON，有人用 human-readable ABI。接入后 functionName 与 args 没有类型提示，参数写错要等运行时才报错。请说明如何获得类型推断，以及类型安全能覆盖到哪里。
+
+## 考察目标
+
+- ABI 声明方式与类型推断的关系。
+- human-readable ABI 的使用场景。
+- 编译期类型与运行时校验的边界。
+
+## 30 秒回答
+
+把 ABI 声明为常量（as const）或使用 viem 的 parseAbi，可以让 functionName、args 与返回类型获得推断与编译期校验；human-readable ABI 适合手写小片段，生产项目更适合由工具从源码或部署信息生成 ABI。类型检查覆盖的是调用形状，链上返回值仍需要按 ABI 解码并处理异常。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】wagmi 的类型推断依赖 ABI 以常量形式声明，文档示例使用 as const（依据：wagmi TypeScript 页面 §Const-Assert ABIs & Typed Data）。
+- 【实现行为】viem 的 parseAbi 接受 human-readable ABI 片段并返回可被类型系统识别的 ABI（依据：viem parseAbi §Usage）。
+- 【实现行为】类型推断作用于 functionName、args 与返回值等调用形状（依据：wagmi TypeScript 页面 §Const-Assert ABIs & Typed Data；wagmi useWriteContract §Type Inference）。
+- 【工程经验】生产项目由构建流程从合约源码或部署信息生成 ABI 与类型，可以减少手抄造成的偏差（依据：工程经验，无规范依据）。
+- 【工程经验】把 ABI 常量集中在配置模块，供读取与写入复用，避免多处维护（依据：工程经验，无规范依据）。
+- 【工程经验】运行时仍需处理解码失败与异常，类型检查覆盖不到链上数据的实际形状（依据：wagmi TypeScript 页面 §Const-Assert ABIs & Typed Data；工程经验）。
+- 【工程经验】合约升级或重新部署后同步更新 ABI 并回归验证，避免类型通过但编码与链上不一致（依据：工程经验，无规范依据）。
+- 【工程经验】需要跨包共享 ABI 时，把生成结果发布为带类型的包，减少各应用重复生成（依据：工程经验，无规范依据）。
+
+## 示例代码
+
+```ts
+// 省略上下文：ABI 常量与地址来自项目内的配置模块。
+import { parseAbi } from "viem";
+
+const erc20Abi = parseAbi([
+  "function balanceOf(address owner) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+]);
+
+// 使用生成的 JSON ABI 时，声明为常量以保留字面量类型：
+// const abi = [...] as const;
+```
+
+```ts
+// 调用处由类型系统校验 functionName 与 args。
+useReadContract({
+  abi: erc20Abi,
+  address: token,
+  functionName: "balanceOf",
+  args: [account],
+});
+```
+
+## 常见错误
+
+- 不使用 as const，导致类型推断退化为宽泛类型。
+- 手抄 ABI 与链上实现不同步，只在运行时才发现问题。
+- 把编译期类型当作运行时保证，忽略解码失败。
+- human-readable ABI 与 JSON ABI 混用且格式不一致。
+- 合约升级后只更新地址，没有同步 ABI。
+
+## 面试官追问
+
+1. 类型检查通过但在链上调用失败，你会按什么顺序排查？
+2. 从源码生成 ABI 的流程如何与前端发布流程衔接？
+3. human-readable ABI 与 JSON ABI 各自适合什么场景？
+4. 多个应用共享合约类型时，你如何管理版本与变更通知？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 as const 与 parseAbi 对类型推断的作用。
+- 知道类型检查覆盖调用形状。
+
+### 中级回答
+
+- 能说明类型推断的范围与运行时校验的分工。
+- 能给出 ABI 生成与更新的流程。
+
+### 高级回答
+
+- 能设计跨应用共享合约类型的方案，覆盖版本管理与升级通知。
+- 能说明类型安全在失败排查与回归测试中的落地方式。
+
+## 参考资料
+
+- [wagmi：TypeScript（§Const-Assert ABIs & Typed Data）](https://wagmi.sh/react/typescript)
+- [viem：parseAbi（§Usage）](https://viem.sh/docs/abi/parseAbi)

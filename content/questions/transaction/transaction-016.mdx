@@ -1,0 +1,91 @@
+---
+id: transaction-016
+slug: confirmations-semantics
+title: 确认数的含义与产品承诺
+summary: 说明确认数与区块推进的关系、它与最终性的区别，以及产品如何据此设计状态与文案。
+status: review
+difficulty: beginner
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - confirmations
+  - finality
+  - ux
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：Transactions（§Transaction lifecycle）
+    url: https://ethereum.org/en/developers/docs/transactions/
+  - title: ethereum.org：JSON-RPC（§eth_getTransactionReceipt）
+    url: https://ethereum.org/en/developers/docs/apis/json-rpc/
+  - title: EIP-1474：Remote procedure call specification（§Error codes、方法条目）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+产品希望转账完成后立刻提示「已到账」，工程师认为应当等到若干个确认。请在解释确认数含义的基础上，给出一个既能说明风险又不过度承诺的界面状态设计。
+
+## 考察目标
+
+- 确认数与区块推进的关系。
+- 「已包含」与最终性的区别。
+- 阈值选择作为产品决策的依据。
+
+## 30 秒回答
+
+交易被打包进一个区块之后，该区块之后每新增一个区块，这笔交易的确认数增加一。区块越深，交易受到链上区块组织变化影响的可能性越低；在达到最终性之前，交易存在被回滚的可能。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】交易在未被打包时查询收据得到空结果；被打包后收据包含所在区块信息（依据：EIP-1474 §eth_getTransactionReceipt）。
+- 【工程经验】链可能发生重组：已看到的交易可能换到另一个区块或被回滚，因此高价值操作应结合确认深度与最终性判断（依据：工程经验，无规范依据）。
+- 【协议保证】按哈希查询收据时，交易尚未被打包的情况下返回为空（依据：EIP-1474 §eth_getTransactionReceipt）。
+- 【协议保证】收据中包含所在区块的标识与执行结果字段（依据：EIP-1474 §eth_getTransactionReceipt）。
+- 【工程经验】「等几个确认」是产品按金额、资产性质与业务风险选择的策略，协议提供的是区块推进与最终性这些事实（依据：工程经验，无规范依据）
+- 【工程经验】界面把状态分成「已提交、已包含、已确认若干、已最终」几档，比单一的「成功/失败」更能表达风险（依据：工程经验，无规范依据）
+- 【工程经验】阈值与文案应可通过配置下发，便于不同链与不同产品线分别调整（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 用一个确认代表交易已经不可回滚（依据：ethereum.org Transactions §Transaction lifecycle）
+- 把收据为空当作交易失败（依据：ethereum.org JSON-RPC §eth_getTransactionReceipt）
+- 界面只显示「处理中」，用户在长时间等待中无法判断进度（依据：工程经验，无规范依据）
+- 用固定分钟数代替确认数向用户描述进度（依据：工程经验，无规范依据）
+- 在支持多条链的产品里沿用同一套阈值，没有按链区分（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 用户在等待期间反复刷新，你会展示哪些信息？
+2. 如果确认数已经达到阈值但随后发生链上区块组织变化，界面与链下记录要怎么处理？
+3. 阈值放在前端还是配置服务，如何取舍？
+4. 为什么不宜向用户承诺一个「到账时间」？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出确认数与后续新增区块数量的关系。
+- 知道交易被打包与最终性不是同一件事。
+
+### 中级回答
+
+- 能区分「已包含」与「已最终」。
+- 能说明收据为空与执行失败的不同含义。
+
+### 高级回答
+
+- 能按金额与业务风险设计分档状态与可配置阈值。
+- 能说明链上区块组织变化时的界面回滚与链下补偿处理。
+
+## 参考资料
+
+- [ethereum.org：Transactions（§Transaction lifecycle）](https://ethereum.org/en/developers/docs/transactions/)
+- [ethereum.org：JSON-RPC（§eth_getTransactionReceipt）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [EIP-1474：Remote procedure call specification（§Error codes、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)

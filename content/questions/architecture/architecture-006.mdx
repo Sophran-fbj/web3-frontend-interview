@@ -1,0 +1,132 @@
+---
+id: architecture-006
+slug: wagmi-minimal-setup
+title: wagmi 的最小接入步骤
+summary: 给出 createConfig、Provider 组合与 QueryClient 的接入方式，并说明常见的配置错误。
+status: review
+difficulty: beginner
+category: architecture
+questionType: coding
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - setup
+  - provider
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：createConfig（§Usage、§Parameters）
+    url: https://wagmi.sh/react/api/createConfig
+  - title: wagmi：WagmiProvider（§Usage）
+    url: https://wagmi.sh/react/api/WagmiProvider
+  - title: wagmi：Getting Started（§Usage）
+    url: https://wagmi.sh/react/getting-started
+---
+
+## 题目
+
+一个新项目要接入 wagmi 3.x。请给出最小接入步骤，并说明 chains、transports 与 connectors 三者在配置里的作用，以及 Provider 的嵌套顺序。
+
+## 考察目标
+
+- createConfig 的必要配置项。
+- Provider 的组合顺序与 QueryClient 的创建方式。
+- 客户端组件与 SSR 的边界。
+
+## 30 秒回答
+
+用 createConfig 声明 chains 与按链配置的 transports，并按需声明 connectors；用 WagmiProvider 包裹应用并传入 config，在内部再用 QueryClientProvider 包裹，QueryClient 采用稳定引用（例如在组件内用 useState 初始化，或在模块层创建）。使用 hooks 的组件需要是客户端组件；SSR 场景按官方指南处理状态序列化。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】createConfig 的常用参数包括 chains、transports 与 connectors，transports 按 chainId 为各条链配置运输层（依据：wagmi createConfig §Parameters）。
+- 【实现行为】WagmiProvider 接收 config 并向下提供上下文，hooks 需要在该 Provider 之下使用（依据：wagmi WagmiProvider §Usage）。
+- 【实现行为】官方示例把 QueryClientProvider 放在 WagmiProvider 内部，并传入 QueryClient（依据：wagmi Getting Started §Usage）。
+- 【实现行为】QueryClient 需要稳定引用，官方示例在模块层创建，组件内可以用 state 初始化（依据：wagmi Getting Started §Usage）。
+- 【工程经验】在 Next.js App Router 下把用到 hooks 的部分放入客户端组件，并从共享模块导入同一份 config（依据：wagmi Getting Started §Usage；工程经验）。
+- 【工程经验】把 config 与 QueryClient 的创建放在模块层，避免每次渲染重建导致连接状态与缓存反复丢失（依据：工程经验，无规范依据）。
+- 【工程经验】SSR 场景需要额外的状态序列化与注水处理，避免服务端与客户端首帧不一致（依据：wagmi Getting Started §Usage；工程经验）。
+- 【工程经验】transports 使用第三方 RPC 时通过环境变量注入地址，并配置 fallback 提升可用性（依据：工程经验，无规范依据）。
+
+## 示例代码
+
+```ts
+// config.ts：在模块层创建一次，供客户端组件共享。
+// 省略上下文：RPC 地址通过环境变量注入，错误处理与 UI 未展开。
+import { createConfig, http } from "wagmi";
+import { mainnet, sepolia } from "wagmi/chains";
+import { injected } from "wagmi/connectors";
+
+export const config = createConfig({
+  chains: [mainnet, sepolia],
+  connectors: [injected()],
+  transports: {
+    [mainnet.id]: http(),
+    [sepolia.id]: http(),
+  },
+});
+```
+
+```tsx
+// providers.tsx：客户端组件，把 config 与 QueryClient 注入应用。
+"use client";
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
+import { WagmiProvider } from "wagmi";
+import { config } from "./config";
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient());
+
+  return (
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </WagmiProvider>
+  );
+}
+```
+
+## 常见错误
+
+- 每次渲染都新建 QueryClient 或 config，导致缓存与连接状态被重置。
+- Provider 顺序配反，或把 hooks 用在 Provider 之外。
+- 在服务端组件里直接调用 hooks。
+- chains 与 transports 的键不匹配，导致某条链缺少运输层。
+- 把 API Key 直接写进仓库，而不是通过环境变量注入。
+
+## 面试官追问
+
+1. 页面首屏出现「先未连接再自动连上」的闪烁，你会从配置与 Provider 的哪一层排查？
+2. 多个 RPC 端点如何配置，失败时如何切换？
+3. config 与 QueryClient 放在模块层与放在组件内，各自的取舍是什么？
+4. SSR 场景下如何避免服务端渲染结果与客户端状态不一致？
+
+## 评分标准
+
+### 初级回答
+
+- 能写出 createConfig、WagmiProvider 与 QueryClientProvider 的基本组合。
+- 知道 hooks 需要在 Provider 之内、客户端组件之中使用。
+
+### 中级回答
+
+- 能说明 chains、transports 与 connectors 的作用与配置方式。
+- 能解释 QueryClient 稳定引用的原因。
+
+### 高级回答
+
+- 能设计多链、多 RPC 与 SSR 场景下的接入方案，并覆盖注水与失败回退。
+- 能给出配置分层与环境变量管理方式，避免密钥进入仓库。
+
+## 参考资料
+
+- [wagmi：createConfig（§Usage、§Parameters）](https://wagmi.sh/react/api/createConfig)
+- [wagmi：WagmiProvider（§Usage）](https://wagmi.sh/react/api/WagmiProvider)
+- [wagmi：Getting Started（§Usage）](https://wagmi.sh/react/getting-started)

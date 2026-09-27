@@ -1,0 +1,98 @@
+---
+id: contract-011
+slug: writing-to-eoa-address-check
+title: 把合约调用发给 EOA 地址会发生什么
+summary: 说明调用数据在普通无代码地址上的执行结果，以及预编译、7702 委托对地址检查结论的影响。
+status: review
+difficulty: beginner
+category: contract
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - contract-address
+  - validation
+  - getcode
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：JSON-RPC API（§eth_getCode）
+    url: https://ethereum.org/en/developers/docs/apis/json-rpc/
+  - title: EIP-7702：Set Code for EOAs（§Specification 的 Behavior、Delegation indicator）
+    url: https://eips.ethereum.org/EIPS/eip-7702
+  - title: EIP-1474：Remote procedure call specification（§eth_call、§eth_getCode）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-196：alt_bn128 预编译合约（§Specification：地址 0x6、0x7）
+    url: https://eips.ethereum.org/EIPS/eip-196
+  - title: Ethereum Yellow Paper：Message Call（§8）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+---
+
+## 题目
+
+一个批量转账脚本把合约调用发到了一个拼错的地址上，交易显示成功，但用户只看到手续费损失；另一个组件在发送前用 getCode 判断地址是 EOA，却没考虑 7702 委托。请说明向无代码地址发送调用的后果与检查方式。
+
+## 考察目标
+
+- 调用数据在没有代码的地址上执行时的行为。
+- 发送前的目标地址类型检查方式。
+- 7702 委托对检查结论的影响。
+
+## 30 秒回答
+
+当交易的目标是普通无代码地址时，调用数据不触发合约逻辑，value 转账照常完成，交易本身仍然成功并消耗手续费；但「代码为空」并不代表「没有可执行逻辑」——预编译地址通常没有普通 EVM 代码却会执行协议内置逻辑，EIP-7702 委托账户则会返回以 0xef0100 开头的指示码。因此地址类型检查不能只依赖 eth_getCode。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】消息调用会在目标账户的代码执行上下文中运行；普通目标地址没有代码时，不执行合约字节码（依据：Yellow Paper §8 Message Call）。
+- 【协议保证】to 指向普通无代码地址时，调用不进入合约字节码逻辑，value 仍按消息调用规则转移（依据：Yellow Paper §8 Message Call）；预编译地址是例外：它们通常没有普通 EVM 代码，但会执行协议内置逻辑（依据：EIP-196 §Specification 在 0x6、0x7 地址定义预编译运算）。
+- 【协议保证】eth_getCode 返回指定地址的代码（依据：EIP-1474 §eth_getCode）。
+- 【协议保证】EIP-7702 允许 EOA 通过授权把代码设置为委托指示码，此后该地址的 eth_getCode 返回以 0xef0100 开头的指示码，而不是空值（依据：EIP-7702 §Specification 的 Delegation indicator）。
+- 【工程经验】提交前用 eth_getCode 检查目标地址：结果为空时，还要根据目标链及当前硬分叉支持的预编译集合继续判断，不能依赖固定地址段；返回委托指示码时解析并展示委托目标（依据：EIP-196 §Specification；EIP-7702 §Specification 的 Delegation indicator；工程经验）。
+- 【工程经验】合约地址从配置或经过核验的常量读取，输入框只用于人工补充，并配合校验和验证（依据：工程经验，无规范依据）。
+- 【工程经验】把「交易成功」与「业务执行成功」分开判断：前者看收据状态，后者需要事件或状态变化佐证（依据：工程经验，无规范依据）。
+- 【工程经验】地址类型检查放在用户点击发送之前的表单校验中，并把检查结果写进确认摘要（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 只凭 eth_getCode 为空就断定地址没有可执行逻辑，忽略预编译地址与 7702 委托账户（【协议保证】预编译地址通常没有普通 EVM 代码但执行内置逻辑，依据：EIP-196 §Specification；委托账户返回 0xef0100 指示码，依据：EIP-7702 §Specification 的 Delegation indicator）。
+- 把交易成功等同于合约调用成功。
+- 用「代码为空」判断 EOA，忽略 7702 委托（【协议保证】7702 生效后 EOA 也可以带代码，依据：EIP-7702 §Specification 的 Delegation indicator）。
+- 批量脚本把校验放在广播之后。
+- 目标地址来自用户输入且未做校验和与来源核对。
+
+## 面试官追问
+
+1. 交易已经发到错误地址且被确认，前端可以提前做哪些拦截来避免类似问题？
+2. 合约地址配置被篡改时，前端有哪些防线可以提前发现？
+3. 把地址类型检查放在前端、后端与合约层，各自覆盖什么风险？
+4. 面对带委托指示码的地址，转账与调用流程分别需要什么额外确认？
+
+## 评分标准
+
+### 初级回答
+
+- 能说明向普通无代码地址发送调用不触发合约字节码逻辑。
+- 知道可用 eth_getCode 检查目标，并知道预编译地址是例外。
+
+### 中级回答
+
+- 能描述 eth_getCode 检查为空与非空两种分支的处理方式，并指出预编译与 7702 委托两个例外。
+- 能说明预编译地址与委托账户对“是否有可执行逻辑”这一判断的影响。
+
+### 高级回答
+
+- 能设计发送前的地址与参数校验流程，覆盖类型检查、配置来源与提示层。
+- 能说明「交易成功」与「业务成功」对账所需的附加证据。
+
+## 参考资料
+
+- [ethereum.org：JSON-RPC API（§eth_getCode）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [EIP-7702：Set Code for EOAs（§Specification 的 Behavior、Delegation indicator）](https://eips.ethereum.org/EIPS/eip-7702)
+- [EIP-1474：Remote procedure call specification（§eth_call、§eth_getCode）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-196：alt_bn128 预编译合约（§Specification：地址 0x6、0x7）](https://eips.ethereum.org/EIPS/eip-196)
+- [Ethereum Yellow Paper：Message Call（§8）](https://ethereum.github.io/yellowpaper/paper.pdf)

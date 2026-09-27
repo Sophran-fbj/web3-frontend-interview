@@ -1,0 +1,92 @@
+---
+id: data-006
+slug: eth-getlogs-range-limits
+title: eth_getLogs 的范围限制与增量扫描
+summary: 说明日志查询的区块范围限制、游标与去重的设计，以及实时监听与历史回填的分工。
+status: review
+difficulty: intermediate
+category: data
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - getlogs
+  - rpc-limits
+  - indexing
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: MetaMask 支持文档：获取区块范围（页面级：eth_getLogs 区块范围限制）
+    url: https://support.metamask.io/develop/building-with-infura/general-knowledge/fetching-block-ranges/
+  - title: ethereum.org：JSON-RPC API（§eth_getLogs）
+    url: https://ethereum.org/en/developers/docs/apis/json-rpc/
+  - title: EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+一个活动页从部署区块开始一次性拉取全部参与日志，在公共 RPC 上频繁超时；另一个实时监听器断线重连后，中间缺失的日志没有人补。请说明范围限制与增量扫描的设计。
+
+## 考察目标
+
+- 日志查询的区块范围与返回条数限制。
+- 游标、去重与补扫的设计。
+- 实时监听与历史回填的分工。
+
+## 30 秒回答
+
+日志查询按区块范围请求，接口支持 fromBlock 与 toBlock 以及按地址与 topics 过滤；外部 RPC 服务通常对单次范围与返回数量设置上限，因此日志获取需要按窗口分段，并用位置标识对结果去重。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】外部 RPC 服务对日志查询的区块范围设有限制，范围过大的请求会被拒绝或需要缩小窗口后重试（依据：MetaMask 支持文档：获取区块范围）。
+- 【协议保证】eth_getLogs 支持按 fromBlock 与 toBlock 指定范围，并可按地址与 topics 过滤（依据：EIP-1474 §eth_getLogs）。
+- 【工程经验】扫描按固定大小的区块窗口推进，并把「已扫到的块高」持久化为游标；重试从游标继续，而不是从头开始（依据：MetaMask 支持文档：获取区块范围）。
+- 【工程经验】每个窗口内保存对应区块哈希，在重组后核对已扫区块是否仍在主链上；不一致时回退到更早的游标重新扫描（依据：ethereum.org JSON-RPC §eth_getLogs）。
+- 【工程经验】结果按「交易哈希 + 日志序号」去重，重复出现时保留一次（依据：ethereum.org JSON-RPC §eth_getLogs）。
+- 【工程经验】实时监听负责增量推送，断线重连后的缺口由回填任务补齐；两条路径写入同一份存储（依据：工程经验，无规范依据）。
+- 【工程经验】窗口大小按目标链的出块速度与服务商限额调优，并为请求失败设置指数退避（依据：MetaMask 支持文档：获取区块范围）。
+- 【工程经验】为回填任务记录失败窗口与重试次数，界面按「扫描进度」而不是「实时余额」展示状态（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 一次请求从部署区块扫到最新块（【实现行为】服务商对范围设有限制，依据：MetaMask 支持文档：获取区块范围）。
+- 不做游标，页面刷新后从头扫描。
+- 断线后只恢复监听，中间窗口缺失。
+- 去重键使用日志内容而非位置标识。
+- 忽略重组导致同一事件区间重复出现。
+
+## 面试官追问
+
+1. 回填过程中服务商限额收紧导致窗口持续失败，降级顺序是什么？
+2. 如何验证索引结果与链上状态一致，发现漏扫？
+3. 把索引放在浏览器本地、服务端任务与第三方索引服务，各自的取舍是什么？
+4. 高价值事件与普通展示事件是否应共用一套确认策略？
+
+## 评分标准
+
+### 初级回答
+
+- 能说明日志查询需要指定区块范围。
+- 知道实时监听与历史扫描是两条路径。
+
+### 中级回答
+
+- 能设计游标、窗口与去重键。
+- 能说明重组检测与补扫的关系。
+
+### 高级回答
+
+- 能设计完整的日志索引流水线，覆盖限额、失败重试与一致性校验。
+- 能说明按业务价值分层的确认与告警策略。
+
+## 参考资料
+
+- [MetaMask 支持文档：获取区块范围（页面级：eth_getLogs 区块范围限制）](https://support.metamask.io/develop/building-with-infura/general-knowledge/fetching-block-ranges/)
+- [ethereum.org：JSON-RPC API（§eth_getLogs）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)

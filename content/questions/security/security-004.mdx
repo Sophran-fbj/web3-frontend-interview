@@ -1,0 +1,92 @@
+---
+id: security-004
+slug: clear-signing-calldata-display
+title: 把不可读的 calldata 变成用户能看懂的确认页
+summary: 从结构化描述与模拟出发，说明 DApp 侧如何组织签名前的可读摘要与高危参数提示。
+status: review
+difficulty: advanced
+category: security
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - clear-signing
+  - calldata
+  - erc-7730
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-7730：Structured Data Clear Signing Format（§Abstract、§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-7730
+  - title: ethereum.org：Transactions（§Transaction descriptors）
+    url: https://ethereum.org/en/developers/docs/transactions/
+  - title: ethereum.org：Security（页面级）
+    url: https://ethereum.org/en/security/
+---
+
+## 题目
+
+一个签名请求在钱包里只显示一长串十六进制 calldata，用户无法判断这次授权给了谁、额度是多少。产品与安全同学希望 DApp 侧先做一层可读摘要。请说明结构化描述解决了什么问题，以及 DApp 侧可以做到什么程度。
+
+## 考察目标
+
+- 盲签问题与结构化描述的作用。
+- DApp 侧摘要需要覆盖的信息。
+- 模拟结果与安全结论的边界。
+
+## 30 秒回答
+
+钱包直接展示原始 calldata 时，用户缺少判断函数与参数含义的依据；ERC-7730 用结构化描述为 calldata、EIP-712 消息与用户操作补充格式化信息与展示意图，供钱包在签名界面渲染。DApp 侧可以展示目标地址、函数与参数、金额与授权对象，用模拟结果说明预期效果，并对高风险参数给出警告。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】ERC-7730 定义了一个 JSON 描述符格式，用格式化信息与动态取值补充 ABI 与类型信息，使 calldata、EIP-712 消息与 ERC-4337 User Operation 可以在钱包界面以人类可读方式展示（依据：EIP-7730 §Abstract、§Specification）。
+- 【协议保证】描述符由绑定上下文、元数据与展示格式组成；钱包在应用格式化信息前需要校验上下文约束与待签数据匹配（依据：EIP-7730 §Specification 的 Context section）。
+- 【协议保证】展示格式通过函数片段与字段路径描述参数的展示方式与意图文案，描述符本身不改动链上执行结果（依据：EIP-7730 §Specification 的 Display section）。
+- 【协议保证】交易描述符（ERC-7730）把函数与参数映射为可读文案，供钱包在签名前展示（依据：EIP-7730 §Specification）。
+- 【工程经验】DApp 侧摘要至少覆盖目标地址、函数名、关键参数、金额与授权对象，并让展示内容与提交签名的参数同源（依据：工程经验，无规范依据）。
+- 【工程经验】模拟可以提前暴露 revert 与部分预期结果，但模拟通过并不代表签名安全，仍需结合参数含义判断（依据：工程经验，无规范依据）。
+- 【工程经验】对无限授权、陌生 spender、异常金额等高危参数给出显式警告，阈值与文案由产品与安全侧共同定义（依据：ethereum.org Security 页面 作为安全背景；工程经验）。
+- 【工程经验】钱包对描述符与清晰签名的支持程度存在差异，前端需要准备原始参数展示作为回退（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 只显示「合约调用」或原始 calldata，把判断责任交给用户。
+- 摘要由一套逻辑生成、提交由另一套逻辑生成，出现展示与签名参数不一致。
+- 把模拟通过当作安全证明，忽略参数本身的授权范围。
+- 对无限授权与陌生 spender 没有突出提示。
+- 假设钱包支持描述符渲染，导致不支持时没有回退展示。
+
+## 面试官追问
+
+1. 用户签名后才发现授权对象是陌生地址，你会如何做产品上的预防与事后处理？
+2. 如何保证展示摘要与提交参数来自同一份数据？
+3. 钱包不支持描述符时，DApp 侧摘要应该退化到什么程度？
+4. 描述符来自外部维护者，若其内容过期或被篡改，前端可以怎样降低风险？
+
+## 评分标准
+
+### 初级回答
+
+- 能说明盲签问题与可读摘要的必要性。
+- 知道摘要需要覆盖函数与关键参数。
+
+### 中级回答
+
+- 能说明结构化描述的定位与 DApp 侧可做的摘要内容。
+- 能区分模拟结果与安全结论的边界。
+
+### 高级回答
+
+- 能设计摘要、模拟与警告的组合流程，覆盖高危参数与展示一致性。
+- 能说明描述符支持度差异与回退方案，并给出日志脱敏与审计设计。
+
+## 参考资料
+
+- [EIP-7730：Structured Data Clear Signing Format（§Abstract、§Specification）](https://eips.ethereum.org/EIPS/eip-7730)
+- [ethereum.org：Transactions（§Transaction descriptors）](https://ethereum.org/en/developers/docs/transactions/)
+- [ethereum.org：Security（页面级）](https://ethereum.org/en/security/)

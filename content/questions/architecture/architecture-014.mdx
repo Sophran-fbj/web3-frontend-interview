@@ -1,0 +1,115 @@
+---
+id: architecture-014
+slug: wallet-flow-testing-mock
+title: 用 mock connector 测试钱包流程
+summary: 用 mock 的可控失败开关覆盖连接与签名分支，并保留真实钱包的手工回归。
+status: review
+difficulty: intermediate
+category: architecture
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - testing
+  - mock-connector
+  - wagmi
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：mock connector（§Usage、§Parameters 的 features）
+    url: https://wagmi.sh/react/api/connectors/mock
+  - title: wagmi：入门指南（§Manual Installation、§Wrap App in Context Provider）
+    url: https://wagmi.sh/react/getting-started
+---
+
+## 题目
+
+一个团队的钱包流程此前只做手工回归：每次发版前用真实钱包点一遍连接、切链、签名与交易。最近两次发版分别漏掉了「用户取消授权」与「交易 reverted」的分支。请说明如何用 mock connector 把钱包流程纳入自动化测试。
+
+## 考察目标
+
+- mock connector 的参数与可控失败开关。
+- 测试环境与生产环境的配置差异。
+- 失败路径、集成验证与真实钱包回归的边界。
+
+## 30 秒回答
+
+wagmi 提供 mock connector，用于在测试与本地开发中模拟连接行为：accounts 参数提供模拟账户，features 开关可以分别控制连接、重连、签名与切链步骤是否抛出错误。因此在不需要安装扩展的前提下，可以覆盖连接、切换账户、断开与失败分支。mock 无法覆盖真实钱包的注入时序与移动端扫码流程，真实钱包的手工回归仍有必要。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】mock connector 的 accounts 参数接收非空的地址数组，用于提供模拟账户（依据：wagmi mock connector §Parameters 的 accounts）。
+- 【实现行为】features 开关包含 defaultConnected、connectError、reconnect、signMessageError、signTypedDataError 与 switchChainError，可分别控制连接、重连、签名与切链的行为（依据：wagmi mock connector §Parameters 的 features）。
+- 【实现行为】features 的开关可以传 Error 实例，例如把连接失败模拟为指定的错误对象（依据：wagmi mock connector §features 的 connectError 示例）。
+- 【实现行为】测试环境同样要按 wagmi 的标准结构提供 WagmiProvider 与 TanStack Query 的 Provider，hooks 才能在测试中拿到状态（依据：wagmi 入门指南 §Wrap App in Context Provider）。
+- 【工程经验】失败路径要与成功路径同权重：用户取消、切链失败、签名失败与交易回滚都应当有用例（工程经验，无规范依据）。
+- 【工程经验】mock 与本地链组合可以覆盖更接近真实的集成路径，真实钱包的手工回归负责注入时序与移动端扫码等场景（工程经验，无规范依据）。
+- 【工程经验】自动化测试使用测试账户与本地链，不接入持有真实资产的钱包（工程经验，无规范依据）。
+- 【工程经验】记录 mock 与真实 provider 的行为差异，避免把 mock 通过当成真实环境通过（工程经验，无规范依据）。
+
+## 示例代码
+
+```ts
+import { http, createConfig } from "wagmi";
+import { mainnet, sepolia } from "wagmi/chains";
+import { mock } from "wagmi/connectors";
+
+export const testConfig = createConfig({
+  chains: [mainnet, sepolia],
+  connectors: [
+    mock({
+      accounts: ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"],
+      features: { connectError: true },
+    }),
+  ],
+  transports: {
+    [mainnet.id]: http(),
+    [sepolia.id]: http(),
+  },
+});
+```
+
+示例省略了测试框架与 Provider 封装，账户为公开的测试地址。
+
+## 常见错误
+
+- 只覆盖 happy path，不构造失败分支（【工程经验】）。
+- 用真实钱包与真实资产做自动化测试（【工程经验】）。
+- 把 mock 的行为当成真实钱包的行为，忽略注入时序差异（【工程经验】）。
+- 在生产配置里混入 mock connector（【工程经验】）。
+- 覆盖了连接却漏掉切链与签名失败（【实现行为】features 已提供对应的开关，缺的是用例；依据：wagmi mock connector §Parameters）。
+
+## 面试官追问
+
+1. 你会如何构造「用户拒绝连接」的用例？
+2. mock 覆盖不到的失败场景有哪些，用什么方式补上验证？
+3. 测试配置与生产配置如何隔离，避免误用？
+4. 交易从 pending 到成功或回滚的状态机，你会在哪一层测试？
+5. 引入 mock connector 后，哪些手工回归仍然需要保留？
+
+## 评分标准
+
+### 初级回答
+
+- 知道可以用 mock connector 在本地模拟连接与账户。
+- 知道 mock 通过不代表真实钱包场景通过。
+
+### 中级回答
+
+- 能用 features 开关构造连接、签名与切链的失败分支。
+- 能说明测试配置与生产配置的隔离方式。
+
+### 高级回答
+
+- 能给出 mock、本地链与真实钱包三层验证的覆盖矩阵。
+- 能说明交易状态机与多钱包场景的测试策略与残余风险。
+
+## 参考资料
+
+- [wagmi：mock connector（§Usage、§Parameters 的 features）](https://wagmi.sh/react/api/connectors/mock)
+- [wagmi：入门指南（§Manual Installation、§Wrap App in Context Provider）](https://wagmi.sh/react/getting-started)

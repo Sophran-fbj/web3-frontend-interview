@@ -1,0 +1,110 @@
+---
+id: architecture-007
+slug: invalidate-queries-after-write
+title: 交易成功后如何精准失效链上查询缓存
+summary: 说明从交易哈希到回执的等待链路、失效范围的设计，以及乐观更新与回滚的处理。
+status: review
+difficulty: intermediate
+category: architecture
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - caching
+  - invalidation
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：useWriteContract（§Return Type）
+    url: https://wagmi.sh/react/api/hooks/useWriteContract
+  - title: wagmi：useWaitForTransactionReceipt（§Usage、§Return Type）
+    url: https://wagmi.sh/react/api/hooks/useWaitForTransactionReceipt
+  - title: wagmi：TanStack Query 指南（§Query Keys、§Invalidating Queries）
+    url: https://wagmi.sh/react/guides/tanstack-query
+---
+
+## 题目
+
+一个授权按钮在交易上链后没有刷新额度显示，另一些页面反而因为全局轮询产生大量请求。请说明从写操作到缓存更新的正确链路，并给出失效范围的设计方式。
+
+## 考察目标
+
+- 写操作返回值与状态更新的差距。
+- 回执等待与成功条件判断。
+- 失效范围与刷新策略设计。
+
+## 30 秒回答
+
+useWriteContract 的 mutation 成功时返回交易哈希，此时链上状态变化尚未确认；把哈希交给 useWaitForTransactionReceipt 等待结果，确认成功后再更新页面。确认成功后用 invalidateQueries 失效相关查询，可以使用 hook 返回的 queryKey 做定点失效，也可以按前缀批量失效。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】useWriteContract 的返回值包含交易哈希，mutation 成功表示交易已提交，链上状态变化尚未确认（依据：wagmi useWriteContract §Return Type 的 data）。
+- 【实现行为】useWaitForTransactionReceipt 接收 hash 并返回回执数据与等待状态（依据：wagmi useWaitForTransactionReceipt §Usage、§Return Type）。
+- 【实现行为】交易执行失败时，该等待会以错误结束；等待到回执代表交易已被包含进区块（依据：wagmi useWaitForTransactionReceipt 页面说明）。
+- 【实现行为】invalidateQueries 会把匹配的查询标记为陈旧，并重取处于活跃状态的查询（依据：wagmi TanStack Query 指南 §Invalidating Queries）。
+- 【实现行为】每个查询 hook 返回的 queryKey 可以直接用于定点失效，也可按前缀批量处理（依据：wagmi TanStack Query 指南 §Query Keys）。
+- 【工程经验】失效范围先用 queryKey 做定点处理，跨页面共享的数据再按前缀批量处理（依据：wagmi TanStack Query 指南 §Invalidating Queries；工程经验）。
+- 【工程经验】交易等待以错误结束时，不更新乐观数据并给出明确提示（依据：工程经验，无规范依据）。
+- 【工程经验】缓存键包含链与地址等参数，切换账户后应让旧账户相关查询失效或清理（依据：wagmi TanStack Query 指南 §Query Keys；工程经验）。
+- 【工程经验】用按需失效替代整页高频轮询，可以减少端点压力（依据：工程经验，无规范依据）。
+
+## 示例代码
+
+```tsx
+// 省略上下文：abi 与地址来自项目配置，加载态与错误提示未展开。
+const queryClient = useQueryClient();
+const { writeContract, data: hash } = useWriteContract();
+const { isSuccess } = useWaitForTransactionReceipt({ hash });
+
+useEffect(() => {
+  if (isSuccess) {
+    // 定点失效；跨页面共享的数据可按前缀批量失效。
+    queryClient.invalidateQueries({ queryKey: ["readContract"] });
+  }
+}, [isSuccess, queryClient]);
+```
+
+## 常见错误
+
+- 写操作返回哈希就提示成功并更新页面数据。
+- 等待以错误结束时，仍然刷新成功态数据。
+- 只失效当前组件用到的查询，其他页面继续展示旧数据。
+- 用全局短间隔轮询替代失效策略。
+- 忽略链与地址维度，切换账户后错显他人数据。
+
+## 面试官追问
+
+1. 用户签名后离开页面，回来后如何判断这笔交易的结果？
+2. 乐观更新在交易失败时如何回滚，如何避免界面抖动？
+3. 失效范围过大与过小各自会带来什么问题？
+4. 多标签页同时操作时，缓存如何保持一致？
+
+## 评分标准
+
+### 初级回答
+
+- 知道写操作返回哈希，需要等待回执再更新页面。
+- 能说出 invalidateQueries 的作用。
+
+### 中级回答
+
+- 能串起「写操作 → 回执 → 失效 → 重取」的链路并处理失败分支。
+- 能解释 queryKey 在定点失效中的作用。
+
+### 高级回答
+
+- 能设计跨页面、跨账户的失效与刷新策略，覆盖乐观更新与回滚。
+- 能说明刷新策略在成本与数据新鲜度之间的取舍与验证方式。
+
+## 参考资料
+
+- [wagmi：useWriteContract（§Return Type）](https://wagmi.sh/react/api/hooks/useWriteContract)
+- [wagmi：useWaitForTransactionReceipt（§Usage、§Return Type）](https://wagmi.sh/react/api/hooks/useWaitForTransactionReceipt)
+- [wagmi：TanStack Query 指南（§Query Keys、§Invalidating Queries）](https://wagmi.sh/react/guides/tanstack-query)

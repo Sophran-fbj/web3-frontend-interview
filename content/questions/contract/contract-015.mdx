@@ -1,0 +1,104 @@
+---
+id: contract-015
+slug: frontend-contract-deployment
+title: 从前端发起合约部署
+summary: 说明部署交易的字段结构、合约地址的获取方式，以及前端发起部署的适用边界与流程设计。
+status: review
+difficulty: advanced
+category: contract
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - deployment
+  - create
+  - frontend
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1014：Skinny CREATE2（§Specification、§Rationale、§Clarifications）
+    url: https://eips.ethereum.org/EIPS/eip-1014
+  - title: EIP-3860：Limit and meter initcode（§Motivation、§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-3860
+  - title: EIP-1474：Remote procedure call specification（§eth_call、§eth_getTransactionReceipt）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-1559：Fee market change（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-1559
+  - title: Ethereum Yellow Paper：Appendix G（Fee Schedule）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+---
+
+## 题目
+
+一个页面提供「部署你的合约」功能，用户确认后界面显示「部署成功」但没有给出地址；另一个团队把部署交易的哈希当成了合约地址，写进了配置。请说明部署交易的构造与结果获取方式。
+
+## 考察目标
+
+- 部署交易的字段结构。
+- 合约地址的预计算与收据确认的关系。
+- 部署交易的 gas used 与 gas price 的区别。
+- 前端发起部署的适用边界与流程。
+
+## 30 秒回答
+
+部署交易把目标字段留空，data 字段携带合约字节码与 ABI 编码后的构造参数；CREATE 与 CREATE2 的地址可以按各自公式预计算，部署结果以收据中的 contractAddress 为权威确认，预计算不代表部署成功。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】部署交易的 to 字段为空，data 承载合约字节码与构造参数（依据：EIP-1474 §eth_call 的 to/data 参数说明）。
+- 【协议保证】部署交易的收据中，contractAddress 字段给出新建合约的地址（依据：EIP-1474 §eth_getTransactionReceipt 的 contractAddress 字段）。
+- 【协议保证】CREATE 地址可以由创建者地址与 nonce 预计算；CREATE2 地址可以由部署者地址、salt 与 init code 哈希预计算（依据：EIP-1014 §Specification、§Rationale）。
+- 【协议保证】收据中的 contractAddress 是部署结果的权威确认值；预计算地址不代表部署成功，部署失败、nonce 竞争或实际部署路径变化仍需通过收据确认（依据：EIP-1474 §eth_getTransactionReceipt；EIP-1014 §Clarifications）。
+- 【协议保证】部署的 gas used 包含 init code 的按字计费与部署代码的按字节计费（依据：EIP-3860 §Motivation、§Specification）。
+- 【协议保证】构造函数的执行按 EVM 费用表逐操作计费，不同执行路径消耗不同（依据：Yellow Paper Appendix G 的 Fee Schedule）；网络拥堵影响每单位 gas 的价格，最终费用由 gas used 与实际生效的 gas 价格共同决定（依据：EIP-1559 §Specification 的 effective_gas_price 计算）。
+- 【工程经验】前端适合部署参数受控、代码经过审核的合约模板；把任意字节码的拼接交给页面，会引入供应链与合规风险（依据：工程经验，无规范依据）。
+- 【工程经验】部署流程把「拿到收据」作为完成条件：读取 contractAddress 写入配置，并在界面展示地址与所在链；需要提前展示地址时，可用预计算地址作为预期值并在收据到达后核对（依据：工程经验，无规范依据）。
+- 【工程经验】构造参数使用 ABI 编码函数生成，不手工拼接；参数与确认页摘要同源生成（依据：工程经验，无规范依据）。
+- 【工程经验】部署交易的 gas 上限单独估算并留出余量，估算失败时提供手动调整入口（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把部署交易哈希当作合约地址（【协议保证】地址以收据的 contractAddress 为权威确认，依据：EIP-1474 §eth_getTransactionReceipt）。
+- 把收据当作得知地址的唯一途径，忽略 CREATE 与 CREATE2 的预计算（依据：EIP-1014 §Specification）。
+- 把网络拥堵直接等同于部署 gas 用量上升，混淆 gas used 与 gas price（依据：EIP-1559 §Specification）。
+- 忘记编码构造参数，或按错误的类型编码。
+- 在收据到手前就把部署标记为完成。
+- gas 估算不足导致部署失败并消耗费用。
+- 在用户环境部署未经审核的字节码。
+
+## 面试官追问
+
+1. 部署交易失败后，如何判断是验证阶段被拒还是执行阶段回滚，重试流程如何设计？
+2. 预计算出的 CREATE2 地址在什么情况下会与最终结果不一致？
+3. 用户在多条链上部署同一份字节码，如何核对地址与实现的一致性？
+4. 把部署能力做成模板化产品与开放自定义字节码，风险与收益如何取舍？
+5. 合约地址写入前端配置的流程需要哪些校验？
+
+## 评分标准
+
+### 初级回答
+
+- 能说明部署交易的 to 为空、data 携带字节码与构造参数。
+- 知道地址从收据中读取。
+
+### 中级回答
+
+- 能描述部署从提交到收据的完整流程与失败分支。
+- 能说明地址预计算与收据确认的关系，以及 gas used 与 gas price 的区别。
+
+### 高级回答
+
+- 能设计受控的部署产品流程，覆盖模板审核、参数校验与地址落库。
+- 能说明多链部署时的地址与实现核对方案。
+
+## 参考资料
+
+- [EIP-1014：Skinny CREATE2（§Specification、§Rationale、§Clarifications）](https://eips.ethereum.org/EIPS/eip-1014)
+- [EIP-3860：Limit and meter initcode（§Motivation、§Specification）](https://eips.ethereum.org/EIPS/eip-3860)
+- [EIP-1474：Remote procedure call specification（§eth_call、§eth_getTransactionReceipt）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-1559：Fee market change（§Specification）](https://eips.ethereum.org/EIPS/eip-1559)
+- [Ethereum Yellow Paper：Appendix G（Fee Schedule）](https://ethereum.github.io/yellowpaper/paper.pdf)

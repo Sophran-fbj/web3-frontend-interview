@@ -1,0 +1,90 @@
+---
+id: wallet-021
+slug: use-connect-mutate-api
+title: useConnect 的 mutate 用法与参数
+summary: 说明 v3 中连接操作的定义方式、变量字段与状态读取，并给出重复点击与错链的处理方式。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - connect
+  - mutation
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：useConnect（§Usage、§Parameters、§Return Type）
+    url: https://wagmi.sh/react/api/hooks/useConnect
+  - title: wagmi：Migrate from v2 to v3（§Renamed mutateFn）
+    url: https://wagmi.sh/react/guides/migrate-from-v2-to-v3
+---
+
+## 题目
+
+一个自定义连接弹窗需要在用户选择钱包后触发连接，并在成功后关闭。实现里直接用 mutate 的返回值判断是否成功，还在参数里固定传了 chainId。请说明 useConnect 在 v3 中的用法与需要注意的地方。
+
+## 考察目标
+
+- v3 中 mutation hook 的调用方式。
+- useConnect 的变量字段与取值边界。
+- 连接结果的判断依据与错误处理。
+
+## 30 秒回答
+
+wagmi v3 的 mutation hook 统一返回 mutate/mutateAsync，连接时先取 `const connect = useConnect()`，再调用 `connect.mutate({ connector })`；变量包含 connector，以及可选的 chainId 与 withCapabilities。chainId 是否按传入值生效取决于 connector 实现，连接结果应结合连接状态与 mutation 状态来判断。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】v3 的 mutation hook 通过 mutate/mutateAsync 触发，useConnect 的用法是先取得 hook 返回值再调用 mutate（依据：wagmi useConnect §Usage；wagmi 迁移指南 §Renamed mutateFn）。
+- 【实现行为】useConnect 的变量包含 connector，以及可选的 chainId 与 withCapabilities（依据：wagmi useConnect §Parameters、§mutate 的 variables）。
+- 【实现行为】chainId 作为期望连接的链传入；对不支持编程切链的 connector，会连接到该钱包当前所在的链（依据：wagmi useConnect 页面 §Parameters 的 TIP 说明）。
+- 【实现行为】mutation 状态（status、isPending、error 等）可用于按钮与错误提示（依据：wagmi useConnect §Return Type）。
+- 【工程经验】流程副作用可以挂在 mutate 的回调上，渲染仍以连接状态为准，两者分工清晰更易维护（依据：wagmi useConnect §mutate 的 onSuccess/onError 说明；工程经验）。
+- 【工程经验】连接入口在 pending 期间置为不可点，减少重复请求（依据：工程经验，无规范依据）。
+- 【工程经验】传入的 chainId 与实际连接的链不一致时，按错链状态提示并引导切链（依据：工程经验，无规范依据）。
+- 【工程经验】连接失败按类型分流：用户拒绝回到可重试状态，其他失败保留重试入口（依据：wagmi useConnect §Return Type 的 error；工程经验）。
+
+## 常见错误
+
+- 把 mutate 的返回值当作连接状态的来源，忽略连接可能失败或延迟。
+- 假定传入 chainId 会按预期生效，忽略 connector 的实现差异。
+- 连接按钮在请求进行中仍然可点，触发重复请求。
+- 连接成功后没有处理错链状态。
+- 把用户拒绝当作系统错误展示红色提示。
+
+## 面试官追问
+
+1. 用户从钱包拒绝连接后，弹窗与按钮状态应该如何恢复？
+2. 传入 chainId 后钱包仍连到别的链，页面如何提示与引导？
+3. withCapabilities 适合在什么场景使用，兼容性风险是什么？
+4. 如果产品需要记住上次选择过的钱包，你会把这份状态放在哪里？
+
+## 评分标准
+
+### 初级回答
+
+- 能写出 useConnect 在 v3 中的调用方式与主要变量字段。
+- 知道连接结果是异步的，不宜立即断言成功。
+
+### 中级回答
+
+- 能说明 chainId 的生效边界与错链处理方式。
+- 能按错误类型区分用户拒绝与其他失败。
+
+### 高级回答
+
+- 能设计连接流程的状态管理，覆盖 pending、重复点击与错误分流。
+- 能说明 withCapabilities 等参数的兼容性评估方式。
+
+## 参考资料
+
+- [wagmi：useConnect（§Usage、§Parameters、§Return Type）](https://wagmi.sh/react/api/hooks/useConnect)
+- [wagmi：Migrate from v2 to v3（§Renamed mutateFn）](https://wagmi.sh/react/guides/migrate-from-v2-to-v3)

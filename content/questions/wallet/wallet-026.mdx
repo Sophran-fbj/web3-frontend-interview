@@ -1,0 +1,93 @@
+---
+id: wallet-026
+slug: injected-connector-options
+title: injected connector 的三个关键参数
+summary: 用 target、shimDisconnect 与 unstable_shimAsyncInject 处理延迟注入与「断开」语义。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - injected
+  - options
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：injected connector（§Parameters 的 target、shimDisconnect、unstable_shimAsyncInject）
+    url: https://wagmi.sh/react/api/connectors/injected
+  - title: wagmi：Connectors（§Available Connectors）
+    url: https://wagmi.sh/react/api/connectors
+---
+
+## 题目
+
+一个 DApp 只在用户点击「连接」时才发现扩展没有注入 provider；另有用户反馈，刷新页面后此前「断开」的连接又自动连了回来。请说明 injected connector 的三个关键参数，以及它们各自解决什么问题。
+
+## 考察目标
+
+- target 的作用与 EIP-6963 发现的关系。
+- shimDisconnect 的语义与适用前提。
+- 延迟注入的处理方式与按钮状态的配合。
+
+## 30 秒回答
+
+injected connector 面向 EIP-1193 provider，文档列出三个关键参数：target 指定要瞄准的 provider，可以传标识、id/name/provider 组合或返回该组合的函数；shimDisconnect 默认开启，用本地存储记录连接状态来模拟断开，原因是多数注入式钱包不支持由 DApp 单方面断开；unstable_shimAsyncInject 通过监听 ethereum#initialized 事件处理延迟注入，传 true 时默认等待 1000 毫秒。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】injected connector 的页面说明它面向 EIP-1193 Ethereum Provider（依据：wagmi injected connector 页面标题与 §Import）。
+- 【实现行为】target 接受 TargetId，或包含 id、name、provider 的对象，或返回该对象的函数；EIP-6963 支持通过 createConfig 的 multiInjectedProviderDiscovery 提供（依据：wagmi injected §Parameters 的 target）。
+- 【实现行为】shimDisconnect 默认 true，用本地存储保留连接状态来模拟断开行为（依据：wagmi injected §Parameters 的 shimDisconnect）。
+- 【实现行为】unstable_shimAsyncInject 监听 ethereum#initialized 事件以等待异步注入；传 true 时默认 1000 毫秒，也可以传具体毫秒数（依据：wagmi injected §Parameters 的 unstable_shimAsyncInject）。
+- 【实现行为】connectors 入口同时提供 injected 与其它专用 connector，可按需选择（依据：wagmi Connectors §Available Connectors）。
+- 【工程经验】扩展未注入与未安装是两种状态：未就绪时先禁用按钮或提示安装，而不是等点击后再报错（工程经验，无规范依据）。
+- 【工程经验】shimDisconnect 只是本地记账，钱包一侧的状态不受影响，文案不要写成「已在钱包中撤销授权」（工程经验，无规范依据）。
+- 【工程经验】关闭 shimDisconnect 后，刷新页面可能恢复自动连接，这属于该选项的预期表现，需要在产品文案中说明（依据：wagmi injected §Parameters 的 shimDisconnect；工程经验）。
+- 【工程经验】target 指向错误钱包会让连接结果与用户预期不一致，需要与 EIP-6963 的发现结果对齐（工程经验，无规范依据）。
+- 【工程经验】没有可用 provider 时提供 WalletConnect 或只读模式等替代路径（工程经验，无规范依据）。
+
+## 常见错误
+
+- 扩展尚未注入就判定为「未安装」（【实现行为】unstable_shimAsyncInject 用于等待异步注入；依据：wagmi injected §unstable_shimAsyncInject）。
+- 关闭 shimDisconnect 后期待刷新不再自动连回（【实现行为】该选项默认通过本地状态模拟断开；依据：wagmi injected §shimDisconnect）。
+- 把 shimDisconnect 的本地断开写成「已在钱包中撤销授权」（【工程经验】）。
+- target 配置与用户选择的钱包不一致（【工程经验】）。
+- 只在点击后才发现没有 provider，缺少禁用或降级路径（【工程经验】）。
+
+## 面试官追问
+
+1. 扩展延迟注入时，连接按钮的状态机应该怎么设计？
+2. 用户卸载扩展后刷新页面，应用应该如何表现？
+3. shimDisconnect 造成的状态与钱包真实状态不一致，如何处理？
+4. 页面同时存在多个 EIP-6963 钱包时，target 应该怎么选？
+5. 关闭 shimDisconnect 的收益与代价分别是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 injected connector 面向 EIP-1193 provider，可以配置 target。
+- 知道 shimDisconnect 与断开语义相关。
+
+### 中级回答
+
+- 能说明三个参数各自解决的问题与默认值。
+- 能区分「未注入」与「未安装」两种状态的处理方式。
+
+### 高级回答
+
+- 能结合 EIP-6963 发现、延迟注入与本地断开设计完整的连接状态机。
+- 能说明关闭 shimDisconnect 后的产品影响与用户沟通方案。
+
+## 参考资料
+
+- [wagmi：injected connector（§Parameters 的 target、shimDisconnect、unstable_shimAsyncInject）](https://wagmi.sh/react/api/connectors/injected)
+- [wagmi：Connectors（§Available Connectors）](https://wagmi.sh/react/api/connectors)

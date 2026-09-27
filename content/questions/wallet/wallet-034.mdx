@@ -1,0 +1,92 @@
+---
+id: wallet-034
+slug: connection-effect-side-effects
+title: 连接状态变化的副作用边界
+summary: 区分首次连接与重连，把服务端会话与连接状态解耦，并避免回调重复触发。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - hooks
+  - side-effects
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：useConnectionEffect（§Parameters 的 onConnect、onDisconnect）
+    url: https://wagmi.sh/react/api/hooks/useConnectionEffect
+  - title: wagmi：useConnection（§Return Type 的 status）
+    url: https://wagmi.sh/react/api/hooks/useConnection
+---
+
+## 题目
+
+一个 DApp 在连接成功时上报埋点并刷新服务端会话；上线后发现刷新页面会重复上报，切换账户后服务端权限仍停留在旧地址。请说明连接状态变化的副作用应该放在哪里，以及边界怎么划。
+
+## 考察目标
+
+- useConnectionEffect 的回调与触发条件。
+- 重连与首次连接的区分方式。
+- 服务端会话与连接状态的解耦。
+
+## 30 秒回答
+
+useConnectionEffect 提供 onConnect 与 onDisconnect 回调：onConnect 的数据包含地址、链、connector 与 isReconnected 标记，onDisconnect 在不再存在连接时触发。useConnection 的 status 取值包括 connecting、reconnecting、connected 与 disconnected，文档说明可以用 status 收窄返回类型。因此连接副作用的语义要区分首次连接与重连，服务端会话则需要在切号与断连时重新验证。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】useConnectionEffect 的参数包含 onConnect 与 onDisconnect 回调（依据：wagmi useConnectionEffect §Parameters 的 onConnect、onDisconnect）。
+- 【实现行为】onConnect 的数据包含 address、addresses、chain、chainId、connector 与 isReconnected 标记（依据：wagmi useConnectionEffect §Parameters 的 onConnect 类型说明）。
+- 【实现行为】onDisconnect 在不再存在连接时触发（依据：wagmi useConnectionEffect §Parameters 的 onDisconnect 说明）。
+- 【实现行为】useConnection 的 status 取值为 connecting、reconnecting、connected、disconnected，文档说明可以用它收窄返回类型（依据：wagmi useConnection §Return Type 的 status）。
+- 【工程经验】用 isReconnected 区分重连与首次连接，避免刷新页面时重复上报或重复提示（依据：wagmi useConnectionEffect §Parameters 的 onConnect；工程经验）。
+- 【工程经验】回调里避免做阻塞渲染的长任务，副作用交给独立服务层或任务队列（工程经验，无规范依据）。
+- 【工程经验】依赖字段要精确：把回调依赖收敛到真正需要的字段，减少重复触发（工程经验，无规范依据）。
+- 【工程经验】服务端会话与连接状态解耦：切号、断连与授权撤销后重新验证，权限不跟随本地地址缓存（工程经验，无规范依据）。
+- 【工程经验】断连时清理与旧账户绑定的表单、待签内容与缓存（工程经验，无规范依据）。
+
+## 常见错误
+
+- 把重连当成新连接，重复上报埋点（【实现行为】onConnect 数据带有 isReconnected 标记；依据：wagmi useConnectionEffect §onConnect）。
+- 在回调里 setState 触发循环渲染（【工程经验】）。
+- 连接后不更新服务端会话，切号后权限停留在旧地址（【工程经验】）。
+- 依赖整个回调对象导致频繁重跑（【工程经验】）。
+- 只监听连接不监听断开，旧状态长期残留（【实现行为】onDisconnect 在无连接时触发；依据：wagmi useConnectionEffect §onDisconnect）。
+
+## 面试官追问
+
+1. 刷新页面触发的重连，应该上报为连接事件吗？
+2. 回调中发起网络请求时，如何避免重复与竞态？
+3. 切号之后，服务端会话应该在什么时机失效？
+4. 把副作用放在组件里与放在独立层，取舍分别是什么？
+5. 多连接环境下，onDisconnect 的触发条件意味着什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 useConnectionEffect 提供 onConnect 与 onDisconnect 回调。
+- 知道连接状态包含重连与已连接等取值。
+
+### 中级回答
+
+- 能用 isReconnected 区分重连并避免重复副作用。
+- 能说明切号与断连时服务端会话需要重新验证。
+
+### 高级回答
+
+- 能设计副作用分层方案，覆盖埋点、会话与缓存清理的时机。
+- 能说明多连接场景下事件语义的变化与验证方式。
+
+## 参考资料
+
+- [wagmi：useConnectionEffect（§Parameters 的 onConnect、onDisconnect）](https://wagmi.sh/react/api/hooks/useConnectionEffect)
+- [wagmi：useConnection（§Return Type 的 status）](https://wagmi.sh/react/api/hooks/useConnection)

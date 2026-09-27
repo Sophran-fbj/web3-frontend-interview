@@ -1,0 +1,99 @@
+---
+id: wallet-017
+slug: eip6963-announced-info-security
+title: EIP-6963 公告信息的安全使用
+summary: 逐项分析 rdns、uuid 与 icon 的使用边界，给出钱包列表发现中更稳妥的展示与校验方式。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - eip-6963
+  - security
+  - wallet
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-6963：多注入钱包发现（§Provider Info、§Window Events、§Security Considerations）
+    url: https://eips.ethereum.org/EIPS/eip-6963
+  - title: ethereum.org：智能合约安全（页面级）
+    url: https://ethereum.org/en/developers/docs/smart-contracts/security/
+---
+
+## 题目
+
+DApp 通过 EIP-6963 渲染钱包列表时，有人提出三个方案：用 `rdns` 做钱包白名单、把 `icon` 的 SVG 内容直接内联到页面、在拿到第一个 provider 之后移除公告监听器。请指出这三处的问题与更稳妥的做法。
+
+## 考察目标
+
+- 理解公告信息的字段来源与可信程度。
+- 识别图标渲染与信息校验中的前端安全风险。
+- 设计公告监听的生命周期与失败回退。
+
+## 30 秒回答
+
+EIP-6963 的公告 detail 包含 `rdns`、`uuid`、`name`、`icon`，其中 `rdns` 由钱包自报；规范建议对 detail 做冻结，并提醒 `icon` 以 data URI 提供、直接渲染 SVG 存在脚本执行风险。公告与请求通过 window 事件完成，规范建议在页面生命周期内保持公告监听，以处理延迟注入。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】公告 detail 包含 `uuid`、`name`、`icon`、`rdns` 四个字段，由钱包侧提供（依据：EIP-6963 §Provider Info）。
+
+【协议保证】规范建议把公告 detail 冻结，降低被页面其他脚本改写的风险（依据：EIP-6963 §Provider Info）。
+
+【协议保证】`icon` 以 data URI 形式提供；规范在安全考量中提醒直接渲染 SVG 存在脚本执行风险（依据：EIP-6963 §Security Considerations）。
+
+【协议保证】provider 的公布与请求通过 window 事件进行；页面保持对公告事件的监听，可以接收晚到的注入（依据：EIP-6963 §Window Events）。
+
+【工程经验】`rdns` 是钱包自报标识，可能无效、填写错误或与真实钱包不符，不适合作为特性检测或信任判断的依据（依据：EIP-6963 §Security Considerations；工程经验）。
+
+【工程经验】`uuid` 用于区分同一页面内的多个 provider 会话；发现重复 `uuid` 时，可以作为页面被替换或篡改的信号做进一步检查（依据：EIP-6963 §Provider Info；工程经验）。
+
+【工程经验】图标用受控的图片元素渲染并限制尺寸与格式，加载失败时回退为文字标识，避免把 SVG 内容直接内联进页面（依据：EIP-6963 §Security Considerations；工程经验）。
+
+【工程经验】把钱包侧提供的名称、图标与其他元数据当作不可信内容处理，展示前做转义与长度限制（依据：ethereum.org 智能合约安全页面提供的安全背景；工程经验）。
+
+【工程经验】公告监听器在页面生命周期内保留，并把收集到的 provider 列表按 `uuid` 去重后再渲染（依据：EIP-6963 §Window Events；工程经验）。
+
+## 常见错误
+
+- 把 `rdns` 当作可信白名单，用它决定钱包是否可用或是否安全。
+- 把 `icon` 的 SVG 内容直接内联渲染，引入脚本执行面。
+- 拿到第一个 provider 就移除公告监听器，延迟注入的钱包无法出现在列表中。
+- 相信公告中的名称与图标，未做转义与长度限制。
+- 图标加载失败时没有回退展示，钱包列表出现空白条目。
+
+## 面试官追问
+
+1. 如果不信任 `rdns`，用户如何确认自己连接的是预期钱包？
+2. 图标渲染除了内联 SVG 之外，还有哪些需要注意的处理方式？
+3. 重复 `uuid` 出现时，界面上应该如何处理？
+4. 公告监听器保留整页生命周期会带来哪些成本，如何控制？
+5. 钱包撤下或更新公告信息后，列表如何保持一致？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出公告包含 `rdns`、`uuid`、`name`、`icon` 四个字段。
+- 知道图标不应直接内联 SVG 渲染。
+
+### 中级回答
+
+- 能解释 `rdns` 不能作为信任判断依据，并给出图标渲染与失败回退方案。
+- 能说明公告监听的生命周期设计及其与延迟注入的关系。
+
+### 高级回答
+
+- 能设计钱包列表的去重、渲染与安全处理流程，并说明用户确认钱包身份的路径。
+- 能讨论公告信息的可信边界与前端处理成本，并给出验证与监控方案。
+
+## 参考资料
+
+- [EIP-6963：多注入钱包发现（§Provider Info、§Window Events、§Security Considerations）](https://eips.ethereum.org/EIPS/eip-6963)
+- [ethereum.org：智能合约安全（页面级）](https://ethereum.org/en/developers/docs/smart-contracts/security/)

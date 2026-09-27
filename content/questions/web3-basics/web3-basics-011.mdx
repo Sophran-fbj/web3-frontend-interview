@@ -1,0 +1,94 @@
+---
+id: web3-basics-011
+slug: web2-to-web3-data-flow
+title: Web2 到 Web3：前端数据流的变化
+summary: 对比读写路径、身份与资产归属的变化，以及后端在 Web3 架构中仍然承担的角色。
+status: review
+difficulty: beginner
+category: web3-basics
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - web3-basics
+  - architecture
+  - data-flow
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1193：Ethereum Provider JavaScript API（§Security Considerations、§Provider Errors）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: ethereum.org：Introduction to dapps（页面级）
+    url: https://ethereum.org/en/developers/docs/dapps/
+  - title: ethereum.org：Web2 vs Web3（页面级）
+    url: https://ethereum.org/en/developers/docs/web2-vs-web3/
+---
+
+## 题目
+
+一个从 Web2 迁移过来的团队习惯把业务状态集中放在自家后端。请说明改用链上状态后，读路径、写路径、身份与资产四方面各发生了什么变化，以及后端还能做什么。
+
+## 考察目标
+
+- 读路径与写路径的变化。
+- 身份与资产归属的变化。
+- 后端在 Web3 架构中的位置与边界。
+
+## 30 秒回答
+
+Web3 前端把读路径从只依赖自家后端扩展为链上公共状态加 RPC 与索引服务，读到的数据可验证，但受节点可用性、索引延迟与最终性影响；写路径由用户通过钱包签名后提交交易，应用侧不能代替用户完成签名。身份从账号密码转为地址加签名挑战，资产由用户自己在钱包中持有，应用依赖用户授权才能操作。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】页面通过 provider 的 request 方法与钱包交互，密钥管理与签名在钱包侧完成；provider 运行在不受信任的页面环境中，不应被当作安全边界（依据：EIP-1193 §Security Considerations）。
+- 【协议保证】账户访问需要用户授权：未获授权时，面向账户的方法会被拒绝（依据：EIP-1193 §Provider Errors 的 4100 Unauthorized）。
+- 【工程经验】读路径从单一后端接口扩展为链上状态、RPC 与索引服务的组合，前端需要为每种数据源定义失败与降级策略（依据：ethereum.org dApps 页面；工程经验）。
+- 【工程经验】链上读到的数据受节点可用性与索引延迟影响，关键数值适合标注来源与更新时间（依据：ethereum.org dApps 页面；工程经验）。
+- 【工程经验】写路径由用户钱包签名并广播交易，应用侧负责组织参数、等待结果与对账（依据：ethereum.org dApps 页面；ethereum.org Web2 vs Web3 页面）。
+- 【工程经验】身份从账号密码转为地址加签名挑战：连接只提供地址，证明控制权需要用户对挑战签名（依据：ethereum.org Web2 vs Web3 页面；工程经验）。
+- 【工程经验】资产由用户自行持有，应用通过授权与签名操作资产，因此授权范围与撤销入口属于产品能力（依据：ethereum.org Web2 vs Web3 页面；工程经验）。
+- 【工程经验】后端仍然可以承担缓存、聚合、通知与法币计价等职责，但需要把链上结论与后端加工结果分开标注（依据：ethereum.org dApps 页面；工程经验）。
+- 【工程经验】写路径的状态需要区分「已提交」「已包含」「已确认」三个阶段再展示（依据：工程经验，无规范依据）。
+- 【工程经验】不要把连接状态当作登录态，服务端会话需要独立建立与失效（依据：ethereum.org Web2 vs Web3 页面；工程经验）。
+
+## 常见错误
+
+- 把链上读取当成普通 GET 请求处理，忽略节点可用性与最终性。
+- 把连接钱包当作登录，把地址当作已认证身份。
+- 写路径没有区分提交、打包与确认三个阶段。
+- 对授权只做一次展示，没有提供查看与撤销入口。
+- 后端把链上结论与自行加工的数据混在一起返回。
+
+## 面试官追问
+
+1. 用户切换账户后，服务端会话应该如何处理？
+2. 链上读取失败与后端接口失败，用户看到的提示应该如何区分？
+3. 后端缓存与链上状态出现差异时，你会如何定位与收敛？
+4. 引入签名挑战登录后，如何避免重复签名与重放？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出读路径从自家后端扩展到链上状态与 RPC。
+- 知道写路径需要用户钱包签名。
+
+### 中级回答
+
+- 能说明身份与资产归属的变化，并解释连接与登录的差异。
+- 能给出读路径的失败与降级处理。
+
+### 高级回答
+
+- 能设计读写路径、身份与会话的整体架构，覆盖最终性、授权撤销与后端边界。
+- 能说明链上数据与后端加工数据的分层标注与对账方式。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§Security Considerations、§Provider Errors）](https://eips.ethereum.org/EIPS/eip-1193)
+- [ethereum.org：Introduction to dapps（页面级）](https://ethereum.org/en/developers/docs/dapps/)
+- [ethereum.org：Web2 vs Web3（页面级）](https://ethereum.org/en/developers/docs/web2-vs-web3/)

@@ -1,0 +1,112 @@
+---
+id: transaction-005
+slug: transaction-fields-overview
+title: 交易字段与各自的约束
+summary: 逐项说明交易字段的含义、单位与约束，区分待签名摘要与签名后的序列化载荷，并解释字段变化为什么会改变签名摘要与交易哈希。
+status: review
+difficulty: beginner
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - transactions
+  - fields
+  - gas
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-1559：Fee market change for ETH 1.0 chain（§Specification、§Abstract、§Backwards Compatibility）"
+    url: https://eips.ethereum.org/EIPS/eip-1559
+  - title: "EIP-1474：Remote procedure call specification（§eth_call、§eth_sendTransaction、§eth_getTransactionCount）"
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: "EIP-2718：Typed Transaction Envelope（§Specification）"
+    url: https://eips.ethereum.org/EIPS/eip-2718
+  - title: "Solidity 文档：Contract ABI Specification（§Function Selector、§Argument Encoding）"
+    url: https://docs.soliditylang.org/en/latest/abi-spec.html
+---
+
+## 题目
+
+产品要求你在 DApp 里做一个「交易预览」面板：用户点发送之前，要看到这笔交易会做什么、给谁、花多少。设计评审时有人问：除了金额，还有哪些字段需要在预览里体现？哪些字段由用户意图决定，哪些由钱包或节点补全？
+
+请给出一份字段清单，并说明每个字段的含义与容易出现的问题。
+
+## 考察目标
+
+- 逐个理解交易字段的含义、单位与作用。
+- 区分「用户意图决定的字段」与「钱包或节点补全的字段」。
+- 说明字段变化为什么会改变签名内容与交易哈希。
+
+## 30 秒回答
+
+交易的核心字段包括：`to` 是接收地址或调用目标，为空表示部署合约；`value` 是随交易发送的金额，单位是 wei；`data`（也叫 `input`）是 calldata；`nonce` 是账户的交易序号；`gasLimit` 是允许消耗的上限；费用字段随交易类型变化，legacy 交易使用 `gasPrice`，EIP-1559 类型使用 `maxFeePerGas` 与 `maxPriorityFeePerGas`。`from` 是签名者地址，不在待签名摘要的字段列表中，由签名恢复得到；待签名摘要覆盖的任一字段变化，都会改变签名与交易哈希。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】`to` 表示接收地址或调用目标；`to` 为空表示这笔交易用于部署合约（依据：EIP-1474 §eth_call 的 `to` 参数说明；EIP-1559 §Specification 的 payload 字段）。
+
+- 【协议保证】`value` 的单位是 wei，随交易发送的金额以最小单位参与构造（依据：EIP-1474 §eth_call、§eth_sendTransaction 的参数说明）。
+
+- 【协议保证】`data`（`input`）承载调用信息或部署代码；调用时它是函数选择器与编码后的参数（依据：Solidity ABI 规范 §Function Selector、§Argument Encoding）。
+
+- 【协议保证】以 EIP-1559 类型为例，待签名摘要覆盖 chainId、nonce、费用字段、gasLimit、destination、amount、data 与 accessList；摘要不包含 signature_y_parity、signature_r、signature_s（依据：EIP-1559 §Specification 的签名摘要公式）。
+
+- 【协议保证】`nonce` 表示该账户已发送的交易数量，是交易序列化字段之一（依据：EIP-1474 §eth_getTransactionCount；EIP-1559 §Specification 的 payload 字段）。
+
+- 【协议保证】`gasLimit` 是这笔交易允许消耗的上限；交易有效性要求余额覆盖上限费用，未用部分退回（依据：EIP-1559 §Specification）。
+
+- 【协议保证】签名完成后，完整序列化交易载荷在摘要字段之后附加 signature_y_parity、signature_r 与 signature_s；`from` 不作为序列化输入字段写入交易，而是从签名恢复得到（依据：EIP-1559 §Specification 的 payload 列表）。
+- 【协议保证】费用字段的形式由交易类型决定：legacy 交易使用 `gasPrice`，EIP-1559 类型使用 `maxFeePerGas` 与 `maxPriorityFeePerGas`（依据：EIP-2718 §Specification；EIP-1559 §Abstract、§Backwards Compatibility）。
+
+- 【协议保证】待签名摘要中任一字段发生变化，都会产生不同的签名与交易哈希（依据：EIP-1559 §Specification 的签名摘要公式）。
+
+【工程经验】预览面板展示的字段与提交给钱包的字段应当同源：展示用的金额、目标与 calldata 由同一份构造结果生成，避免两次计算出现偏差（依据：工程经验，无规范依据）。
+
+【工程经验】金额以最小单位参与运算，展示时再按精度格式化；界面上的 ether 数值不适合直接进入构造流程（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把界面上的 ether 数值直接放进 `value`，忽略单位是 wei。
+- 只修改接收地址而不同步更新 `data`，调用打到了不相关的目标。
+- 把 `gasLimit` 当作实际消耗量写进费用展示。
+- 在预览面板与提交逻辑里各自计算一次参数，展示与提交不一致。
+- 把 `from` 当作可自由编辑的输入字段，忽略它由签名决定。
+- 改动字段后继续复用旧的签名或旧的交易哈希。
+- 把待签名摘要与签名后的完整交易载荷混为一谈（依据：EIP-1559 §Specification 的摘要公式与 payload 列表）。
+
+## 面试官追问
+
+1. 用户在预览里看到的金额与最终签名参数不一致，你会从哪些环节排查？
+2. `to` 为空与 `to` 指向一个没有代码的地址，两种情况下分别会发生什么？
+3. `nonce` 由谁决定？这对重试与替换交易的设计有什么影响？
+4. 为什么费用字段要按交易类型分开展示？
+5. 如果让你给预览面板排字段优先级，第一屏会放哪些字段？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 `to`、`value`、`data`、`nonce`、`gasLimit` 的基本含义。
+- 知道 `value` 的单位是 wei，`to` 为空表示部署。
+
+### 中级回答
+
+- 能区分待签名摘要与签名后的序列化载荷，并解释 `from` 的恢复过程。
+- 能指出字段变化会改变签名内容，并据此设计预览与提交的一致性校验。
+
+### 高级回答
+
+- 能把「用户意图 → 字段 → 展示 → 签名」串成一条链路，说明每一步的校验点与责任方。
+- 能讨论字段暴露范围的取舍，并给出字段错误导致失败时的分类处理方式。
+
+## 参考资料
+
+- [EIP-1559：Fee market change for ETH 1.0 chain（§Specification、§Abstract、§Backwards Compatibility）](https://eips.ethereum.org/EIPS/eip-1559)
+- [EIP-1474：Remote procedure call specification（§eth_call、§eth_sendTransaction、§eth_getTransactionCount）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-2718：Typed Transaction Envelope（§Specification）](https://eips.ethereum.org/EIPS/eip-2718)
+- [Solidity 文档：Contract ABI Specification（§Function Selector、§Argument Encoding）](https://docs.soliditylang.org/en/latest/abi-spec.html)

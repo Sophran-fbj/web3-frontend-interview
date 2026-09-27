@@ -1,0 +1,91 @@
+---
+id: architecture-004
+slug: wagmi-viem-tanstack-query-stack
+title: wagmi、viem 与 TanStack Query 的分工
+summary: 说明三个依赖各自负责什么，以及数据获取、缓存、失效与错误四项职责的分配方式。
+status: review
+difficulty: beginner
+category: architecture
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - viem
+  - tanstack-query
+stacks:
+  wagmi: "3.x"
+  viem: "2.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：Getting Started（§Usage）
+    url: https://wagmi.sh/react/getting-started
+  - title: wagmi：TanStack Query 指南（§Queries & Mutations、§Invalidating Queries）
+    url: https://wagmi.sh/react/guides/tanstack-query
+---
+
+## 题目
+
+团队用 wagmi 3.x 与 viem 2.x 开发一个新的 DApp。有人提议再包一层自研的数据请求库来统一 loading 与错误处理，也有人认为 wagmi 的 hook 不负责缓存、需要自己写一套。请说明三者的分工，并给出「数据获取、缓存、失效、错误」四项职责的分配方式。
+
+## 考察目标
+
+- 三个依赖各自的职责边界。
+- 数据 hook 与写操作对应的状态模型。
+- 缓存与失效的心智模型来源。
+
+## 30 秒回答
+
+viem 提供链交互原语，包括 ABI 编解码、client、transport 与错误类型；TanStack Query 提供异步状态管理，包括查询状态、缓存、失效、重试与请求去重；wagmi 的 React hooks 基于这两层封装，数据 hook 对应查询、写操作对应 mutation。因此缓存与失效应沿用 TanStack Query 的心智模型，而不是另建一套。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】wagmi 的 React 包以 wagmi + viem + @tanstack/react-query 作为依赖组合，通过 Provider 注入配置与 QueryClient（依据：wagmi Getting Started §Usage）。
+- 【实现行为】viem 提供链交互原语（ABI 编解码、client、transport、错误类型），wagmi 在其之上提供 hooks 与 core actions（依据：wagmi Getting Started §Usage）。
+- 【实现行为】wagmi 的数据 hooks 基于 TanStack Query：查询状态、缓存、失效与重试由 Query 管理，hooks 返回值中包含查询相关字段（依据：wagmi TanStack Query 指南 §Queries & Mutations）。
+- 【实现行为】写操作以 mutation 形式提供，与查询缓存分离；查询的失效需要业务侧在合适时机主动触发（依据：wagmi TanStack Query 指南 §Queries & Mutations、§Invalidating Queries）。
+- 【工程经验】把链上读取统一收敛到 query hooks，避免在组件里直接调用 public client 形成第二套数据来源（依据：wagmi TanStack Query 指南 §Queries & Mutations；工程经验）。
+- 【工程经验】错误处理先按来源分类（连接、钱包拒绝、RPC、合约 revert），再映射到 UI 文案（依据：工程经验，无规范依据）。
+- 【工程经验】需要在组件生命周期之外调用时使用 core actions，并自行承担缓存失效与错误处理（依据：工程经验，无规范依据）。
+- 【工程经验】三个依赖的版本一起升级与验证，避免 hooks 与 viem 原语之间的类型或行为不匹配（依据：wagmi Getting Started §Usage；工程经验）。
+
+## 常见错误
+
+- 认为 wagmi 自带缓存与重试，不需要 TanStack Query 参与。
+- 不使用 Provider 就调用 hooks，或把 Provider 顺序配错。
+- 自研请求层与 query 缓存并存，出现两套数据来源。
+- 写操作成功后直接假设数据已更新，忽略失效环节。
+- 把 viem client 与 wagmi hooks 的职责混在一起，说不清状态来源。
+
+## 面试官追问
+
+1. 项目里同时存在 query hooks 与直接调用 public client 的代码，会出现哪些一致性问题？
+2. 写操作返回成功但页面没有更新，你会按什么顺序排查？
+3. 自研数据层与直接使用 TanStack Query，你会如何权衡？
+4. 三个依赖一起升级时，你会如何验证兼容性？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出三者的基本分工。
+- 知道数据 hook 对应查询、写操作对应 mutation。
+
+### 中级回答
+
+- 能把四项职责分配到具体层，并解释为什么不自研缓存层。
+- 能说明写操作成功与数据更新之间的差距。
+
+### 高级回答
+
+- 能设计跨页面的一致性与失效策略，避免两套数据来源。
+- 能说明版本组合与升级顺序对三层的影响，并给出绕过体系直接读链的代价。
+
+## 参考资料
+
+- [wagmi：Getting Started（§Usage）](https://wagmi.sh/react/getting-started)
+- [wagmi：TanStack Query 指南（§Queries & Mutations、§Invalidating Queries）](https://wagmi.sh/react/guides/tanstack-query)

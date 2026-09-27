@@ -1,0 +1,90 @@
+---
+id: architecture-005
+slug: wagmi-v3-migration-impact
+title: wagmi v3 对业务代码的主要影响
+summary: 汇总 v3 的依赖与命名变化，以及升级时需要同步调整的调用方式。
+status: review
+difficulty: intermediate
+category: architecture
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - migration
+  - versioning
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：Migrate from v2 to v3（§Install Connector Dependencies、§Bumped Minimum TypeScript Version、§Deprecations）
+    url: https://wagmi.sh/react/guides/migrate-from-v2-to-v3
+  - title: wagmi：Getting Started（§Usage）
+    url: https://wagmi.sh/react/getting-started
+---
+
+## 题目
+
+一个项目从 wagmi v2 升级到 v3，升级后出现多处类型报错：有的 hook 名字找不到，有的 mutation 返回值不对。另有人发现缺少某个 connector 的依赖。请说明 v3 的主要变化，并给出升级时的处理顺序。
+
+## 考察目标
+
+- v3 在依赖组织与 hook 命名上的变化。
+- mutation 返回值与状态对象的调整。
+- 升级顺序与验证方式。
+
+## 30 秒回答
+
+wagmi v3 把 connector 的三方依赖改为可选 peerDependencies，用哪个装哪个；账号相关 hook 改名（useAccount → useConnection、useAccountEffect → useConnectionEffect、useSwitchAccount → useSwitchConnection）；mutation hook 统一返回 mutate/mutateAsync；部分 hook 上的 connectors/chains 等返回值被移除，改用 useConnectors/useConnections/useChains 等独立 hook。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】v3 把 connector 的三方依赖改为可选 peerDependencies，使用某个 connector 时需要安装它对应的依赖包（依据：wagmi 迁移指南 §Install Connector Dependencies）。
+- 【实现行为】账号相关 hook 完成重命名：useAccount → useConnection、useAccountEffect → useConnectionEffect、useSwitchAccount → useSwitchConnection（依据：wagmi 迁移指南 §Renamed Account Hooks）。
+- 【实现行为】mutation hooks 的调用方式统一为 mutate/mutateAsync（依据：wagmi 迁移指南 §Renamed mutateFn）。
+- 【实现行为】useConnect().connectors、useReconnect().connectors、useDisconnect().connectors、useSwitchConnection().connectors 与 useSwitchChain().chains 等返回值被移除，改用 useConnectors、useConnections、useChains 等独立 hook（依据：wagmi 迁移指南 §Removed useConnect().connectors 等小节）。
+- 【实现行为】v3 提高了最低 TypeScript 版本要求（依据：wagmi 迁移指南 §Bumped Minimum TypeScript Version）。
+- 【工程经验】升级时按迁移指南替换命名，再按报错补齐 connector 依赖，最后回归连接、切链与写交易流程（依据：wagmi 迁移指南；工程经验）。
+- 【工程经验】旧教程与示例代码里的命名需要统一替换，混用两套命名会造成类型报错与行为不一致（依据：wagmi 迁移指南 §Renamed Account Hooks；工程经验）。
+- 【工程经验】升级后重新验证持久化连接与重连流程，避免状态恢复路径漏改（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 照抄 v2 教程代码，遇到类型报错再逐处猜测修改。
+- 升级后没有安装所需 connector 的依赖，运行时报模块缺失。
+- 混用 v2 与 v3 的 hook 命名，出现两套状态读取方式。
+- 继续从旧返回值上取 connectors/chains，运行期得到 undefined。
+- 只替换命名，没有回归连接、切链与写交易流程。
+
+## 面试官追问
+
+1. 升级后类型检查通过但运行时连接失败，你会先检查什么？
+2. connector 依赖改为可选 peerDependencies 后，你会如何管理版本与升级节奏？
+3. 迁移期间需要同时维护 v2 与 v3 分支，你会怎样控制成本？
+4. 如果团队暂时不升级，你会如何降低旧版本代码的维护风险？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 v3 的主要改名与 mutation 返回值变化。
+- 知道 connector 依赖需要按需安装。
+
+### 中级回答
+
+- 能把迁移指南中的变化映射到具体业务模块，并给出升级顺序。
+- 能说明旧返回值移除后应改用哪些 hook。
+
+### 高级回答
+
+- 能设计迁移清单与回滚方案，覆盖类型、依赖、持久化状态与回归验证。
+- 能评估升级带来的收益与风险，并给出灰度验证方式。
+
+## 参考资料
+
+- [wagmi：Migrate from v2 to v3（§Install Connector Dependencies、§Bumped Minimum TypeScript Version、§Deprecations）](https://wagmi.sh/react/guides/migrate-from-v2-to-v3)
+- [wagmi：Getting Started（§Usage）](https://wagmi.sh/react/getting-started)

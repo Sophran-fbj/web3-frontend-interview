@@ -1,0 +1,91 @@
+---
+id: transaction-022
+slug: eip2930-access-list
+title: accessList 的作用与前端是否该使用
+summary: 说明访问列表的声明成本与热冷状态计费的关系，以及前端决定是否启用时的判断依据。
+status: review
+difficulty: advanced
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-2930
+  - access-list
+  - gas
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-2930：Optional access lists（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-2930
+  - title: ethereum.org：Transactions（§Typed Transaction Envelope）
+    url: https://ethereum.org/en/developers/docs/transactions/
+  - title: EIP-2718：Typed Transaction Envelope（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-2718
+---
+
+## 题目
+
+同事认为在交易里加上访问列表可以省 gas，因此在页面上默认生成一份「能想到的」地址与存储槽列表。请评估这个做法，并说明访问列表在什么条件下有正收益。
+
+## 考察目标
+
+- 访问列表的声明成本与执行期计费的关系。
+- 声明内容与调用语义的关系。
+- 前端是否主动生成访问列表的取舍。
+
+## 30 秒回答
+
+访问列表用于预先声明交易会访问的地址与存储键，声明本身按条目计费，被声明的对象在执行中按已访问状态计费。声明把握不准并不改变调用的语义，差别只体现在费用上。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】EIP-2930 引入访问列表，其中的条目为地址与存储键；声明地址的成本为每个 2400 gas，声明存储键的成本为每个 1900 gas（依据：EIP-2930 §Specification 的访问列表与内在成本定义）
+- 【协议保证】执行期间对状态对象的计费区分「已访问」与「未访问」，访问列表的作用是把其中列出的对象预先置为已访问状态（依据：EIP-2930 §Specification）
+- 【协议保证】访问列表只影响费用，不携带权限或业务语义信息；不声明与声明有偏差都不改变调用的业务含义（依据：EIP-2930 §Specification）
+- 【协议保证】类型化信封允许不同交易类型携带各自的载荷字段，accessList 是其中之一（依据：EIP-2718 §Specification；EIP-2930 §Specification）。
+- 【工程经验】精确推断一笔调用会触达的存储槽需要了解合约实现细节，因此前端主动生成访问列表的收益不稳定（依据：工程经验，无规范依据）
+- 【工程经验】把访问列表交给钱包或工具链的默认策略处理，比分发一份「尽量多列」的清单更容易维护（依据：工程经验，无规范依据）
+- 【工程经验】评估收益时把声明成本与节省的热状态成本一起计算，判断依据宜来自目标链上的实测（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 认为不声明访问列表会导致交易失败（依据：EIP-2930 §Specification 的费用语义）
+- 把访问列表当成访问控制或安全边界（依据：EIP-2930 §Specification）
+- 为省 gas 填入大量无关条目，反而增加声明成本（依据：EIP-2930 §Specification 的条目成本）
+- 假设每条链都接受携带访问列表的交易类型（依据：ethereum.org Transactions §Typed Transaction Envelope）
+- 用一次测试得到的数字当作长期结论，没有在目标链上复测（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 一笔交易频繁访问同一合约的多个槽位时，访问列表的收益与成本如何估算？
+2. 如果实际费用高于估算，你会先怀疑哪些部分？
+3. 前端默认生成访问列表与交给钱包处理，各自的取舍是什么？
+4. 访问列表填写错误会产生什么后果，最坏情况是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道访问列表是预先声明的地址与存储键集合。
+- 知道声明按条目计费。
+
+### 中级回答
+
+- 能说明声明成本与热状态节省之间的取舍。
+- 知道访问列表不改变调用语义。
+
+### 高级回答
+
+- 能给出「默认交给工具链、仅在实测收益明确时启用」的判断框架。
+- 能说明验证方式与回退条件。
+
+## 参考资料
+
+- [EIP-2930：Optional access lists（§Specification）](https://eips.ethereum.org/EIPS/eip-2930)
+- [ethereum.org：Transactions（§Typed Transaction Envelope）](https://ethereum.org/en/developers/docs/transactions/)
+- [EIP-2718：Typed Transaction Envelope（§Specification）](https://eips.ethereum.org/EIPS/eip-2718)

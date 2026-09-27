@@ -1,0 +1,92 @@
+---
+id: architecture-012
+slug: wagmi-core-actions-vs-hooks
+title: wagmi core actions 与 React hooks 的边界
+summary: 明确 hooks 与 core actions 在订阅、缓存与失效责任上的分工，避免两套状态并存。
+status: review
+difficulty: advanced
+category: architecture
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - core-actions
+  - architecture
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：Actions（§Actions）
+    url: https://wagmi.sh/react/api/actions
+  - title: wagmi：入门指南（§Manual Installation、§Wrap App in Context Provider）
+    url: https://wagmi.sh/react/getting-started
+---
+
+## 题目
+
+一个团队在页面里使用 wagmi hooks，同时在工具函数和事件处理器中直接调用 core actions 改状态。上线后发现有些页面数据不刷新，另一些页面出现两套状态并存。请说明 hooks 与 core actions 的边界，以及两者配合时的责任划分。
+
+## 考察目标
+
+- hooks 与 core actions 的能力差异与依赖关系。
+- 缓存与失效责任在两类 API 之间的划分。
+- 组件外逻辑的边界与多钱包环境的一致性。
+
+## 30 秒回答
+
+wagmi 的 core actions 可以从 wagmi/actions 入口导入，在 hooks 不便使用的场景直接调用，例如 effect、事件处理器与其他组件外逻辑；actions 以 config 作为参数，落到同一份配置对象上。hooks 则要求组件位于 WagmiProvider 与 TanStack Query 的 Provider 之下，并在组件生命周期内订阅状态，wagmi 的缓存与同步能力由 TanStack Query 承担。两类 API 混用时，「谁修改状态、谁负责失效与错误处理」需要在调用约定里写清楚。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】core actions 可以通过 wagmi/actions 入口导入；文档示例在 effect 中调用 `watchBlockNumber(config, { onBlockNumber })` 并返回取消订阅函数（依据：wagmi Actions §Actions 示例）。
+- 【实现行为】actions 以 config 作为第一个参数，因此组件外调用时传入的是同一份配置对象（依据：wagmi Actions §Actions 示例中的 config 参数）。
+- 【实现行为】hooks 需要处在 WagmiProvider 与 TanStack Query 的 Provider 之下；wagmi 的依赖组合是 wagmi、viem 2.x 与 @tanstack/react-query（依据：wagmi 入门指南 §Manual Installation、§Wrap App in Context Provider）。
+- 【实现行为】wagmi 的数据获取、缓存与同步由 TanStack Query 承担，文档说明它负责请求、缓存等异步状态管理（依据：wagmi 入门指南 §Manual Installation 对 TanStack Query 的说明）。
+- 【工程经验】用 actions 修改状态后界面没有更新，通常是因为缺少失效或重取；调用方要显式声明由谁负责刷新（工程经验，无规范依据）。
+- 【工程经验】不要在 hooks 体系之外直接操作 window.ethereum，否则会绕过连接状态与多钱包选择，形成第二套真相（工程经验，无规范依据）。
+- 【工程经验】服务端与工具函数优先用 actions，组件内优先用 hooks，减少两套订阅并存的机会（工程经验，无规范依据）。
+- 【工程经验】把错误处理归属写进调用约定：actions 不与组件生命周期绑定，失败需要由调用方捕获与分类（工程经验，无规范依据）。
+- 【工程经验】两类 API 混用时，失效以同一套查询键语义为准，避免手写查询键造成失效落空（工程经验，无规范依据）。
+
+## 常见错误
+
+- 在组件外调用 useXxx 这类 hook（【实现行为】hooks 需要 React 运行时与 Provider 上下文；依据：wagmi Getting Started §Wrap App in Context Provider）。
+- 用 actions 改了状态后不做失效，界面继续显示旧数据（【工程经验】）。
+- 组件里同时用 hooks 与自建订阅维护同一份状态，出现两套真相（【工程经验】）。
+- 绕过连接状态直接操作 window.ethereum，忽略多钱包场景（【工程经验】）。
+- 把 actions 返回值当成已经被组件渲染的状态（【工程经验】）。
+
+## 面试官追问
+
+1. 如果数据只在事件处理器里更新，你会怎么安排失效？
+2. actions 与 hooks 同时存在时，如何保证错误处理与日志口径一致？
+3. 为什么在组件外直接操作 window.ethereum 会带来一致性问题？
+4. 服务端读取链上数据时，复用 config 与新建 client 各有什么取舍？
+5. 两套 API 的失效责任如何划分，才不至于互相覆盖？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 hooks 用在组件内，actions 可以在组件外调用。
+- 知道 actions 需要显式传入 config。
+
+### 中级回答
+
+- 能说明 hooks 依赖 Provider 与 TanStack Query，而 actions 需要自行负责失效与错误处理。
+- 能指出绕过连接状态直接操作 provider 的一致性风险。
+
+### 高级回答
+
+- 能给出两类 API 的责任矩阵，包括状态修改、失效、错误处理与日志。
+- 能说明服务端与客户端复用同一份 config 的边界与注意事项。
+
+## 参考资料
+
+- [wagmi：Actions（§Actions）](https://wagmi.sh/react/api/actions)
+- [wagmi：入门指南（§Manual Installation、§Wrap App in Context Provider）](https://wagmi.sh/react/getting-started)

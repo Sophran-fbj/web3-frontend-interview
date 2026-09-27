@@ -1,0 +1,90 @@
+---
+id: wallet-022
+slug: disconnect-semantics-shim
+title: 注入钱包「断开连接」的真实语义
+summary: 说明断开操作清理了什么、注入式钱包为何需要 shim，以及产品文案与状态清理的边界。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - disconnect
+  - shim
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：useDisconnect（§Usage、§Parameters）
+    url: https://wagmi.sh/react/api/hooks/useDisconnect
+  - title: wagmi：injected connector（§shimDisconnect）
+    url: https://wagmi.sh/react/api/connectors/injected
+---
+
+## 题目
+
+页面提供「断开连接」按钮。用户点击后回到首页又自动连上，钱包扩展里也显示应用仍然已连接，用户认为授权没有被撤销。请说明 wagmi 的断开操作做了什么，以及产品上应该怎样描述与处理。
+
+## 考察目标
+
+- useDisconnect 的作用范围。
+- 注入式钱包的断开语义与 shimDisconnect。
+- 产品文案与后续状态清理。
+
+## 30 秒回答
+
+useDisconnect 会清理 wagmi 侧的连接状态；对注入式钱包，wagmi 提供 shimDisconnect（默认启用）在存储中记录断开状态，使下次进入页面不再自动连回。注入式钱包缺少统一的编程断开路径，钱包扩展侧的授权撤销由用户在钱包内部完成。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】useDisconnect 的 mutate 接受可选的 connector 变量，用于指定要断开的连接（依据：wagmi useDisconnect §Parameters）。
+- 【实现行为】断开操作针对 wagmi 侧维护的当前连接，断开后按未连接状态渲染（依据：wagmi useDisconnect §Usage）。
+- 【实现行为】MetaMask 与其他注入式钱包不支持编程断开，wagmi 的 injected connector 提供 shimDisconnect（默认启用），通过在存储中记录连接状态来模拟断开（依据：wagmi injected connector §shimDisconnect）。
+- 【实现行为】shimDisconnect 作用于 DApp 侧的本地记录；钱包扩展自身是否显示为已连接取决于该钱包的实现（依据：wagmi injected connector §shimDisconnect 对编程断开缺失的说明）。
+- 【工程经验】产品文案描述为「在应用中断开连接」，不要把本地断开表述成撤销授权（依据：工程经验，无规范依据）。
+- 【工程经验】需要真正撤销授权的场景，引导用户在钱包中管理已连接站点与授权（依据：工程经验，无规范依据）。
+- 【工程经验】断开时清理与旧连接绑定的表单、待确认内容与缓存状态，避免残留数据被后续流程使用（依据：工程经验，无规范依据）。
+- 【工程经验】多连接场景下明确断开的是哪一条，并在断开后重新选择当前连接（依据：wagmi useDisconnect §Parameters；工程经验）。
+
+## 常见错误
+
+- UI 写「已撤销授权」，让用户以为钱包里也不再连接。
+- 断开后继续用旧地址或旧连接对象发起签名请求。
+- 关闭 shimDisconnect 后又期待刷新不自动重连，导致行为与文案不一致。
+- 多连接场景下不传 connector，断开结果与预期不符。
+- 断开后没有清理与该账户绑定的页面状态。
+
+## 面试官追问
+
+1. 用户要求「彻底退出」，你会如何在产品上组合本地断开与钱包侧撤销？
+2. 断开后刷新又自动重连，你会从持久化与 shim 的哪一层排查？
+3. 多连接场景下断开当前连接后，UI 应该回退到什么状态？
+4. 基于会话的 connector 与注入式钱包在断开语义上存在差异，你会如何向用户说明？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出断开操作清理的是应用侧状态。
+- 知道注入式钱包需要 shim 才能在本地保持断开。
+
+### 中级回答
+
+- 能说明 shimDisconnect 的作用范围以及与钱包侧的关系。
+- 能给出断开后的状态清理清单。
+
+### 高级回答
+
+- 能设计连接、断开与授权撤销三者一致的产品语义与文案。
+- 能覆盖多连接、多标签页与刷新恢复场景的验证方案。
+
+## 参考资料
+
+- [wagmi：useDisconnect（§Usage、§Parameters）](https://wagmi.sh/react/api/hooks/useDisconnect)
+- [wagmi：injected connector（§shimDisconnect）](https://wagmi.sh/react/api/connectors/injected)

@@ -1,0 +1,105 @@
+---
+id: transaction-008
+slug: transaction-receipt-fields
+title: receipt 字段与 status 的正确解读
+summary: 逐项解释 receipt 字段的含义与用途，并说明 status、确认深度与失败成本之间的关系。
+status: review
+difficulty: beginner
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - receipt
+  - status
+  - json-rpc
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：JSON-RPC API（§eth_getTransactionReceipt）
+    url: https://ethereum.org/en/developers/docs/apis/json-rpc/
+  - title: ethereum.org：Transactions（§Transaction lifecycle、§Types of transactions）
+    url: https://ethereum.org/en/developers/docs/transactions/
+  - title: EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+一个页面用 `cumulativeGasUsed` 展示单笔交易的 gas 消耗，另一个页面拿到 `status` 为 `0x1` 就提示「成功」。请逐项解释 receipt 字段，并说明正确的读取方式与展示口径。
+
+## 考察目标
+
+- 逐项理解 receipt 字段的含义与用途。
+- 说明 `status` 与执行结果、费用结算的关系。
+- 设计确认深度与界面状态的对应关系。
+
+## 30 秒回答
+
+receipt 中 `status` 为 `0x1` 表示执行成功、`0x0` 表示执行失败；`blockNumber` 与 `blockHash` 标定打包位置；`gasUsed` 是本交易实际消耗，`cumulativeGasUsed` 是区块内累计消耗；`effectiveGasPrice` 是实际每 gas 价格；`logs` 是本交易产生的事件；`contractAddress` 在部署交易中返回；交易未打包时 receipt 为 `null`。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】receipt 的 `status` 取值 `0x1` 表示执行成功，`0x0` 表示执行失败（依据：EIP-1474 §eth_getTransactionReceipt）。
+
+【协议保证】`blockNumber` 与 `blockHash` 标定交易被打包的区块位置（依据：EIP-1474 §eth_getTransactionReceipt）。
+
+【协议保证】`gasUsed` 是本交易实际消耗的 gas；`cumulativeGasUsed` 是区块内累计消耗（依据：EIP-1474 §eth_getTransactionReceipt）。
+
+【协议保证】交易的 effective gas price 由区块 base fee 与 priority fee 计算（依据：EIP-1559 §Specification）。
+
+【协议保证】`logs` 是本交易产生的日志条目集合（依据：EIP-1474 §eth_getTransactionReceipt）。
+
+【协议保证】`contractAddress` 用于标识新合约地址（依据：EIP-1474 §eth_getTransactionReceipt）。
+
+【协议保证】交易尚未被打包时，收据查询返回空结果（依据：EIP-1474 §eth_getTransactionReceipt 的说明）。
+
+【工程经验】执行失败的交易已经进入区块并按实际消耗结算费用，界面上不适合把 `status` 为 `0x0` 当作免费操作来呈现（依据：ethereum.org Transactions §Transaction lifecycle 对交易结果的描述；工程经验）。
+
+【工程经验】只读到一次 `status` 为 `0x1` 并不代表最终性达成，界面状态按确认深度分档展示（依据：工程经验，无规范依据）。
+
+【工程经验】排查失败原因时依赖模拟与回滚原因解析：执行回滚会同时撤销该交易内的日志记录，receipt 里可能没有可用于排查的业务事件（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 用 `cumulativeGasUsed` 展示单笔交易的 gas 消耗。
+- 把 receipt 为 `null` 当作交易失败。
+- 只判断 `status` 就提示最终成功，不等待确认。
+- 忽略失败交易同样按实际消耗结算费用。
+- 在失败交易的 `logs` 中查找业务事件来定位原因。
+- 部署交易与其他交易共用展示模板，遗漏 `contractAddress`。
+
+## 面试官追问
+
+1. `gasUsed` 与 `cumulativeGasUsed` 分别适合用在什么展示场景？
+2. 失败交易的界面应该展示哪些信息，才能让用户理解费用已产生？
+3. 区块重组后 receipt 字段会发生什么变化，前端如何检测？
+4. 部署交易的成功提示与普通交易有什么不同？
+5. 确认深度与界面状态如何映射，高价值操作是否要区别对待？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 `status` 的两种取值含义，以及 receipt 为 `null` 表示尚未打包。
+- 知道 `gasUsed` 与 `cumulativeGasUsed` 的口径不同。
+
+### 中级回答
+
+- 能逐项说明 `blockNumber`、`logs`、`contractAddress` 的用途。
+- 能指出失败交易同样产生费用，并据此设计提示文案。
+
+### 高级回答
+
+- 能设计 receipt 到界面状态的完整映射，包含确认深度、重组检测与失败原因解析。
+- 能说明部署交易与普通交易的差异处理，并给出对账与埋点口径。
+
+## 参考资料
+
+- [ethereum.org：JSON-RPC API（§eth_getTransactionReceipt）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [ethereum.org：Transactions（§Transaction lifecycle、§Types of transactions）](https://ethereum.org/en/developers/docs/transactions/)
+- [EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)

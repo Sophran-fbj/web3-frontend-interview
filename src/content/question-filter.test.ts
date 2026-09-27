@@ -25,19 +25,38 @@ describe("filterQuestions", () => {
       questionType: "comparison",
     });
 
-    expect(result.map(({ frontmatter }) => frontmatter.id)).toEqual([
+    expect(result).not.toHaveLength(0);
+    expect(result.map(({ frontmatter }) => frontmatter.id)).toContain(
       "wallet-003",
-    ]);
+    );
+    expect(
+      result.every(
+        ({ frontmatter }) =>
+          frontmatter.difficulty === "beginner" &&
+          frontmatter.category === "wallet" &&
+          frontmatter.questionType === "comparison",
+      ),
+    ).toBe(true);
   });
 
-  it("returns no results when filters do not overlap", async () => {
+  it("excludes questions that do not satisfy every filter", async () => {
     const questions = await getAllQuestions();
     const result = filterQuestions(questions, {
       difficulty: "advanced",
       category: "web3-basics",
     });
 
-    expect(result).toHaveLength(0);
+    expect(result).not.toHaveLength(0);
+    expect(result.map(({ frontmatter }) => frontmatter.id)).not.toContain(
+      "web3-basics-001",
+    );
+    expect(
+      result.every(
+        ({ frontmatter }) =>
+          frontmatter.difficulty === "advanced" &&
+          frontmatter.category === "web3-basics",
+      ),
+    ).toBe(true);
   });
 
   it("filters by a stack declared in frontmatter", async () => {
@@ -47,8 +66,16 @@ describe("filterQuestions", () => {
       stack: "wagmi",
     });
 
-    expect(result.map(({ frontmatter }) => frontmatter.id)).toEqual([
+    expect(result).not.toHaveLength(0);
+    expect(result.map(({ frontmatter }) => frontmatter.id)).toContain(
       "transaction-001",
-    ]);
+    );
+    expect(
+      result.every(
+        ({ frontmatter }) =>
+          frontmatter.difficulty === "advanced" &&
+          "wagmi" in frontmatter.stacks,
+      ),
+    ).toBe(true);
   });
 });

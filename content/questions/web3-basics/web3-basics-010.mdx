@@ -1,0 +1,90 @@
+---
+id: web3-basics-010
+slug: eip7702-eoa-code-impact
+title: EIP-7702 对「EOA 无代码」判断的影响
+summary: 解释 7702 委托指示码如何让 EOA 出现代码，以及前端在安全判断、展示与授权确认上需要调整的地方。
+status: review
+difficulty: advanced
+category: web3-basics
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-7702
+  - accounts
+  - delegation
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-7702：为 EOA 设置代码的委托机制（§Abstract、§Specification、§Motivation、§Security Considerations、§Interaction with applications and wallets）"
+    url: https://eips.ethereum.org/EIPS/eip-7702
+  - title: "ethereum.org：交易（§What's a transaction?、§Types of transactions）"
+    url: https://ethereum.org/en/developers/docs/transactions/
+---
+
+## 题目
+
+一个前端用 eth_getCode 是否为空来判断地址是 EOA 还是合约，并把「EOA 才允许直接转账」写进了风控；另一处签名确认页把 7702 授权当成普通交易直接放行。请说明这两处为什么需要调整。
+
+## 考察目标
+
+- 7702 授权列表与委托指示码的结构。
+- eth_getCode 判断在 7702 场景下的局限。
+- 授权确认与撤销路径的展示要求。
+
+## 30 秒回答
+
+EIP-7702 允许 EOA 通过 type-4 交易的授权列表把自身代码设置为指向某个委托地址的指示码，此后该地址在 eth_getCode 下不再为空，但控制权仍在原私钥；委托关系可以被撤销，也可能在委托调用执行失败时保持不变。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】7702 授权通过 type-4 交易中的授权列表提交，条目包含链标识、委托目标地址、nonce 与签名要素（依据：EIP-7702 §Specification）。
+- 【协议保证】授权生效后，账户代码被设置为委托指示码：以 0xef0100 开头并拼接目标地址；读取该账户代码会得到这串指示码，而不是目标合约的代码（依据：EIP-7702 §Specification 的 Delegation indicator）。
+- 【协议保证】执行阶段，指示码会被解析为对目标地址代码的调用，目标合约自身不被修改（依据：EIP-7702 §Specification 的 Behavior）。
+- 【协议保证】委托调用的执行失败不改变委托关系本身，授权仍然有效；撤销需要用户另外发起授权变更（依据：EIP-7702 §Specification 的 Behavior）。
+- 【协议保证】授权目标可以是任意地址，包括恶意合约；规范的安全考量提醒注意授权被撤销以及资产被转走等风险（依据：EIP-7702 §Motivation、§Security Considerations）。
+- 【协议保证】规范的交互说明建议应用不主动引导用户签署 7702 授权，并把支持范围交由钱包决定（依据：EIP-7702 §Interaction with applications and wallets）。
+- 【实现行为】各钱包对 7702 的展示与支持范围不一致，前端应以能力探测与用户确认结果为准（依据：EIP-7702 §Interaction with applications and wallets）。
+- 【工程经验】安全判断把 getCode 结果与委托指示码解析结合：返回以 0xef0100 开头的代码时，将其标记为带委托的 EOA，并在界面上标出委托目标（依据：EIP-7702 §Specification 的 Delegation indicator）。
+- 【工程经验】签名确认页展示授权目标、链、nonce 与撤销入口，减少用户在缺少信息时确认（依据：EIP-7702 §Security Considerations）。
+
+## 常见错误
+
+- 用「代码为空」作为唯一的 EOA 判定（【协议保证】7702 生效后 EOA 也可以带代码，依据：EIP-7702 §Abstract）。
+- 把 7702 授权当作普通调用交易直接确认，未核对委托目标。
+- 把 7702 与 ERC-4337 理解为互斥的两条路线，忽略二者可以组合。
+- 认为委托调用执行失败后授权自动失效（【协议保证】委托关系不因执行失败被清除，依据：EIP-7702 §Specification 的 Behavior）。
+- 界面上没有撤销授权的路径，用户需要回到钱包侧完成撤销。
+
+## 面试官追问
+
+1. 用户在确认页看到一笔「升级」交易，实际却是 7702 授权时，前端可以提前做哪些提示？
+2. 目标地址带有委托指示码，前端如何判断它是否仍由原私钥控制，并把这个结论展示给用户？
+3. 委托调用执行失败但授权仍在，产品上如何避免用户误以为操作已生效？
+4. 应用是否应该提供「启用智能账户」的一键授权入口？请说明理由与取舍。
+
+## 评分标准
+
+### 初级回答
+
+- 能说明 7702 让 EOA 出现代码，且私钥控制权不变。
+- 知道 getCode 非空不再等同于合约账户。
+
+### 中级回答
+
+- 能说明委托指示码的形态与执行期解析方式。
+- 能区分授权生效、执行失败与授权撤销三种状态。
+
+### 高级回答
+
+- 能设计地址类型判定与风险提示的组合逻辑，并说明委托目标的展示方式。
+- 能说明「引导用户授权」与「仅提供撤销」两种产品策略的风险差异。
+
+## 参考资料
+
+- [EIP-7702：为 EOA 设置代码的委托机制（§Abstract、§Specification、§Motivation、§Security Considerations、§Interaction with applications and wallets）](https://eips.ethereum.org/EIPS/eip-7702)
+- [ethereum.org：交易（§What's a transaction?、§Types of transactions）](https://ethereum.org/en/developers/docs/transactions/)

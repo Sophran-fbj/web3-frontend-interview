@@ -1,0 +1,101 @@
+---
+id: web3-basics-008
+slug: account-nonce-two-semantics
+title: 账户 nonce：顺序与重放保护计数器
+summary: 说明 nonce 作为账户级顺序与重放保护计数器的作用，以及交易发送、合约创建与 EIP-7702 授权如何改变它。
+status: review
+difficulty: intermediate
+category: web3-basics
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - nonce
+  - accounts
+  - evm
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: Ethereum Yellow Paper：World State（§4.1）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+  - title: EIP-1474：Remote procedure call specification（§eth_getTransactionCount、§Block Identifier）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-7702：Set Code for EOAs（§Specification 的 Behavior）
+    url: https://eips.ethereum.org/EIPS/eip-7702
+  - title: EIP-161：State trie clearing（§Specification 的 nonce 递增规则）
+    url: https://eips.ethereum.org/EIPS/eip-161
+  - title: ERC-4337：Account Abstraction（§Semi-abstracted Nonce Support）
+    url: https://eips.ethereum.org/EIPS/eip-4337
+---
+
+## 题目
+
+产品要做「加速」与「取消」两笔交易，开发发现有的用户点下去之后两笔都失败；同时代码里用 nonce 大于 0 判断「这是老用户」，把刚创建的合约账户和刚完成有效 EIP-7702 授权的 EOA 都误判成了老用户。请从 nonce 的语义出发解释这两件事。
+
+## 考察目标
+
+- nonce 作为账户级顺序与重放保护计数器的作用。
+- 交易发送、合约创建与 EIP-7702 授权对 nonce 的改变。
+- nonce 在交易替换、加速与取消中的作用。
+- 用 nonce 做用户判断时的边界。
+
+## 30 秒回答
+
+nonce 是账户级的顺序与重放保护计数器：同一账户下，相同 nonce 的交易在一条链上至多有一笔被打包。它并不等同于「已发送交易数」：交易发送者的 nonce 随交易处理递增，合约创建会让新账户的 nonce 在执行初始化代码前置为 1，EIP-7702 的有效授权也会让 authority 的 nonce 加一。读取 nonce 使用 eth_getTransactionCount。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】nonce 是账户状态的字段，用于交易顺序与重放保护；发送者的 nonce 随交易处理递增（依据：EIP-7702 §Specification 的 Behavior：授权列表在发送者 nonce 递增之后处理；EIP-4337 §Semi-abstracted Nonce Support 对顺序与重放保护的描述）。
+- 【协议保证】合约创建时，新账户的 nonce 会在执行初始化代码之前被置为 1（依据：EIP-161 §Specification）。
+- 【协议保证】EIP-7702 处理有效授权时，会将 authority 的 nonce 加一，即使该账户不是外层交易的发送者（依据：EIP-7702 §Specification 的 Behavior 第 9 步）。
+- 【协议保证】同一账户下，相同 nonce 的交易在一条链上至多一笔被打包（依据：EIP-4337 §Semi-abstracted Nonce Support 对交易 nonce 唯一性的描述）。
+- 【协议保证】eth_getTransactionCount 返回指定地址在给定区块条件下的交易计数，区块参数可以是区块号或 latest/pending 等标签（依据：EIP-1474 §eth_getTransactionCount、§Block Identifier）。
+- 【工程经验】pending 视图包含哪些待处理交易取决于节点实现（依据：工程经验，无规范依据）。
+- 【协议保证】nonce 是账户状态的一部分，按账户独立维护；不同账户之间的 nonce 相互独立（依据：Yellow Paper §4.1 World State）。
+- 【工程经验】替换、加速或取消一笔待处理交易时，沿用原交易的 nonce 并提高费用参数，才能进入同一 nonce 的竞争（依据：EIP-1474 §eth_getTransactionCount 的区块参数说明；工程经验）。
+- 【工程经验】读取 nonce 的时机与展示时机分开处理：提交前重新读取一次，可以减少按钮停留期间状态变化带来的冲突（依据：工程经验，无规范依据）。
+- 【工程经验】用 nonce 大于 0 判断「真实活跃用户」并不稳妥：合约账户创建时 nonce 就被置为 1，EOA 的 nonce 也可能被 7702 授权改变；即使账户没有作为外层交易发送者，也可能出现非零 nonce（依据：EIP-161；EIP-7702 §Specification 的 Behavior；工程经验）。
+
+## 常见错误
+
+- 把执行阶段失败理解成 nonce 回退，用原 nonce 重复提交（【工程经验】提交前以链上 nonce 现状为准重新构造交易）。
+- 用 nonce 数值反推账户「创建过多少合约」或「发过多少交易」：合约创建会让 nonce 从 1 起步，EIP-7702 授权也会改变 EOA 的 nonce（【协议保证】依据：EIP-161；EIP-7702 §Specification 的 Behavior）。
+- 跨链或跨账户比较 nonce，把不同维度的计数当作同一进度。
+- 只读 latest 条件下的 nonce 来决定替换交易，忽略待处理交易带来的差异。
+- 把 nonce 当作全局递增的交易 ID 用于对账。
+
+## 面试官追问
+
+1. 用户在钱包里连续提交了两笔交易，其中一笔想取消，nonce 在这一流程中承担什么角色？
+2. 前端读到的 nonce 与钱包内部状态不一致时，你会如何设计提交前的校验？
+3. 把 nonce 管理交给钱包与由 DApp 自行管理，各自适合什么样的业务形态？
+4. 多链应用中 nonce 需要按哪些维度隔离缓存？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 nonce 是账户级的顺序与重放保护计数器。
+- 知道替换交易需要沿用原 nonce。
+
+### 中级回答
+
+- 能说明交易发送、合约创建与 EIP-7702 授权如何改变 nonce，并说明按账户与链隔离的原因。
+- 能说明 pending 与 latest 两种读取结果的差别及其影响。
+
+### 高级回答
+
+- 能设计提交前的 nonce 校验与冲突处理流程，覆盖替换、加速与取消。
+- 能指出用 nonce 做用户标签的误判来源，并给出替代方案。
+
+## 参考资料
+
+- [Ethereum Yellow Paper：World State（§4.1）](https://ethereum.github.io/yellowpaper/paper.pdf)
+- [EIP-1474：Remote procedure call specification（§eth_getTransactionCount、§Block Identifier）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-7702：Set Code for EOAs（§Specification 的 Behavior）](https://eips.ethereum.org/EIPS/eip-7702)
+- [EIP-161：State trie clearing（§Specification 的 nonce 递增规则）](https://eips.ethereum.org/EIPS/eip-161)
+- [ERC-4337：Account Abstraction（§Semi-abstracted Nonce Support）](https://eips.ethereum.org/EIPS/eip-4337)

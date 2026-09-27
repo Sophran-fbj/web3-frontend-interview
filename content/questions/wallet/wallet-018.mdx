@@ -1,0 +1,104 @@
+---
+id: wallet-018
+slug: direct-provider-request-boundaries
+title: 直接调用 provider.request 的适用边界
+summary: 划分直接 request 与数据层、连接层封装的职责边界，给出多钱包环境下 Provider 获取与降级的工程方案。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - eip-1193
+  - viem
+  - abstraction
+stacks:
+  viem: "2.x"
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1193：Ethereum Provider JavaScript API（§request、§Provider Errors）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: viem：Custom Transport 文档（页面级）
+    url: https://viem.sh/docs/clients/custom
+  - title: wagmi：Connectors 文档（页面级）
+    url: https://wagmi.sh/react/api/connectors
+---
+
+## 题目
+
+一个组件里散落着 `window.ethereum.request` 调用：读余额、订阅、签名都走同一个全局对象，在多钱包环境下出现链与账户不一致。请说明直接调用 provider 的适用边界，以及数据读取、签名与发送分别应该交给谁。
+
+## 考察目标
+
+- 划分直接 `request` 与封装层能力的职责边界。
+- 掌握多钱包环境下获取当前 Provider 的方式。
+- 设计能力探测与 4200 降级路径。
+
+## 30 秒回答
+
+`request` 是钱包接口的通用入口，`method` 与参数由对应 RPC 规范定义；钱包未实现的方法以 4200 拒绝，调用方需要处理这一分支。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】`request` 以 `{ method, params }` 结构提交调用，具体方法的语义由对应 RPC 规范定义（依据：EIP-1193 §request）。
+
+【协议保证】钱包不支持某个方法时，以 4200 拒绝，调用方需要处理这一分支（依据：EIP-1193 §Provider Errors）。
+
+【工程经验】读取链上数据走公开客户端：在 viem 中由 public client 承担读取与模拟，避免把读操作与钱包弹窗耦合（依据：viem Custom Transport 文档对 client 与 transport 分工的说明）。
+
+【工程经验】签名与发送使用当前连接对应的 Provider：在 wagmi 中可以通过当前 connector 获取，而不是直接读取全局 `window.ethereum`（依据：wagmi Connectors 文档）。
+
+【工程经验】多钱包环境下始终使用当前连接对象的 Provider，可以让链与账户信息与界面显示保持一致（依据：wagmi Connectors 文档；工程经验）。
+
+【工程经验】钱包特有能力（例如资产添加、权限查询一类方法）适合直接 `request` 调用；调用前做能力探测，并在收到 4200 时进入降级路径（依据：EIP-1193 §Provider Errors；工程经验）。
+
+【工程经验】把 Provider 获取封装为 Hook 或服务，避免组件内散落全局对象访问（依据：工程经验，无规范依据）。
+
+【工程经验】连接切换时清理旧的订阅与监听，避免新旧连接的回调同时写入状态（依据：工程经验，无规范依据）。
+
+【工程经验】混用不同来源的 Provider 会造成链与账户错配；出现不一致时优先收敛到单一来源再排查（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 在组件中直接读取 `window.ethereum`，多钱包环境拿到的是非当前连接的 Provider。
+- 用读写混用的同一条路径承载数据读取，每次读操作都可能触发钱包交互。
+- 忽略 4200 分支，钱包不支持某方法时抛出未处理异常。
+- 连接切换后旧 Provider 的订阅仍在回调，界面状态被旧连接覆盖。
+- 对库已经封装的能力直接手写 `request`，绕过了参数校验与类型检查。
+
+## 面试官追问
+
+1. 哪些方法适合直接 `request`，哪些交给数据层或连接层更合适？
+2. 多钱包环境下如何保证读到的链与账户来自同一个 Provider？
+3. 收到 4200 之后，功能降级与提示文案如何设计？
+4. 如果团队要逐步收敛散落的 `request` 调用，你会怎么规划？
+5. 直接调用底层接口与使用库封装之间，你如何权衡可控性与维护成本？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 `request` 是通用入口，读链上数据与钱包交互是两类路径。
+- 知道未支持的方法会返回 4200。
+
+### 中级回答
+
+- 能说明多钱包环境下应使用当前连接的 Provider 而非全局对象。
+- 能给出能力探测与 4200 降级的处理方式，并指出散落调用的维护问题。
+
+### 高级回答
+
+- 能设计 Provider 获取、能力探测、订阅清理与错误分类的封装方案，并说明与数据层、连接层的边界。
+- 能讨论直接调用底层接口与库封装的取舍，并给出迁移与回归验证计划。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§request、§Provider Errors）](https://eips.ethereum.org/EIPS/eip-1193)
+- [viem：Custom Transport 文档（页面级）](https://viem.sh/docs/clients/custom)
+- [wagmi：Connectors 文档（页面级）](https://wagmi.sh/react/api/connectors)

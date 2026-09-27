@@ -1,0 +1,92 @@
+---
+id: wallet-024
+slug: connector-abstraction
+title: Connector 抽象与连接对象
+summary: 理解 connector 的注册方式与连接对象的字段，避免把地址当成连接的唯一标识。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - connector
+  - abstraction
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：Connectors（§Available Connectors）
+    url: https://wagmi.sh/react/api/connectors
+  - title: wagmi：createConfig（§Parameters 的 connectors、§State、§Connection）
+    url: https://wagmi.sh/react/api/createConfig
+---
+
+## 题目
+
+一位同事把 connector 理解成「window.ethereum 的封装」，认为一个页面只会存在一条连接，还用地址作为连接列表的键。请说明 wagmi 中 connector 抽象与连接对象的正确理解，以及这种建模方式在哪些场景会出问题。
+
+## 考察目标
+
+- connector 在 wagmi 中的角色与注册来源。
+- 连接对象的字段与 config 状态的存储方式。
+- 多连接场景下的标识选择。
+
+## 30 秒回答
+
+在 wagmi 中，connector 是接入方式的封装，通过 createConfig 的 connectors 参数注册，也可以通过 EIP-6963 的多钱包发现能力转换为 injected connector。config 的状态以 connector 的唯一标识为键保存连接，current 指向当前连接，Connection 对象包含 accounts、chainId 与 connector 三个字段。由此可以确认：地址与连接不是一一对应关系，一个页面也可以同时存在多条连接。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】connector 通过 createConfig 的 connectors 参数注册（依据：wagmi createConfig §Parameters 的 connectors）。
+- 【实现行为】multiInjectedProviderDiscovery 默认开启，用 EIP-6963 发现注入 provider 并转换为 injected connector（依据：wagmi createConfig §Parameters 的 multiInjectedProviderDiscovery）。
+- 【实现行为】config 的 connectors 字段由 connectors 参数与 multiInjectedProviderDiscovery 共同决定（依据：wagmi createConfig §Config 的 connectors）。
+- 【实现行为】config.state.connections 是以 connector 唯一标识为键的 Map，config.state.current 指向当前连接的标识（依据：wagmi createConfig §State 的 connections、§current）。
+- 【实现行为】Connection 对象包含 accounts、chainId 与 connector（依据：wagmi createConfig §Connection）。
+- 【实现行为】connectors 入口提供的接入方式包括 injected、metaMask、walletConnect、coinbaseWallet、baseAccount、safe、mock 与 tempoWallet（依据：wagmi Connectors §Available Connectors）。
+- 【工程经验】不要用地址作为连接主键：同一地址可能来自不同 connector，同一 connector 也可能返回多个地址（工程经验，无规范依据）。
+- 【工程经验】讨论「当前连接」时要明确它指的是 config.state.current，还是组件所在上下文提供的连接（工程经验，无规范依据）。
+- 【工程经验】把 connector 等同于 window.ethereum 会忽略多钱包与移动端场景，产品层需要按接入方式分别设计入口（工程经验，无规范依据）。
+
+## 常见错误
+
+- 把 connector 等同于 window.ethereum，忽略 WalletConnect 等非注入接入方式（【实现行为】connectors 入口包含多种接入方式；依据：wagmi Connectors）。
+- 用地址作为连接的唯一标识（【实现行为】connections 以 connector 标识为键；依据：wagmi createConfig §State）。
+- 假设一个页面只会存在一条连接（【实现行为】state.connections 是 Map，可以保存多条连接；依据：wagmi createConfig §State）。
+- 只读取 config.state.current，忽略页面里可能存在其他 config（【工程经验】）。
+- 自己维护一份连接列表，与 config 状态并存（【工程经验】）。
+
+## 面试官追问
+
+1. 同一地址同时来自 injected 与 WalletConnect 时，UI 应该怎么展示？
+2. 断开当前连接后，current 应该指向哪里？空状态如何呈现？
+3. 用地址作为连接主键会在哪些场景出错？
+4. 应用需要同时支持桌面扩展与移动端扫码，connector 层如何组织？
+5. 多连接模型与单一账户模型相比，复杂度集中在哪里？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 connector 在 createConfig 中注册，可以从 connectors 入口导入。
+- 知道连接对象包含账户、链与 connector 信息。
+
+### 中级回答
+
+- 能说明 state.connections 以 connector 标识为键，current 指向当前连接。
+- 能指出地址与连接不是一一对应关系。
+
+### 高级回答
+
+- 能给出多连接场景下列表渲染、切换与断开的整体建模。
+- 能说明 EIP-6963 自动发现与显式注册对连接列表的影响。
+
+## 参考资料
+
+- [wagmi：Connectors（§Available Connectors）](https://wagmi.sh/react/api/connectors)
+- [wagmi：createConfig（§Parameters 的 connectors、§State、§Connection）](https://wagmi.sh/react/api/createConfig)

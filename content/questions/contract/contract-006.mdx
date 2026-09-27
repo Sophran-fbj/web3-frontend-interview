@@ -1,0 +1,93 @@
+---
+id: contract-006
+slug: abi-type-mapping-pitfalls
+title: ABI 类型与前端类型的映射陷阱
+summary: 说明整数、地址、动态类型与 tuple 在编解码上的差异，以及前端借助 ABI 推导类型时仍要处理的运行时边界。
+status: review
+difficulty: intermediate
+category: contract
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - abi
+  - typescript
+  - encoding
+stacks: { viem: "2.x" }
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: "Solidity 文档：ABI 规范（§Function Selector、§Type Encoding、§JSON）"
+    url: https://docs.soliditylang.org/en/latest/abi-spec.html
+  - title: "viem：parseAbi（§Parameters、§Returns）"
+    url: https://viem.sh/docs/abi/parseAbi
+  - title: "ethereum.org：与智能合约交互（页面级：读调用与写调用）"
+    url: https://ethereum.org/en/developers/docs/smart-contracts/interacting/
+---
+
+## 题目
+
+一个面板读取代币总量时把 uint256 交给 Number，在大额数值上出现精度丢失；另一个页面按 bytes20 手工编码地址字段，合约解出的参数与预期不同。请说明 ABI 编解码的规则与前端类型映射的注意点。
+
+## 考察目标
+
+- ABI 静态类型与动态类型的编码差异。
+- uint/int、address、tuple 在前端侧的类型映射。
+- 类型推导与运行时解码失败的处理。
+
+## 30 秒回答
+
+ABI 规定了函数选择器与参数编码：选择器取自函数签名 keccak256 哈希的前四字节，静态类型按字长直接编码，动态类型以偏移与长度描述；地址在编码中占一个 32 字节字，整数按 256 位字处理。返回值按 ABI 结构解码。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】函数选择器是函数签名的 keccak256 哈希的前四个字节，签名形如 name(type1,type2)（依据：Solidity 文档 ABI 规范 §Function Selector）。
+- 【协议保证】参数编码按键值顺序拼接：静态类型各占整数个字，动态类型（string、bytes、数组等）以偏移与长度描述，解码需要依据 ABI 结构逐层还原（依据：Solidity 文档 ABI 规范 §Type Encoding）。
+- 【协议保证】地址类型在编码中占一个 32 字节字，20 字节的地址内容右对齐放置；按 bytes20 处理会得到不同的字节布局（依据：Solidity 文档 ABI 规范 §Type Encoding）。
+- 【协议保证】ABI 的 JSON 描述给出每个函数与事件的输入输出类型，工具据此构造 calldata 并解码返回数据（依据：Solidity 文档 ABI 规范 §JSON）。
+- 【实现行为】viem 的 parseAbi 在类型层把签名转成 ABI 定义，并据此推导 functionName、args 与返回值类型，减少手写 ABI 的偏差（依据：viem parseAbi §Parameters）。
+- 【工程经验】金额与计数全程使用 bigint，不经过 Number 转换；仅在展示时进行格式化（依据：Solidity 文档 ABI 规范 §Type Encoding）。
+- 【工程经验】即使类型推导通过，运行时仍要处理解码失败与数据不符：把失败映射为可读错误并提供重试入口（依据：工程经验，无规范依据）。
+- 【工程经验】tuple 与数组返回值按 ABI 结构解码后再进入视图层，避免在组件里做逐字段手工取数（依据：Solidity 文档 ABI 规范 §Type Encoding）。
+- 【工程经验】读路径的结果展示与写路径的参数构造共用同一份 ABI 定义，减少两处描述不同步带来的偏差（依据：ethereum.org 与智能合约交互页面「读调用与写调用」）。
+
+## 常见错误
+
+- 用 Number 接收 uint256，超出安全整数范围时出现精度丢失（【协议保证】编码层是 256 位整数，依据：Solidity 文档 ABI 规范 §Type Encoding）。
+- 把 address 当 bytes20 编码，得到与合约预期不一致的字节布局。
+- 手写 ABI 与链上实现不一致，解码结果错位。
+- 忽略 tuple 返回值的嵌套结构，直接按扁平数组取值。
+- 只依赖编译期类型推导，缺少运行时解码失败的处理。
+
+## 面试官追问
+
+1. 解码一笔历史交易的回执日志时发现类型对不上，排查顺序是什么？
+2. 前端展示的数值与合约内记录不一致时，如何判断是编码问题还是业务问题？
+3. 使用 parseAbi 的类型推导与维护独立 ABI JSON 文件，维护成本与可靠性取舍是什么？
+4. 对代理合约的实现变更，ABI 类型需要做什么样的兼容处理？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出选择器来自函数签名哈希前四字节。
+- 知道整数类型用 bigint 承载。
+
+### 中级回答
+
+- 能区分静态与动态类型的编码方式，并说明地址字段的字长。
+- 能说明类型推导与运行时校验各自负责的边界。
+
+### 高级回答
+
+- 能设计从 ABI 到视图层的类型映射与解码失败处理方案。
+- 能说明 ABI 版本与实现变更时的校验与回归方式。
+
+## 参考资料
+
+- [Solidity 文档：ABI 规范（§Function Selector、§Type Encoding、§JSON）](https://docs.soliditylang.org/en/latest/abi-spec.html)
+- [viem：parseAbi（§Parameters、§Returns）](https://viem.sh/docs/abi/parseAbi)
+- [ethereum.org：与智能合约交互（页面级：读调用与写调用）](https://ethereum.org/en/developers/docs/smart-contracts/interacting/)

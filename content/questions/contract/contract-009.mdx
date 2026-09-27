@@ -1,0 +1,92 @@
+---
+id: contract-009
+slug: viem-read-simulate-write
+title: viem 的 readContract、simulateContract 与 writeContract
+summary: 说明三个合约方法各自的职责与返回值，以及从模拟到写入再到收据的推荐调用链路和失败处理。
+status: review
+difficulty: intermediate
+category: contract
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - viem
+  - contract
+  - simulate
+stacks: { viem: "2.x" }
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: "viem：readContract（§Parameters、§Returns）"
+    url: https://viem.sh/docs/contract/readContract
+  - title: "viem：simulateContract（§Parameters、§Returns）"
+    url: https://viem.sh/docs/contract/simulateContract
+  - title: "viem：writeContract（§Parameters、§Returns）"
+    url: https://viem.sh/docs/contract/writeContract
+---
+
+## 题目
+
+一个「质押」按钮直接用 readContract 预检，然后把 writeContract 的结果提示为成功；另一个表单在模拟时不带 account，导致权限判断结果与真实执行不同。请说明 viem 三个合约方法各自做什么，以及推荐的调用链路。
+
+## 考察目标
+
+- readContract、simulateContract、writeContract 的职责边界。
+- 模拟在写路径中的作用与参数要求。
+- 从模拟到收据的完整状态链。
+
+## 30 秒回答
+
+合约调用存在读路径与写路径：读路径返回调用结果且不写入链上状态；写路径以交易形式提交，执行结果与所在区块记录在收据中。题面三个方法覆盖读、模拟与提交这三步。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】readContract 执行只读调用并解码返回值，适合展示链上状态（依据：viem readContract §Parameters、§Returns）。
+- 【实现行为】simulateContract 按写路径预演调用，返回 request 与 result：request 可以交给 writeContract 提交，result 是模拟得到的返回值（依据：viem simulateContract §Returns）。
+- 【实现行为】在 simulateContract 中传入 account 会以该地址作为消息发送者参与模拟，从而反映权限与余额相关条件；省略 account 时消息发送者的取值由实现决定（依据：viem simulateContract §Parameters）。
+- 【实现行为】writeContract 通过已连接的账户提交交易并返回交易哈希，调用本身不等待打包（依据：viem writeContract §Returns）。
+- 【工程经验】推荐的链路是 simulate、write、等待收据：模拟阶段暴露可解码的错误，收据阶段确认执行结果（依据：viem simulateContract §Returns、writeContract §Returns）。
+- 【工程经验】模拟结果只是一次预演，链上状态在提交前可能变化，界面需要保留收据阶段的结果校验（依据：工程经验，无规范依据）。
+- 【工程经验】把拿到哈希当作成功会在执行失败时误导用户；界面状态以收据中的状态字段为准（依据：viem writeContract §Returns）。
+- 【工程经验】对同一笔操作重复模拟时使用与提交一致的参数来源，避免两处参数漂移（依据：viem simulateContract §Parameters）。
+
+## 常见错误
+
+- 用 readContract 代替写路径模拟，跳过权限与余额检查（【实现行为】simulateContract 提供写路径预演，依据：viem simulateContract §Parameters）。
+- 模拟不传 account，导致消息发送者不确定。
+- 收到交易哈希就更新本地状态。
+- 忽略模拟错误的可解码信息，只展示一句通用失败提示。
+- 模拟成功后不再校验收据，乐观更新缺少回滚。
+
+## 面试官追问
+
+1. 模拟成功但交易被回滚，可能有哪些原因，前端如何呈现？
+2. 同一笔写操作需要多次提交时，如何保证模拟与提交的参数一致？
+3. 把模拟与提交封装成一个 hook，与分别暴露给业务，取舍是什么？
+4. 批量写操作中，逐笔模拟与批量模拟如何选择？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出三个方法的职责分工。
+- 知道 writeContract 返回的是交易哈希。
+
+### 中级回答
+
+- 能说明模拟阶段传入 account 的意义与影响。
+- 能给出模拟、写入、等待收据的链路及各自失败点。
+
+### 高级回答
+
+- 能设计写路径封装，把模拟错误、用户拒绝与收据失败映射为可操作的界面状态。
+- 能说明模拟结果与真实执行的差距以及兜底校验方案。
+
+## 参考资料
+
+- [viem：readContract（§Parameters、§Returns）](https://viem.sh/docs/contract/readContract)
+- [viem：simulateContract（§Parameters、§Returns）](https://viem.sh/docs/contract/simulateContract)
+- [viem：writeContract（§Parameters、§Returns）](https://viem.sh/docs/contract/writeContract)

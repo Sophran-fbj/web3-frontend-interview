@@ -1,0 +1,98 @@
+---
+id: contract-007
+slug: unknown-contract-interaction
+title: 面对没有 ABI 的合约如何评估与调用
+summary: 从函数选择器与参数编码出发，说明在缺少 ABI 时构造调用、核对目标与降低误调用风险的流程。
+status: review
+difficulty: intermediate
+category: contract
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - abi
+  - reverse-engineering
+  - security
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: Solidity 文档：ABI 规范（§Function Selector、§Argument Encoding）
+    url: https://docs.soliditylang.org/en/latest/abi-spec.html
+  - title: viem：parseAbi（§Parameters、§Returns）
+    url: https://viem.sh/docs/abi/parseAbi
+  - title: ethereum.org：JSON-RPC API（§eth_call）
+    url: https://ethereum.org/en/developers/docs/apis/json-rpc/
+  - title: ethereum.org：与智能合约交互（页面级：读调用与写调用）
+    url: https://ethereum.org/en/developers/docs/smart-contracts/interacting/
+  - title: EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+运营给来一个「质押领取」按钮，指向的合约在区块浏览器上没有验证源码，也没有 ABI 文件；同时另一个页面接入了新上线的合约，但开发把从社区库里猜出的选择器直接当成了函数签名。请说明这两处应当如何评估与落地。
+
+## 考察目标
+
+- 选择器与参数编码在无 ABI 场景下的构造方式。
+- 选择器猜测的可靠边界与验证流程。
+- 未验证合约在读写路径上的风险控制。
+
+## 30 秒回答
+
+calldata 由四字节函数选择器与 ABI 编码后的参数组成，在缺少 ABI 时仍可以构造调用并读取返回数据；选择器来自签名哈希，不同签名可能落到同一个选择器，因此猜测结果需要验证。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】选择器是函数签名 keccak256 的前四字节，参数按 ABI 规则编码后拼接在选择器之后，构成 calldata（依据：Solidity 文档 ABI 规范 §Function Selector、§Argument Encoding）。
+- 【协议保证】签名到选择器的映射并非一一对应：不同的参数类型组合可能得到相同的四字节选择器（依据：Solidity 文档 ABI 规范 §Function Selector）。
+- 【协议保证】eth_call 用于立即执行一次消息调用并返回结果，不提交交易（依据：EIP-1474 §eth_call）。
+- 【实现行为】viem 的 parseAbi 对签名做类型层解析，配合读调用可把返回数据按 ABI 解码，减少手工拼字节带来的错位（依据：viem parseAbi §Parameters）。
+- 【工程经验】遇到没有 ABI 的合约，先找已验证源码、官方文档或已知标准接口的 ABI；找不到时再评估是否手工构造调用（依据：工程经验，无规范依据）。
+- 【工程经验】选择器猜测只作为线索：用多条候选签名分别构造调用，在只读路径上比对结果，再结合源码或事件验证（依据：工程经验，无规范依据）。
+- 【工程经验】写交易前把目标地址、函数选择器、参数与金额转成用户可读摘要，并与实际提交参数同源生成（依据：ethereum.org 与智能合约交互页面「读调用与写调用」）。
+- 【工程经验】对本地区块链做 fork 模拟，观察状态变化与事件，作为提交前的检查手段（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把某个选择器库的猜测结果当作权威签名（【协议保证】同一选择器可能对应多个签名，依据：Solidity 文档 ABI 规范 §Function Selector）。
+- 对未验证合约直接提交写交易。
+- 手工拼接 calldata 时忽略动态类型的偏移与长度。
+- 展示摘要与实际提交使用两套参数来源，造成展示与执行不一致。
+- 只验证只读调用成功，忽略它不能证明写路径的权限与余额条件。
+
+## 面试官追问
+
+1. 只读调用返回成功但写交易失败，可能出在哪一层，如何排查？
+2. 如果怀疑选择器被构造成与常用函数相同，前端可以给用户哪些提示？
+3. 把未验证合约的调用封装成通用组件，与为每个业务单独编写调用，取舍是什么？
+4. 模拟执行通过后，还需要哪些确认步骤才允许用户提交？
+
+## 评分标准
+
+### 初级回答
+
+- 能说明 calldata 的组成与选择器来源。
+- 知道只读调用可以用来预检参数。
+
+### 中级回答
+
+- 能说明选择器猜测的不确定性与验证方式。
+- 能指出写交易前摘要与参数同源的要求。
+
+### 高级回答
+
+- 能设计面向未验证合约的评估流程，覆盖只读验证、模拟与摘要展示。
+- 能说明 fork 模拟与真实执行之间的差距，以及如何降低误调用风险。
+
+## 参考资料
+
+- [Solidity 文档：ABI 规范（§Function Selector、§Argument Encoding）](https://docs.soliditylang.org/en/latest/abi-spec.html)
+- [viem：parseAbi（§Parameters、§Returns）](https://viem.sh/docs/abi/parseAbi)
+- [ethereum.org：JSON-RPC API（§eth_call）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [ethereum.org：与智能合约交互（页面级：读调用与写调用）](https://ethereum.org/en/developers/docs/smart-contracts/interacting/)
+- [EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)

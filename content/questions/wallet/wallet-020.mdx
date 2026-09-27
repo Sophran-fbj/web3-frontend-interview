@@ -1,0 +1,90 @@
+---
+id: wallet-020
+slug: use-connection-status-machine
+title: useConnection 的状态机
+summary: 说明连接状态的取值、派生字段的含义，以及首屏渲染与重连期间的处理方式。
+status: review
+difficulty: beginner
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - connection
+  - status
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：useConnection（§Return Type）
+    url: https://wagmi.sh/react/api/hooks/useConnection
+  - title: wagmi：useSwitchConnection（§Usage）
+    url: https://wagmi.sh/react/api/hooks/useSwitchConnection
+---
+
+## 题目
+
+页面右上角要显示连接状态。实现里用 isConnected 判断是否显示「连接钱包」按钮，结果在自动重连期间按钮闪现，用户点两次触发了重复请求。请说明 useConnection 的状态取值与正确用法。
+
+## 考察目标
+
+- 连接状态的取值与对应布尔字段。
+- 连接相关派生字段在未连接时的可用性。
+- 首屏与重连期间的渲染处理。
+
+## 30 秒回答
+
+useConnection 的 status 有 connecting、reconnecting、connected、disconnected 四个取值，isConnecting/isReconnecting/isConnected/isDisconnected 与之一致；address、chainId 等字段来自当前连接，在连接建立前可能为 undefined。首屏需要区分「正在重连」与「未连接」，避免重连期间展示可点击的连接入口。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】useConnection 的 status 取值为 connecting、reconnecting、connected 与 disconnected（依据：wagmi useConnection §Return Type）。
+- 【实现行为】isConnecting、isReconnecting、isConnected、isDisconnected 是与 status 对应的派生字段（依据：wagmi useConnection §Return Type）。
+- 【实现行为】address、addresses、chainId、chain 与 connector 等字段取自当前连接，在连接未建立时可能为 undefined（依据：wagmi useConnection §Return Type）。
+- 【实现行为】按 status 做类型收窄后，connected 状态下 address 等字段按类型为已定义（依据：wagmi useConnection §Return Type）。
+- 【实现行为】多连接场景下 useConnection 返回当前活动连接，切换活动连接使用 useSwitchConnection（依据：wagmi useSwitchConnection §Usage）。
+- 【工程经验】以 status 而不是地址是否存在作为渲染依据，可以覆盖重连中间态（依据：工程经验，无规范依据）。
+- 【工程经验】把连接入口在 connecting 与 reconnecting 期间置为不可点，减少重复发起连接请求（依据：工程经验，无规范依据）。
+- 【工程经验】断连后清理与旧账户绑定的展示状态，避免页面短暂显示旧地址（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 只判断地址是否存在，把重连中间态渲染成未连接。
+- 重连期间允许重复点击连接入口。
+- 断连后继续用旧地址渲染账户信息或发起读请求。
+- 用自建的 loading 布尔值描述连接状态，与 status 不一致。
+- 多连接场景下忽略当前活动连接对象的切换。
+
+## 面试官追问
+
+1. 用户在多标签页里断开并重新连接，页面状态如何保持一致？
+2. 重连期间用户点了连接按钮，可能出现哪些问题，你会如何规避？
+3. 依赖当前连接的查询在切换连接后数据错位，你会如何定位与修复？
+4. 你会把连接状态同步到服务端会话吗，同步时机与风险是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出四个状态取值与对应布尔字段。
+- 知道连接相关字段在未连接时可能为空。
+
+### 中级回答
+
+- 能说明首屏、重连与断连三种状态下的渲染处理。
+- 能解释为什么不用地址存在与否代替状态判断。
+
+### 高级回答
+
+- 能设计连接状态与业务状态、服务端会话之间的同步边界。
+- 能覆盖多标签页、多连接与快速切换等边界场景的验证方案。
+
+## 参考资料
+
+- [wagmi：useConnection（§Return Type）](https://wagmi.sh/react/api/hooks/useConnection)
+- [wagmi：useSwitchConnection（§Usage）](https://wagmi.sh/react/api/hooks/useSwitchConnection)

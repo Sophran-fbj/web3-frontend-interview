@@ -1,0 +1,92 @@
+---
+id: wallet-031
+slug: safe-app-connector
+title: Safe connector 与 Safe App 环境
+summary: 梳理 Safe connector 的依赖与参数，并把多签确认节奏纳入状态设计。
+status: review
+difficulty: advanced
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - safe
+  - multisig
+  - connector
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：safe connector（§Install、§Parameters）
+    url: https://wagmi.sh/react/api/connectors/safe
+  - title: wagmi：Connectors（§Available Connectors）
+    url: https://wagmi.sh/react/api/connectors
+---
+
+## 题目
+
+一个 DApp 接入了 Safe connector。上线后有用户反馈：点击「提交」后交易长时间没有出现，团队以为是接口故障，反复提示重试。请说明 Safe 环境下的连接与交易节奏，以及前端需要区分哪些预期。
+
+## 考察目标
+
+- Safe connector 的安装要求与参数。
+- Safe App 环境与普通单签钱包场景的差异。
+- 交易确认节奏与数据读取路径的边界。
+
+## 30 秒回答
+
+wagmi 的 safe connector 面向 Safe Apps SDK，文档要求安装 @safe-global/safe-apps-provider 与 @safe-global/safe-apps-sdk，并列出 allowedDomains、debug 与 shimDisconnect 三个参数，其中 shimDisconnect 默认 false。它与其他接入方式并列出现在 connectors 入口中。在 Safe 环境里，交易的确认节奏与普通单签钱包不同，界面需要按阶段展示状态，而不是把「提交完成」当成交易已经在链上执行。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】safe connector 面向 Safe Apps SDK（依据：wagmi safe connector 页面标题与 §Import）。
+- 【实现行为】使用该 connector 需要安装 @safe-global/safe-apps-provider 与 @safe-global/safe-apps-sdk，页面给出了版本范围（依据：wagmi safe connector §Install）。
+- 【实现行为】参数包括 allowedDomains（RegExp 数组）、debug（布尔值）与 shimDisconnect（布尔值，默认 false）（依据：wagmi safe connector §Parameters 的 allowedDomains、debug、shimDisconnect）。
+- 【实现行为】connectors 入口把 safe 与其他接入方式并列提供（依据：wagmi Connectors §Available Connectors）。
+- 【工程经验】Safe 环境中的账户由智能账户承载，交易要经过签名与阈值确认，因此从提交到链上出现之间存在等待环节（工程经验，无规范依据）。
+- 【工程经验】按阶段展示状态：等待钱包确认、等待阈值签名、已提交待执行；把这些环节合并成一个「处理中」会掩盖真实进度（工程经验，无规范依据）。
+- 【工程经验】不要用普通单签钱包的节奏做超时与重试判断，否则容易向用户发出误导性的失败提示（工程经验，无规范依据）。
+- 【工程经验】读取链上数据仍走普通 RPC 流程，连接方式不改变读取路径（工程经验，无规范依据）。
+- 【工程经验】allowedDomains 用于限定允许嵌入的宿主域名，部署环境变化时要同步核对（依据：wagmi safe connector §Parameters 的 allowedDomains；工程经验）。
+
+## 常见错误
+
+- 假设用户都是单签账户，按一次确认即完成的流程设计界面（【工程经验】）。
+- 用普通交易的超时节奏判断 Safe 交易失败（【工程经验】）。
+- 忘记安装 Safe Apps 相关依赖（【实现行为】safe connector 的 §Install 列出了依赖；依据：wagmi safe connector §Install）。
+- 把「已提交」提示成「已执行」（【工程经验】）。
+- allowedDomains 与部署域名不匹配导致连接异常（【实现行为】该参数用于域名限制；依据：wagmi safe connector §Parameters）。
+
+## 面试官追问
+
+1. 交易长时间没有变化时，界面如何区分「等待签名」与「发生异常」？
+2. Safe 环境下的「取消」应该怎么设计？
+3. 读取余额与读取交易状态，路径与其他钱包有何不同？
+4. 接入 Safe 与接入普通多签钱包，架构上有哪些差异？
+5. shimDisconnect 在 Safe 场景下默认 false，这对产品意味着什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 safe connector 面向 Safe Apps SDK，需要安装对应依赖。
+- 知道 Safe 交易的确认节奏与普通钱包不同。
+
+### 中级回答
+
+- 能说明三个参数的作用与默认值。
+- 能按阶段设计交易状态展示，区分等待签名与等待执行。
+
+### 高级回答
+
+- 能说明多签环境下的超时、重试与取消设计，并覆盖域名限制配置。
+- 能说明连接方式与数据读取路径的关系，避免把两者混为一谈。
+
+## 参考资料
+
+- [wagmi：safe connector（§Install、§Parameters）](https://wagmi.sh/react/api/connectors/safe)
+- [wagmi：Connectors（§Available Connectors）](https://wagmi.sh/react/api/connectors)

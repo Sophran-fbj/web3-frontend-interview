@@ -1,0 +1,125 @@
+---
+id: contract-021
+slug: use-read-contracts-allow-failure
+title: useReadContracts 的批量读与部分失败
+summary: 说明批量读的聚合方式、allowFailure 的默认值与逐项判断，以及 Multicall3 聚合方法的差异。
+status: review
+difficulty: intermediate
+category: contract
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - multicall
+  - partial-failure
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：useReadContracts（§allowFailure、§batchSize）
+    url: https://wagmi.sh/react/api/hooks/useReadContracts
+  - title: viem：Multicall（§allowFailure）
+    url: https://viem.sh/docs/contract/multicall
+  - title: Multicall3：aggregate 与 aggregate3（页面级）
+    url: https://github.com/mds1/multicall
+---
+
+## 题目
+
+一个代币列表页要同时读取多个代币的余额与元数据。上线后出现两种问题：某个代币的读取会 revert，结果整个列表变空白；另一个页面则相反，部分失败被静默吞掉，用户看到余额显示为 0。请说明 useReadContracts 的行为与正确的处理方式。
+
+## 考察目标
+
+- 批量读的聚合方式与默认行为。
+- allowFailure 的默认值与逐项判断。
+- calldata 体积与聚合方法的差异。
+
+## 30 秒回答
+
+useReadContracts 会把 contracts 数组中的多项聚合成尽量少的调用，默认使用 Multicall3 地址；allowFailure 默认为 true，单个子调用 revert 时整体不抛错，而是在结果数组里标记失败项，因此 UI 需要逐项判断；把 allowFailure 设为 false 时任一失败会让整体失败。batchSize 默认 1024 字节，用于限制单次聚合的 calldata 体积。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】contracts 数组中的多项会被聚合成尽量少的调用，默认走 Multicall3 地址（依据：wagmi useReadContracts §Usage、§multicallAddress）。
+- 【实现行为】allowFailure 默认为 true，子调用 revert 时整体不抛错，结果数组对应项带有失败标记（依据：wagmi useReadContracts §allowFailure；viem multicall §allowFailure）。
+- 【实现行为】allowFailure 设为 false 时，任一子调用失败导致整体失败（依据：wagmi useReadContracts §allowFailure；viem multicall §allowFailure）。
+- 【实现行为】Multicall3 的 aggregate 与 aggregate3 对失败的处理不同：aggregate3 支持逐项标记失败并返回结果，aggregate 在任一子调用失败时整体回滚（依据：Multicall3 仓库文档，页面级）。
+- 【实现行为】batchSize 默认 1024 字节，用于限制单次聚合的 calldata 体积，避免超出 RPC 对 calldata 的限制（依据：wagmi useReadContracts §batchSize）。
+- 【工程经验】allowFailure 为 true 时逐项判断 status 后再取 result，避免把失败项的 undefined 渲染成 0（依据：工程经验，无规范依据）。
+- 【工程经验】业务上缺一不可的一组读取把 allowFailure 设为 false，让失败可见并进入整体错误态（依据：wagmi useReadContracts §allowFailure；工程经验）。
+- 【工程经验】列表规模较大时配合分页或分批读取，并让失败项以局部降级呈现（依据：工程经验，无规范依据）。
+
+## 示例代码
+
+```ts
+// 省略上下文：abi 与代币地址来自项目内的配置，展示层组件未展开。
+const { data } = useReadContracts({
+  contracts: [
+    {
+      abi: erc20Abi,
+      address: tokenA,
+      functionName: "balanceOf",
+      args: [account],
+    },
+    {
+      abi: erc20Abi,
+      address: tokenB,
+      functionName: "balanceOf",
+      args: [account],
+    },
+  ],
+  allowFailure: true,
+  query: { enabled: Boolean(account) },
+});
+
+data?.forEach((item) => {
+  if (item.status === "failure") {
+    // 该项读取失败：展示兜底内容，避免把 undefined 渲染成 0。
+    return;
+  }
+  // item.result 仅在 status 为 success 时可用。
+});
+```
+
+## 常见错误
+
+- allowFailure 为 true 时直接读 result，得到 undefined 后渲染成 0。
+- 把列表页的局部失败整块按总失败处理。
+- 忽略 batchSize 与 RPC 对 calldata 体积的限制。
+- 用返回顺序以外的依据对应结果与请求。
+- 忽略 aggregate 与 aggregate3 在失败语义上的差异，选错聚合调用。
+
+## 面试官追问
+
+1. 列表里某个代币读取失败，界面应该呈现成什么样？
+2. 为什么结果数组的顺序需要与请求逐项对应，如何验证没有错位？
+3. 什么时候你会把 allowFailure 设为 false？
+4. RPC 因 calldata 过大拒绝请求时，你会怎样调整？
+
+## 评分标准
+
+### 初级回答
+
+- 知道批量读会被聚合，allowFailure 默认为 true。
+- 知道需要逐项判断结果。
+
+### 中级回答
+
+- 能说明两种 allowFailure 取值的适用场景与降级展示。
+- 能解释 batchSize 与 calldata 体积限制的关系。
+
+### 高级回答
+
+- 能设计列表页的批量读取、分页与失败隔离方案。
+- 能说明聚合方法差异与聚合服务配置对结果语义的影响。
+
+## 参考资料
+
+- [wagmi：useReadContracts（§allowFailure、§batchSize）](https://wagmi.sh/react/api/hooks/useReadContracts)
+- [viem：Multicall（§allowFailure）](https://viem.sh/docs/contract/multicall)
+- [Multicall3：aggregate 与 aggregate3（页面级）](https://github.com/mds1/multicall)

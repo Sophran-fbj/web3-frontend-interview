@@ -1,0 +1,92 @@
+---
+id: transaction-023
+slug: eip4844-blob-frontend-impact
+title: blob 交易对前端的可见影响
+summary: 说明 blob 交易的数据与费用特征、收据中多出的字段，以及展示与排查时的注意点。
+status: review
+difficulty: advanced
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-4844
+  - blob
+  - l2
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-4844：Shard Blob Transactions（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-4844
+  - title: ethereum.org：Transactions（§Typed Transaction Envelope）
+    url: https://ethereum.org/en/developers/docs/transactions/
+  - title: EIP-2718：Typed Transaction Envelope（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-2718
+---
+
+## 题目
+
+用户在一条 L2 上完成操作后，发现费用明细里有一项与数据相关的支出，且收据里出现了此前没见过的字段。请解释这类交易的构成，并说明前端在展示与对账时需要注意什么。
+
+## 考察目标
+
+- blob 交易的数据特征与 EVM 可见范围。
+- 费用构成与收据字段的变化。
+- 前端解析与展示的容错处理。
+
+## 30 秒回答
+
+携带 blob 的交易属于类型化交易的一种，其载荷包含与 blob 相关的字段。blob 数据不进入 EVM 执行状态，EVM 侧看到的是承诺值；这类交易有独立的费用项，收据中也会记录与之相关的用量。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】EIP-4844 定义了携带 blob 的交易，其字段包括版本化的 blob 哈希与 blob 费用上限（依据：EIP-4844 §Specification 的 blob 字段定义）
+- 【协议保证】blob 数据不进入 EVM 状态，EVM 侧以承诺值的形式引用它，因此它不作为状态对象被读取（依据：EIP-4844 §Specification）
+- 【协议保证】这类交易的费用包含与 blob 用量相关的部分，收据中会记录相关字段用于对账（依据：EIP-4844 §Specification）
+- 【协议保证】交易类型由类型化信封的前缀区分，客户端按类型解析载荷（依据：EIP-2718 §Specification）。
+- 【工程经验】这类交易的主要使用场景是汇总层向底层提交数据，普通业务页面直接构造它的需求较少（依据：工程经验，无规范依据）
+- 【工程经验】费用展示与对账时，把执行部分与数据相关部分分开列出，比给出一个总数更容易让用户理解（依据：工程经验，无规范依据）
+- 【工程经验】收据中新增字段的解析与展示需要按节点实现验证；遇到未知字段时保留原始数据而不是静默丢弃（依据：实现差异，无对应文档依据）
+- 【工程经验】当依赖的数据读取路径拿不到 blob 内容时，界面应给出明确的降级说明，而不是显示空值（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 把 blob 数据当成可以按状态长期读取的链上存储（依据：EIP-4844 §Specification 对 EVM 可见范围的描述）
+- 用执行部分费用近似整笔交易的成本（依据：EIP-4844 §Specification 的费用字段）
+- 假设每条链都接受这类交易类型（依据：ethereum.org Transactions §Typed Transaction Envelope）
+- 在前端自行拼接这类交易的载荷（依据：工程经验，无规范依据）
+- 收据解析遇到未知字段时直接失败，导致整笔交易显示异常（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 用户问费用里为什么有一项与数据相关，你怎么解释？
+2. 读取 blob 内容的路径不可用时，界面如何设计降级？
+3. 前端要不要支持构造这类交易，依据是什么？
+4. 收据字段随交易类型变化，你的解析与类型定义怎么设计？
+
+## 评分标准
+
+### 初级回答
+
+- 知道这类交易携带 blob 相关字段。
+- 知道 blob 不属于执行状态的一部分。
+
+### 中级回答
+
+- 能把数据相关费用与执行费用分开说明。
+- 知道收据字段随交易类型不同，需要容错解析。
+
+### 高级回答
+
+- 能设计兼容多种交易类型的收据解析与费用展示方案。
+- 能说明数据读取路径不可用时的降级与告警策略。
+
+## 参考资料
+
+- [EIP-4844：Shard Blob Transactions（§Specification）](https://eips.ethereum.org/EIPS/eip-4844)
+- [ethereum.org：Transactions（§Typed Transaction Envelope）](https://ethereum.org/en/developers/docs/transactions/)
+- [EIP-2718：Typed Transaction Envelope（§Specification）](https://eips.ethereum.org/EIPS/eip-2718)

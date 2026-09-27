@@ -1,0 +1,93 @@
+---
+id: transaction-018
+slug: reorg-detection-for-receipt
+title: 已成功的交易被重组回滚的检测
+summary: 说明如何用收据字段复查交易位置、如何区分重组与替换，以及检测到回滚后各层的处理顺序。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - reorg
+  - receipt
+  - debugging
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：useWaitForTransactionReceipt（§Parameters 的 onReplaced）
+    url: https://wagmi.sh/react/api/hooks/useWaitForTransactionReceipt
+  - title: ethereum.org：JSON-RPC（§eth_getTransactionReceipt）
+    url: https://ethereum.org/en/developers/docs/apis/json-rpc/
+  - title: EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+一个 NFT 铸造页面在交易成功后立即发放了积分。几分钟后用户反馈链上查不到那笔交易。请说明这类情况如何被检测出来，以及检测到之后各层应该做什么。
+
+## 考察目标
+
+- 收据字段在复查中的用途。
+- 重组与同 nonce 替换的区别。
+- 链下业务动作的回滚与补偿。
+
+## 30 秒回答
+
+收据记录的是某个区块上的执行结果，其中包含所在区块的标识；当链上区块组织发生变化时，同一笔交易的收据位置可能改变，按哈希查询也可能返回空结果。因此「看到过一次成功的收据」与「这笔交易已经稳定」是两件事。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】收据中包含所在区块的标识字段（依据：EIP-1474 §eth_getTransactionReceipt）。
+- 【协议保证】交易尚未被打包时，按哈希查询收据返回空结果（依据：EIP-1474 §eth_getTransactionReceipt）。
+- 【工程经验】把首次拿到的区块标识保存下来，并在后续复查中比对，可以识别交易被换到其他区块的情形（依据：工程经验，无规范依据）
+- 【工程经验】复查应设上限：确认数或最终性达到预设条件后停止轮询，避免长期占用请求配额（依据：工程经验，无规范依据）
+- 【实现行为】wagmi 的等待收据 Hook 支持替换检测，替换回调会给出替换原因与前后两笔交易（依据：wagmi useWaitForTransactionReceipt §Parameters 的 onReplaced）
+- 【工程经验】把「链上重组」与「同 nonce 替换」分开处理：前者需要回滚基于该交易做出的链下判断，后者需要切换到新哈希继续跟踪（依据：工程经验，无规范依据）
+- 【工程经验】已经下发的业务动作（发放积分、开通权限）在检测到回滚时应进入补偿流程，而不是仅修改展示文案（依据：工程经验，无规范依据）
+- 【工程经验】复查请求可能落到状态滞后的节点上；选择可信的读取源并保留多源对比能力，可以减少误判（依据：节点实现差异，无对应文档依据）
+
+## 常见错误
+
+- 收到一次成功收据后不再复查（依据：ethereum.org JSON-RPC §eth_getTransactionReceipt 只描述查询时刻的结果）
+- 只判断收据是否存在，不比对区块标识（依据：工程经验，无规范依据）
+- 把链上重组与替换混为一谈，导致重复发放或丢单（依据：wagmi useWaitForTransactionReceipt §Parameters 的 onReplaced）
+- 界面回滚了，链下记录与已发放权益没有回滚（依据：工程经验，无规范依据）
+- 用单个节点的结果作为唯一判据，出现分歧时缺少核对手段（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 你会如何判断一笔曾经成功的交易已经被链上重组？
+2. 检测到回滚后，界面、缓存与链下任务的处理顺序是什么？
+3. 复查频率与请求量之间如何权衡？
+4. 从用户视角看，替换交易与链上重组有什么区别？
+
+## 评分标准
+
+### 初级回答
+
+- 知道收据带有区块标识，交易位置会随链上情况改变。
+- 知道收据为空与执行失败不是一回事。
+
+### 中级回答
+
+- 能用保存的区块标识复查交易位置变化。
+- 能区分替换与链上重组并说明处理差异。
+
+### 高级回答
+
+- 能设计包含复查上限、替换处理与链下补偿的组合方案。
+- 能说明多源读取下的误判处理与告警策略。
+
+## 参考资料
+
+- [wagmi：useWaitForTransactionReceipt（§Parameters 的 onReplaced）](https://wagmi.sh/react/api/hooks/useWaitForTransactionReceipt)
+- [ethereum.org：JSON-RPC（§eth_getTransactionReceipt）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)

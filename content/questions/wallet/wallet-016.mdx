@@ -1,0 +1,102 @@
+---
+id: wallet-016
+slug: no-window-ethereum-fallback
+title: 没有 window.ethereum 时的检测与降级设计
+summary: 说明 window.ethereum 的规范地位与多钱包发现机制，设计没有可用 Provider 时的检测、降级与只读路径。
+status: review
+difficulty: beginner
+category: wallet
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - eip-1193
+  - eip-6963
+  - fallback
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1193：Ethereum Provider JavaScript API（§Abstract）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: EIP-6963：多注入钱包发现（§Motivation、§Provider Info、§Window Events）
+    url: https://eips.ethereum.org/EIPS/eip-6963
+  - title: wagmi：Connect Wallet 指南（页面级）
+    url: https://wagmi.sh/react/guides/connect-wallet
+---
+
+## 题目
+
+用户在移动端浏览器打开 DApp，页面检测不到 `window.ethereum`，直接白屏。请说明 `window.ethereum` 的规范地位、多钱包场景下的发现机制，以及没有可用 Provider 时的检测与降级设计。
+
+## 考察目标
+
+- 理解 `window.ethereum` 的历史约定属性与 EIP-6963 的发现机制。
+- 设计考虑异步注入的 Provider 检测逻辑。
+- 给出没有 Provider 时的替代路径与只读模式。
+
+## 30 秒回答
+
+`window.ethereum` 是历史约定，不由规范强制；EIP-1193 关注的是 Provider 接口本身。多个钱包扩展各自注入 provider 时，后注入者可能覆盖先注入者，EIP-6963 通过 window 事件公布与请求 provider 信息，detail 中包含 `rdns`、`uuid`、`name`、`icon`。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】`window.ethereum` 属于历史约定，EIP-1193 规范的是 Provider 接口本身，而不是它挂在哪个全局字段上（依据：EIP-1193 §Abstract 的历史说明）。
+
+【协议保证】在多个钱包各自注入 provider 的环境里，后注入者可能覆盖先注入者，页面可能拿到与用户预期不同的钱包对象（依据：EIP-6963 §Motivation）。
+
+【协议保证】EIP-6963 通过 window 事件公布 provider 信息并支持主动请求，公告 detail 包含 `rdns`、`uuid`、`name`、`icon`（依据：EIP-6963 §Provider Info、§Window Events）。
+
+【工程经验】检测 Provider 时要考虑注入时机：扩展注入可能晚于页面脚本执行，单次同步判断得到的结论未必稳定（依据：EIP-6963 §Motivation 描述的问题；工程经验）。
+
+【工程经验】优先通过 EIP-6963 的公告事件发现可用钱包，`window.ethereum` 作为兜底路径（依据：工程经验，无规范依据）。
+
+【工程经验】没有可用 Provider 时提供替代连接方式（例如 WalletConnect 类连接器）或只读浏览模式，避免白屏（依据：wagmi Connect Wallet 指南）。
+
+【工程经验】在使用连接库的项目中，通过连接器列表渲染钱包选项，并展示各连接器自身的可用状态（依据：wagmi Connect Wallet 指南）。
+
+【工程经验】避免在模块顶层直接访问 `window`，把检测放到客户端生命周期内执行（依据：工程经验，无规范依据）。
+
+【工程经验】把「没有 Provider」与「没有授权」当作两个状态分别处理：前者需要替代路径，后者需要发起授权（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 在模块顶层访问 `window.ethereum`，服务端渲染或构建阶段直接报错。
+- 认为 `window.ethereum` 在浏览器环境中普遍存在，页面在没有钱包时白屏。
+- 把「没有 Provider」与「没有授权」混为一谈，提示文案误导用户。
+- 只在桌面扩展环境测试，忽略移动端浏览器与钱包内置浏览器。
+- 检测一次之后就固定结论，延迟注入的钱包无法被发现。
+
+## 面试官追问
+
+1. 扩展注入晚于页面脚本时，界面应如何从「未检测到钱包」过渡到「钱包可用」？
+2. 多个钱包都注入 provider 时，如何让用户选择并拿到对应的 provider？
+3. 只读模式下哪些功能可以保留，哪些操作需要提示连接？
+4. 移动端浏览器与钱包内置浏览器的检测路径有什么差异？
+5. 如果项目使用连接库，你会如何组织发现、连接与断开的生命周期？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 `window.ethereum` 是历史约定，不是规范的强制要求。
+- 知道没有 Provider 时页面应给出替代路径而不是白屏。
+
+### 中级回答
+
+- 能说明多钱包覆盖问题与 EIP-6963 的发现机制。
+- 能给出考虑异步注入的检测逻辑，并区分「无 Provider」与「未授权」。
+
+### 高级回答
+
+- 能设计发现、兜底与只读模式共存的连接入口，并说明各状态下的界面行为。
+- 能讨论检测时机、SSR 兼容与体验取舍，并给出跨环境的验证方案。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§Abstract）](https://eips.ethereum.org/EIPS/eip-1193)
+- [EIP-6963：多注入钱包发现（§Motivation、§Provider Info、§Window Events）](https://eips.ethereum.org/EIPS/eip-6963)
+- [wagmi：Connect Wallet 指南（页面级）](https://wagmi.sh/react/guides/connect-wallet)

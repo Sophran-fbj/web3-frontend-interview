@@ -1,0 +1,95 @@
+---
+id: transaction-015
+slug: evm-atomicity-and-revert-state
+title: 失败交易的费用与状态回滚
+summary: 厘清执行失败时哪些结果被撤销、哪些成本照常结算，以及链下系统应如何依据收据对账。
+status: review
+difficulty: advanced
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - evm
+  - atomicity
+  - revert
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：Gas（§What is gas?、§What is the gas limit?）
+    url: https://ethereum.org/en/developers/docs/gas/
+  - title: ethereum.org：Transactions（§Transaction lifecycle）
+    url: https://ethereum.org/en/developers/docs/transactions/
+  - title: EIP-140：REVERT instruction（§Abstract、§Motivation）
+    url: https://eips.ethereum.org/EIPS/eip-140
+  - title: EIP-1559：Fee market change（§Specification、§Backwards Compatibility）
+    url: https://eips.ethereum.org/EIPS/eip-1559
+---
+
+## 题目
+
+一笔 DeFi 交易在钱包里显示失败，用户认为「失败了就不该收费」。请说明执行失败时链上发生了什么、费用如何结算，以及后端服务应当如何判断这笔交易的结果。
+
+## 考察目标
+
+- 执行失败时状态变化与事件记录的处理方式。
+- 失败交易的成本结算口径。
+- 链下系统依据什么对账。
+
+## 30 秒回答
+
+交易执行失败时，该交易造成的状态变化与事件记录会被回滚，而执行过程中消耗的 gas 仍按实际用量结算。链上状态与费用是两个不同层面的事实，链下系统需要以收据记录的执行结果作为对账依据。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】交易执行触发回滚或耗尽 gas 时，状态变更被撤销，执行结果记为失败（依据：EIP-140 §Abstract；EIP-1559 §Specification）。
+- 【协议保证】执行消耗的 gas 用于支付计算与数据资源，失败不返还已消耗部分（依据：EIP-140 §Motivation；EIP-1559 §Specification）。
+- 【协议保证】一笔交易内部的状态变化作为整体回滚，包括已完成的部分调用（依据：EIP-140 §Abstract 对 roll back all state changes 的描述）。
+- 【协议保证】回滚会丢弃该执行中产生的日志，因此失败交易不能依赖事件日志判断原因（依据：EIP-140 §Motivation：reverting an EVM execution means that all changes, including LOGs, are lost）。
+- 【协议保证】交易在未被打包时查询收据得到空结果；被打包后由收据记录执行结果（依据：EIP-1474 §eth_getTransactionReceipt）。
+- 【工程经验】链下系统在下发依赖交易的任务时，以收据中的执行结果作为推进条件，而不是以提交成功、广播成功或界面提示作为依据（依据：工程经验，无规范依据）
+- 【工程经验】提交之前先做一次模拟，可以在多数情况下提前暴露确定性的失败；模拟结果对应某一区块状态，不能替代链上结果（依据：工程经验，无规范依据）
+- 【工程经验】把「执行失败」与「未能上链」分开建模，链下重试策略与用户提示都会更清晰（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 把回滚理解成「这笔交易没有代价」，忽略已经发生的 gas 消耗（依据：ethereum.org Gas §What is gas?）
+- 用失败交易的事件日志定位原因（依据：ethereum.org Gas §What is the gas limit? 对回滚的描述）
+- 链下数据库在收到执行结果之前就写入业务状态，缺少对账与补偿（依据：工程经验，无规范依据）
+- 把模拟通过当成链上执行成功的依据（依据：工程经验，无规范依据）
+- 把 gas 耗尽与合约主动回滚混为一谈，排查方向偏离（依据：ethereum.org Gas §What is the gas limit?）
+
+## 面试官追问
+
+1. 交易执行失败之后，用户此前的授权与余额处于什么状态？
+2. 如果链下任务依赖这笔交易的结果，你会如何设计状态推进与补偿？
+3. 模拟通过但上链仍然失败，可能来自哪些条件变化？
+4. gas 耗尽与合约主动回滚，在用户提示与排查上有什么不同？
+
+## 评分标准
+
+### 初级回答
+
+- 知道失败交易的执行结果被回滚。
+- 知道已消耗的 gas 仍然会被结算。
+
+### 中级回答
+
+- 能把状态回滚与费用结算分开说明。
+- 知道链下应以收据中的执行结果推进业务状态。
+
+### 高级回答
+
+- 能给出「模拟 + 收据确认 + 链下对账与补偿」的组合方案。
+- 能说明该方案在节点异常、重组与多笔关联交易下的边界。
+
+## 参考资料
+
+- [ethereum.org：Gas（§What is gas?、§What is the gas limit?）](https://ethereum.org/en/developers/docs/gas/)
+- [ethereum.org：Transactions（§Transaction lifecycle）](https://ethereum.org/en/developers/docs/transactions/)
+- [EIP-140：REVERT instruction（§Abstract、§Motivation）](https://eips.ethereum.org/EIPS/eip-140)
+- [EIP-1559：Fee market change（§Specification、§Backwards Compatibility）](https://eips.ethereum.org/EIPS/eip-1559)

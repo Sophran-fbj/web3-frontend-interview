@@ -1,0 +1,104 @@
+---
+id: wallet-019
+slug: eip2255-permissions-model
+title: EIP-2255 权限模型与连接授权撤销
+summary: 用权限对象模型解释连接、授权与撤销的关系，给出前端在撤销与支持度差异下的状态处理方案。
+status: review
+difficulty: advanced
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-2255
+  - permissions
+  - wallet
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-2255：Wallet Permissions System（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-2255
+  - title: EIP-1102：eth_requestAccounts 授权（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-1102
+  - title: MetaMask Connect：EVM JSON-RPC API（页面级）
+    url: https://docs.metamask.io/metamask-connect/evm/reference/json-rpc-api/
+---
+
+## 题目
+
+产品希望在用户首次进入时请求更多权限，并假定「连接过一次就一直有效」；与此同时，钱包侧的授权可能被用户撤销。请说明 EIP-2255 的权限模型与 EIP-1102 的授权原则，并给出前端在授权变化时的状态处理方案。
+
+## 考察目标
+
+- 理解权限对象的请求、查询与生命周期。
+- 说清 `eth_requestAccounts` 与权限模型的关系。
+- 处理授权撤销与钱包支持度差异。
+
+## 30 秒回答
+
+EIP-2255 把钱包能力建模为可请求、可查询的权限对象，对应 `wallet_requestPermissions` 与 `wallet_getPermissions`；EIP-1102 的原则是页面在用户显式授权之前拿不到账户，`eth_requestAccounts` 可以理解为请求 `eth_accounts` 权限。权限由钱包侧维护，用户可以撤销。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】EIP-2255 把钱包能力抽象为权限对象：`wallet_requestPermissions` 用于显式请求，`wallet_getPermissions` 用于查询当前授权（依据：EIP-2255 §Specification）。
+
+【协议保证】`eth_requestAccounts` 可以理解为请求 `eth_accounts` 权限的一种形式（依据：EIP-2255 §Specification、EIP-1102 §Specification）。
+
+【协议保证】EIP-1102 的原则是页面在用户显式授权之前不暴露账户（依据：EIP-1102 §Specification）。
+
+【协议保证】权限状态由钱包侧维护，用户可以撤销；前端通过查询接口或状态变化通知获知当前状态（依据：EIP-2255 §Specification）。
+
+- 【工程经验】撤销授权在页面侧的表现形态因钱包实现而异，应以重新读取的账户与权限状态为准（依据：工程经验，无规范依据）。
+
+【实现行为】各钱包对 `wallet_requestPermissions`、`wallet_getPermissions` 的支持程度不同；以 MetaMask Connect 的 JSON-RPC API 文档为例，可以查看其公开支持的方法集合（依据：MetaMask Connect EVM JSON-RPC API 页面）。
+
+【工程经验】把「连接过」与「当前仍被授权」分开处理：每次进入需要授权的流程前查询一次权限或账户状态（依据：工程经验，无规范依据）。
+
+【工程经验】避免在首次进入时索取超出当前功能的权限；权限请求与用户可见的功能入口对应，便于用户理解（依据：EIP-2255 §Specification 的权限对象化思路；工程经验）。
+
+【工程经验】撤销或账户变化后，清理与该账户绑定的本地缓存，并让服务端会话重新验证（依据：工程经验，无规范依据）。
+
+【工程经验】对不支持权限方法的钱包准备降级路径：退回账户请求流程，并保持界面状态一致（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把「曾经连接成功」当作当前仍被授权的依据。
+- 在首次进入时一次性索取与当前功能无关的权限。
+- 授权撤销后继续用旧地址请求用户私有数据。
+- 服务端会话在撤销后仍然有效，私有接口没有重新校验。
+- 假定权限方法在各类钱包中都可用，忽略支持度差异与降级分支。
+
+## 面试官追问
+
+1. 用户撤销授权后，页面在下一个交互周期应该做哪些检查与清理？
+2. 权限请求与账户请求在体验上如何配合，才能减少重复弹窗？
+3. 钱包不支持权限方法时，功能与提示如何降级？
+4. 服务端会话与钱包授权状态如何对齐，避免已撤销的授权继续访问私有数据？
+5. 如果产品希望一次请求多个权限，你会如何划分权限集合与触发时机？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 `wallet_requestPermissions` 与 `wallet_getPermissions` 的作用。
+- 知道 EIP-1102 的原则是显式授权后才暴露账户。
+
+### 中级回答
+
+- 能解释 `eth_requestAccounts` 与权限请求的关系，并说明授权可以被用户撤销。
+- 能给出撤销后的本地状态清理与服务端重新验证方案。
+
+### 高级回答
+
+- 能设计以权限为中心的连接状态模型，覆盖不支持权限方法的钱包与降级路径。
+- 能讨论权限请求粒度、用户体验与安全边界之间的取舍，并给出验证与回归方式。
+
+## 参考资料
+
+- [EIP-2255：Wallet Permissions System（§Specification）](https://eips.ethereum.org/EIPS/eip-2255)
+- [EIP-1102：eth_requestAccounts 授权（§Specification）](https://eips.ethereum.org/EIPS/eip-1102)
+- [MetaMask Connect：EVM JSON-RPC API（页面级）](https://docs.metamask.io/metamask-connect/evm/reference/json-rpc-api/)

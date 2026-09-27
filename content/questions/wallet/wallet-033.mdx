@@ -1,0 +1,91 @@
+---
+id: wallet-033
+slug: connector-provider-readiness
+title: 连接按钮为什么要先判断 provider 是否可用
+summary: 在客户端用异步方式获取 provider，再据此决定按钮状态，并避开 SSR 首帧的浏览器对象依赖。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - provider
+  - readiness
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：连接钱包指南（§Build Your Own 第 3 步）
+    url: https://wagmi.sh/react/guides/connect-wallet
+  - title: wagmi：injected connector（§Parameters 的 target、unstable_shimAsyncInject）
+    url: https://wagmi.sh/react/api/connectors/injected
+---
+
+## 题目
+
+一个 DApp 的连接按钮在扩展尚未注入时点击就会报错；另一个 DApp 在服务端渲染的首帧就访问 window。请说明为什么要在连接前判断 provider 是否可用，以及判断方式应该怎样设计。
+
+## 考察目标
+
+- provider 就绪判断的时机与手段。
+- 未就绪、未安装与不支持三类状态的处理。
+- SSR 与模块顶层访问浏览器 API 的边界。
+
+## 30 秒回答
+
+wagmi 连接钱包指南给出的做法是在 effect 中异步调用 connector.getProvider()，用返回值决定按钮是否可用；injected connector 还提供 unstable_shimAsyncInject 监听 ethereum#initialized 事件，用来处理扩展延迟注入。这表明「按钮可点」需要以 provider 就绪为前提，而不是点击后再暴露失败。服务端渲染的首帧与模块顶层应当避免访问 window 这类浏览器对象。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】连接钱包指南的 WalletOption 示例在 effect 中 await connector.getProvider()，以返回值为空来判断按钮不可用（依据：wagmi 连接钱包指南 §Build Your Own 第 3 步）。
+- 【实现行为】injected connector 的 target 用于指定 provider，也可以通过 createConfig 的 multiInjectedProviderDiscovery 用 EIP-6963 发现结果提供（依据：wagmi injected §Parameters 的 target）。
+- 【实现行为】unstable_shimAsyncInject 监听 ethereum#initialized 处理延迟注入，传 true 时默认 1000 毫秒（依据：wagmi injected §Parameters 的 unstable_shimAsyncInject）。
+- 【工程经验】按钮状态按「就绪/未就绪」建模：未就绪时禁用并给出原因，而不是保持可点（工程经验，无规范依据）。
+- 【工程经验】「未就绪」与「未安装」是两种状态：前者可以等待注入，后者需要给出安装或替代路径（工程经验，无规范依据）。
+- 【工程经验】对 WalletConnect 这类 connector，「可用」的判断偏向项目配置与网络，而不是页面里是否存在 provider（工程经验，无规范依据）。
+- 【工程经验】首帧渲染与模块顶层避免访问 window；用 effect 或客户端组件边界承载这类判断（工程经验，无规范依据）。
+- 【工程经验】没有可用钱包时提供替代路径，避免用户停在不可用界面（工程经验，无规范依据）。
+
+## 常见错误
+
+- 模块顶层同步访问 window.ethereum（【工程经验】SSR 或预渲染环境下会缺少该对象）。
+- 扩展尚未注入就判定「未安装」（【实现行为】unstable_shimAsyncInject 用于等待异步注入；依据：wagmi injected §unstable_shimAsyncInject）。
+- 按钮保持可点，只在点击后报错（【实现行为】指南示例用 getProvider() 的结果控制可用状态；依据：wagmi Connect Wallet 指南 §Build Your Own）。
+- 把 WalletConnect 的可用性判断简化成 provider 是否存在（【工程经验】）。
+- 缺少降级路径，无钱包用户停在空白或报错页（【工程经验】）。
+
+## 面试官追问
+
+1. getProvider() 返回空值时，界面上应该展示什么？
+2. 延迟注入与未安装如何区分，等待多久合适？
+3. WalletConnect 的「就绪」判断包含哪些配置项？
+4. SSR 场景下哪些状态可以放到服务端计算？
+5. 无可用钱包时，你会提供哪些替代路径？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 provider 的获取是异步的，可能返回空值。
+- 知道首帧访问 window 存在风险。
+
+### 中级回答
+
+- 能用 getProvider() 的结果驱动按钮状态，并说明延迟注入的处理方式。
+- 能区分「未就绪」「未安装」与「不支持」。
+
+### 高级回答
+
+- 能给出 SSR 与客户端边界的划分，并覆盖无钱包场景的降级。
+- 能说明不同 connector 的可用性判断差异与验证方式。
+
+## 参考资料
+
+- [wagmi：连接钱包指南（§Build Your Own 第 3 步）](https://wagmi.sh/react/guides/connect-wallet)
+- [wagmi：injected connector（§Parameters 的 target、unstable_shimAsyncInject）](https://wagmi.sh/react/api/connectors/injected)

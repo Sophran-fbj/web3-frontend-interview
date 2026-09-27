@@ -1,0 +1,92 @@
+---
+id: web3-basics-002
+slug: eoa-vs-contract-account
+title: EOA 与合约账户的关键区别
+summary: 说明外部拥有账户与合约账户在控制方式、发起交易与代码字段上的差异，以及判断地址类型时的例外。
+status: review
+difficulty: beginner
+category: web3-basics
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - accounts
+  - eoa
+  - contract-account
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：Accounts（§Account types、§Externally-owned accounts and key pairs、§Contract accounts）
+    url: https://ethereum.org/en/developers/docs/accounts/
+  - title: EIP-7702：Set EOA account code（§Abstract）
+    url: https://eips.ethereum.org/EIPS/eip-7702
+  - title: Ethereum Yellow Paper：World State（§4.1）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+---
+
+## 题目
+
+新人问：合约账户能不能自己发起交易？为什么有人说不看代码就判断地址类型会有例外？请解释两类账户的关键区别，并说明这些区别对前端判断的影响。
+
+## 考察目标
+
+- 两类账户的控制方式与执行条件。
+- 代码字段在账户判断中的位置。
+- 委托机制带来的判断例外。
+
+## 30 秒回答
+
+账户分为外部拥有账户与合约账户。外部拥有账户由私钥控制，可以发起交易；合约账户由代码控制，在收到交易或消息时执行代码，自身不主动发起交易。两类账户都可以持有资产并与合约交互。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】账户状态包含代码哈希与余额等字段；有非委托代码的账户不能发起交易（依据：Yellow Paper §4.1 World State；EIP-7702 §Specification 的 Transaction origination）。
+- 【协议保证】EOA 的账户状态不需要预先包含代码；其交易由私钥签名授权（依据：EIP-7702 §Specification 的 Transaction origination；EIP-155 §Specification）。
+- 【协议保证】合约账户的代码哈希指向其代码；代码在代码执行操作（如 CALL）加载后执行（依据：Yellow Paper §4.1 World State；EIP-7702 §Specification 的 Delegation indicator 段落）。
+- 【协议保证】有非委托代码的账户不能作为交易发起者（依据：EIP-7702 §Specification 的 Transaction origination）。
+- 【协议保证】账户状态包含余额字段，余额以 wei 计量（依据：Yellow Paper §4.1 World State）。
+- 【协议保证】EIP-7702 允许 EOA 通过签名授权，把自身代码设置为指向某个合约的委托指示，此后该地址上会有代码，但控制权仍在原私钥（依据：EIP-7702 §Abstract）
+- 【工程经验】用「地址上是否有代码」推断账户类型可作为辅助判断，遇到委托指示时需要结合其他信息（依据：EIP-7702 §Abstract；工程经验）
+- 【工程经验】界面在转账或授权之前展示目标类型与核对信息，把最终判断交给钱包的确认流程（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 认为合约账户可以自行发起交易（依据：ethereum.org Accounts §Contract accounts）
+- 把「没有私钥」理解成「不能持有资产」（依据：ethereum.org Accounts §Account types）
+- 用代码字段是否为空得出账户类型的绝对结论，忽略委托指示（依据：EIP-7702 §Abstract）
+- 把地址与「平台账号」式的用户身份等同（依据：工程经验，无规范依据）
+- 认为两份相同代码的合约账户状态会互相影响（依据：ethereum.org Accounts §Contract accounts）
+
+## 面试官追问
+
+1. 一个地址既有代码又由私钥控制，这种情况如何产生？
+2. 向合约账户转账与调用它的函数，在结果上有什么区别？
+3. 前端做地址类型判断能带来什么收益，又会引入哪些风险？
+4. 多签合约要执行操作时，链上实际发起交易的是哪一类账户？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出两类账户的控制方式差异。
+- 知道合约账户不主动发起交易。
+
+### 中级回答
+
+- 能说明两类账户都能持有资产与交互。
+- 能指出代码字段与账户类型判断之间的例外来源。
+
+### 高级回答
+
+- 能结合委托机制说明前端判断账户类型的边界与兜底方式。
+- 能说明类型判断在安全提示与用户确认流程中的位置。
+
+## 参考资料
+
+- [ethereum.org：Accounts（§Account types、§Externally-owned accounts and key pairs、§Contract accounts）](https://ethereum.org/en/developers/docs/accounts/)
+- [EIP-7702：Set EOA account code（§Abstract）](https://eips.ethereum.org/EIPS/eip-7702)
+- [Ethereum Yellow Paper：World State（§4.1）](https://ethereum.github.io/yellowpaper/paper.pdf)

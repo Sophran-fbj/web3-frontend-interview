@@ -1,0 +1,96 @@
+---
+id: wallet-032
+slug: metamask-connector-vs-injected
+title: metaMask connector 与 injected 的区别
+summary: 对比两条 MetaMask 接入路径的前提、依赖与覆盖范围，并处理重复入口。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - metamask
+  - injected
+  - wagmi
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：metaMask connector（§Install、§Parameters、§Advanced）
+    url: https://wagmi.sh/react/api/connectors/metaMask
+  - title: wagmi：injected connector（§Parameters 的 target、shimDisconnect）
+    url: https://wagmi.sh/react/api/connectors/injected
+  - title: MetaMask Connect（页面级：SDK 存在性）
+    url: https://docs.metamask.io/metamask-connect/
+---
+
+## 题目
+
+团队同时配置了 injected 与 metaMask 两个 connector，测试时发现钱包列表里出现两个 MetaMask 入口；也有人问：没有安装扩展的用户能不能用 metaMask connector 连接。请说明两者的差异与选型边界。
+
+## 考察目标
+
+- 两个 connector 的工作前提与覆盖范围。
+- 依赖与配置项差异。
+- 重复入口的处理与选型取舍。
+
+## 30 秒回答
+
+injected connector 面向 EIP-1193 provider，依赖页面中已经存在的 provider，扩展未注入时需要等待或先禁用入口；metaMask connector 基于 MetaMask Connect，文档要求安装 @metamask/connect-evm，并提供 dapp 元数据、connectAndSign 与 connectWith 等参数。metaMask connector 的文档还说明：检测到 EIP-6963 的 MetaMask 注入 provider 时，它会默认替换该 provider。因此同时配置两者时，列表里可能出现重复入口，需要在产品层做取舍。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】injected connector 面向 EIP-1193 provider，target 用于指定目标 provider，也可以由 EIP-6963 的发现结果提供（依据：wagmi injected §Parameters 的 target）。
+- 【实现行为】injected connector 的 shimDisconnect 默认 true，用本地状态模拟断开（依据：wagmi injected §Parameters 的 shimDisconnect）。
+- 【实现行为】metaMask connector 基于 MetaMask Connect，需要安装 @metamask/connect-evm（依据：wagmi metaMask §Install）。
+- 【实现行为】metaMask connector 的参数包括 dapp（name、url、iconUrl，用于钱包确认界面的展示）、debug、connectAndSign 与 connectWith，后两者互斥（依据：wagmi metaMask §Parameters）。
+- 【实现行为】文档说明：检测到 EIP-6963 的 MetaMask 注入 provider 时，metaMask connector 默认替换它（依据：wagmi metaMask §Advanced）。
+- 【实现行为】MetaMask Connect 提供了独立的 SDK 与文档入口（依据：MetaMask Connect 文档，页面级）。
+- 【工程经验】用户环境以已注入的扩展为主时，injected 覆盖多数场景；需要覆盖非注入环境或使用 SDK 能力时再选 metaMask connector（工程经验，无规范依据）。
+- 【工程经验】同时配置两者容易产生重复入口，需要按目标用户环境决定是否保留两个（工程经验，无规范依据）。
+- 【工程经验】两者最终都通过 EIP-1193 语义交互，业务代码以 wagmi 连接状态为准，不绕过状态直接调用 provider（工程经验，无规范依据）。
+- 【工程经验】移动端连接失败与扩展未安装是两类问题，排障时先确认用户环境（工程经验，无规范依据）。
+
+## 常见错误
+
+- 同时配置两者却不处理重复入口（【实现行为】metaMask connector 在检测到 EIP-6963 注入 provider 时会替换它；依据：wagmi metaMask connector 页面）。
+- 认为 metaMask connector 不依赖三方包（【实现行为】§Install 列出了 @metamask/connect-evm；依据：wagmi metaMask connector §Install）。
+- 扩展未注入时直接报「未安装」，不给等待或替代路径（【实现行为】injected connector 提供延迟注入与发现机制；依据：wagmi injected connector 页面）。
+- 绕过 wagmi 连接状态直接调用 provider（【工程经验】）。
+- 把两个 connector 的失败原因按同一种路径处理（【工程经验】）。
+
+## 面试官追问
+
+1. 目标用户以桌面扩展为主时，你会保留哪些 connector？
+2. 重复入口在产品上如何处理，能否合并展示？
+3. metaMask connector 的 dapp 元数据缺失会带来什么影响？
+4. connectAndSign 这类合并式操作的风险是什么？
+5. 如何验证两个 connector 在切换连接场景下的行为一致？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 injected 依赖已注入的 provider，metaMask connector 基于 MetaMask Connect。
+- 知道 metaMask connector 需要安装三方依赖。
+
+### 中级回答
+
+- 能说明两者参数差异与重复入口的成因。
+- 能根据用户环境给出选型建议。
+
+### 高级回答
+
+- 能给出多入口合并展示与切换连接一致性的验证方案。
+- 能说明合并式授权操作的风险与规避方式。
+
+## 参考资料
+
+- [wagmi：metaMask connector（§Install、§Parameters、§Advanced）](https://wagmi.sh/react/api/connectors/metaMask)
+- [wagmi：injected connector（§Parameters 的 target、shimDisconnect）](https://wagmi.sh/react/api/connectors/injected)
+- [MetaMask Connect（页面级：SDK 存在性）](https://docs.metamask.io/metamask-connect/)

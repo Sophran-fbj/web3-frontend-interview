@@ -1,0 +1,89 @@
+---
+id: contract-014
+slug: erc721-metadata-offchain
+title: ERC-721 元数据的链下依赖
+summary: 说明 ownerOf、tokenURI 与 balanceOf 的语义与失败形态，以及元数据获取、回退与列表降级的设计。
+status: review
+difficulty: intermediate
+category: contract
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - erc-721
+  - metadata
+  - ipfs
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-721：NFT 标准（§Specification：ownerOf、tokenURI、balanceOf）"
+    url: https://eips.ethereum.org/EIPS/eip-721
+  - title: "ethereum.org：与智能合约交互（页面级：读调用与写调用）"
+    url: https://ethereum.org/en/developers/docs/smart-contracts/interacting/
+---
+
+## 题目
+
+一个 NFT 详情页在 token 不存在时把 ownerOf 的回滚显示成「合约故障」；另一个列表页逐个请求展示几十个 NFT 的图片，多数卡片空白。请说明元数据链下依赖带来的问题与处理方式。
+
+## 考察目标
+
+- tokenURI、ownerOf、balanceOf 的语义与失败形态。
+- 链下元数据的可用性风险与回退。
+- 列表场景的批量读取与失败降级。
+
+## 30 秒回答
+
+ERC-721 规定 ownerOf 与 tokenURI 对不存在的 token 抛出错误，tokenURI 返回的元数据指向链下资源；这些资源可能不可用、被替换或加载缓慢。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】ERC-721 规定 ownerOf(tokenId) 返回该 token 的持有者，并对不存在的 token 抛出错误（依据：EIP-721 §Specification 的 ownerOf 定义）。
+- 【协议保证】ERC-721 规定 tokenURI(tokenId) 返回该 token 的元数据 URI，并对不存在的 token 抛出错误；元数据本身托管在链下（依据：EIP-721 §Specification 的 tokenURI 定义）。
+- 【协议保证】balanceOf(owner) 返回账户持有的 token 数量，可用于数量展示与列表分页（依据：EIP-721 §Specification 的 balanceOf 定义）。
+- 【工程经验】把 ownerOf 的错误按「token 不存在」处理并展示可读提示，不把合约调用错误统一显示为故障（依据：EIP-721 §Specification 的 ownerOf 定义）。
+- 【工程经验】元数据请求设置超时与失败占位；对 IPFS 一类内容寻址资源准备多网关回退（依据：工程经验，无规范依据）。
+- 【工程经验】列表页先批量读取 tokenURI，再并发拉取元数据并缓存；单项失败只影响对应卡片（依据：工程经验，无规范依据）。
+- 【工程经验】展示图片前按内容哈希等线索核对资源与预期是否一致，降低被替换资源误导的风险（依据：工程经验，无规范依据）。
+- 【工程经验】把 HTTPS 与 IPFS 两类 URI 的处理分开设计，不把网关可用性当作链上状态的一部分（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把 ownerOf 的回滚当作合约故障。
+- 把元数据 JSON 当作链上可信数据使用。
+- 逐个请求元数据导致列表加载缓慢。
+- 元数据加载失败时卡片长期空白，没有占位与重试。
+- 用 balanceOf 的结果逐个调用 tokenURI 时不处理分页与失败。
+
+## 面试官追问
+
+1. 元数据网关整体不可用时，列表页的降级顺序是什么？
+2. 元数据内容与预期不一致时，前端如何提示且不夸大结论？
+3. 把元数据缓存放在客户端、服务端还是 CDN，各自的取舍是什么？
+4. 批量读取与事件监听两种获取「我的 NFT」列表的方式，如何选择？
+
+## 评分标准
+
+### 初级回答
+
+- 能说明 ownerOf 与 tokenURI 对不存在 token 的行为。
+- 知道元数据托管在链下。
+
+### 中级回答
+
+- 能区分「token 不存在」与「元数据加载失败」两类处理。
+- 能说明列表批量读取与单项失败降级的设计。
+
+### 高级回答
+
+- 能设计元数据获取与缓存链路，覆盖网关回退、内容校验与失败重试。
+- 能说明链上事实与链下展示之间的对账策略。
+
+## 参考资料
+
+- [EIP-721：NFT 标准（§Specification：ownerOf、tokenURI、balanceOf）](https://eips.ethereum.org/EIPS/eip-721)
+- [ethereum.org：与智能合约交互（页面级：读调用与写调用）](https://ethereum.org/en/developers/docs/smart-contracts/interacting/)

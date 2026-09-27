@@ -1,0 +1,111 @@
+---
+id: transaction-006
+slug: typed-transaction-envelopes
+title: 交易类型 0-4 与前端兼容
+summary: 说明 EIP-2718 的类型信封、各类型编号对应的费用与字段结构，以及前端读取与构造时的兼容处理。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-2718
+  - transaction-types
+  - compatibility
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-2718：Typed Transaction Envelope（§Specification 的 Transactions、§Backwards Compatibility）
+    url: https://eips.ethereum.org/EIPS/eip-2718
+  - title: EIP-1559：Fee market change（§Abstract、§Backwards Compatibility）
+    url: https://eips.ethereum.org/EIPS/eip-1559
+  - title: EIP-2930：Optional access lists（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-2930
+  - title: EIP-4844：Shard Blob Transactions（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-4844
+  - title: EIP-7702：Set Code for EOAs（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-7702
+---
+
+## 题目
+
+某页面在解析历史交易与 receipt 时只按 EIP-1559 的字段读取，遇到更早的交易就出现空值；另一个页面在不支持新类型的网络上构造了新类型交易并广播失败。请说明交易类型信封的结构，以及前端在读取与构造交易时的兼容处理。
+
+## 考察目标
+
+- 理解 EIP-2718 的信封结构与类型编号。
+- 掌握各类型对应的字段差异与读取方式。
+- 设计历史交易解析与类型选择的兼容策略。
+
+## 30 秒回答
+
+EIP-2718 的交易有两种形式：`TransactionType || TransactionPayload` 的类型化信封，以及独立的 `LegacyTransaction`（RLP 编码，首字节在 0xc0–0xfe 区间，并非以 0x00 开头的类型）。type 1 加入 `accessList`，type 2 是 EIP-1559 费用市场交易，type 3 是 blob 交易，type 4 携带授权列表；JSON-RPC 用 `type: "0x0"` 表示 legacy 交易，这是 RPC 层的表示方式。读取交易与 receipt 时按 `type` 字段分发解析路径。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】EIP-2718 为类型化交易定义了 `TransactionType || TransactionPayload` 信封结构，类型编号决定载荷的字段布局；legacy 交易是与之并列的另一种形式（依据：EIP-2718 §Specification 的 Transactions）。
+
+- 【协议保证】legacy 交易是 `rlp([nonce, gasPrice, gasLimit, to, value, data, v, r, s])`，与类型化信封 `TransactionType || TransactionPayload` 是两种不同形式；客户端按首字节区分：0x00–0x7f 为类型化交易，0xc0–0xfe 为 legacy（依据：EIP-2718 §Specification 的 Transactions、§Backwards Compatibility）。
+
+【协议保证】type 1（EIP-2930）引入 `accessList`；type 2 是 EIP-1559 费用市场交易；type 3 携带 blob 相关字段；type 4 携带授权列表（依据：EIP-2930 §Specification；EIP-1559 §Abstract；EIP-4844 §Specification；EIP-7702 §Specification）。
+
+- 【工程经验】读取交易与 receipt 时按 `type` 字段分发解析路径；legacy 在 RPC 返回中通常表示为 `0x0`，该表示与 EIP-2718 的链上编码区分开（依据：工程经验，无规范依据）。
+
+- 【协议保证】EIP-1559 类型的费用字段为 `maxFeePerGas` 与 `maxPriorityFeePerGas`；legacy 交易使用 `gasPrice`（依据：EIP-1559 §Abstract、§Backwards Compatibility）。
+
+【协议保证】在类型信封下，未知类型按该类型自身的规范处理；接收方能否解析取决于它支持的类型集合（依据：EIP-2718 §Specification）。
+
+【工程经验】不要用是否存在 `gasPrice` 字段判断交易类型，应以 `type` 字段为准（依据：工程经验，无规范依据）。
+
+【工程经验】构造交易交给 viem、wagmi 一类工具按链能力选择类型，避免手写类型编号与字段组合（依据：工程经验，无规范依据）。
+
+【工程经验】解析历史交易、批量对账与 receipt 时按 `type` 分发到不同字段读取路径，缺失字段用可空类型处理（依据：工程经验，无规范依据）。
+
+【工程经验】在广播前确认目标链与节点支持该类型：不支持时签名或广播会失败，需要在提交前拦截并提示（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 假定遇到的交易都属于同一种类型，解析历史数据时出现空值。
+- 看到 `gasPrice` 字段就判断为 legacy 交易。
+- 手动拼接新类型交易的字段，忽略链与节点的支持情况。
+- receipt 解析只覆盖一种类型，遗漏费用字段的差异。
+- 对未知类型直接当作解析失败处理，而没有给出可辨识的错误信息。
+
+## 面试官追问
+
+1. 你在哪些场景下需要处理多种交易类型？读取与构造的兼容策略有何不同？
+2. 如何判断一条链或一个节点是否支持某种交易类型？
+3. 同一笔业务操作在不同类型下费用字段不同，费用展示如何统一？
+4. 未知类型交易出现在历史数据里时，界面应如何呈现？
+5. 如果工具库升级后默认类型发生变化，你会如何验证签名与广播仍然正常？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出交易信封由类型编号与载荷组成。
+- 知道 legacy 与 EIP-1559 类型的费用字段不同。
+
+### 中级回答
+
+- 能按 `type` 分发解析交易与 receipt，并说明各类型的关键字段差异。
+- 能区分 legacy 的 RLP 编码与类型化信封的编号规则。
+- 能指出类型选择需要与链和节点的支持能力对齐。
+
+### 高级回答
+
+- 能设计覆盖多类型的数据解析与费用展示方案，并说明未知类型的处理策略。
+- 能讨论构造路径交给工具库的取舍，并给出类型兼容的验证与回归方式。
+
+## 参考资料
+
+- [EIP-2718：Typed Transaction Envelope（§Specification 的 Transactions、§Backwards Compatibility）](https://eips.ethereum.org/EIPS/eip-2718)
+- [EIP-1559：Fee market change（§Abstract、§Backwards Compatibility）](https://eips.ethereum.org/EIPS/eip-1559)
+- [EIP-2930：Optional access lists（§Specification）](https://eips.ethereum.org/EIPS/eip-2930)
+- [EIP-4844：Shard Blob Transactions（§Specification）](https://eips.ethereum.org/EIPS/eip-4844)
+- [EIP-7702：Set Code for EOAs（§Specification）](https://eips.ethereum.org/EIPS/eip-7702)

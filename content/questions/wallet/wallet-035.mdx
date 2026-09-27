@@ -1,0 +1,94 @@
+---
+id: wallet-035
+slug: multi-connection-switch
+title: 多连接管理与切换
+summary: 用 useConnections 渲染列表、用 useSwitchConnection 切换，切换后显式清理业务状态。
+status: review
+difficulty: advanced
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - multi-connection
+  - switch
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：useConnections（§Usage）
+    url: https://wagmi.sh/react/api/hooks/useConnections
+  - title: wagmi：useSwitchConnection（§Usage、§Return Type）
+    url: https://wagmi.sh/react/api/hooks/useSwitchConnection
+  - title: wagmi：从 v2 迁移到 v3（§Removed useDisconnect().connectors & useSwitchConnection().connectors）
+    url: https://wagmi.sh/react/guides/migrate-from-v2-to-v3
+---
+
+## 题目
+
+一个 DApp 需要让用户同时保持多个钱包连接，并在它们之间切换。团队接入 useSwitchConnection 后发现：切换后旧连接的待签流程仍在运行，断开当前连接后界面也没有回到空状态。请说明多连接管理与切换的正确做法。
+
+## 考察目标
+
+- 多连接列表与切换 API 的用法。
+- 切换与断开时的状态清理责任。
+- 连接列表与可用 connector 列表的区别。
+
+## 30 秒回答
+
+useConnections 返回当前的活动连接，useSwitchConnection 通过 `mutate({ connector })` 切换当前连接；迁移指南说明 useSwitchConnection 的 connectors 返回值不再受支持，改用 useConnections 读取活动连接、useConnectors 读取可用 connector。切换会改变当前连接，依赖当前连接的查询随之切换到新的数据源，而表单、待签内容等业务状态需要显式清理。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】useConnections 返回活动连接列表，文档示例直接读取该列表用于渲染（依据：wagmi useConnections §Usage）。
+- 【实现行为】useSwitchConnection 的用法是 `switchConnection.mutate({ connector: connection.connector })`（依据：wagmi useSwitchConnection §Usage）。
+- 【实现行为】useSwitchConnection 的结果包含 status、isPending 等 mutation 状态（依据：wagmi useSwitchConnection §Return Type 的 status、isPending）。
+- 【实现行为】useSwitchConnection 返回的 connectors 已被标记为废弃，迁移指南建议改用 useConnections 并从连接中导出 connector（依据：wagmi useSwitchConnection §Return Type 的 connectors（deprecated）、从 v2 迁移到 v3 §Removed useDisconnect().connectors & useSwitchConnection().connectors）。
+- 【工程经验】切换后清理业务状态：表单、待签内容与提示都要与被切换的连接解耦（工程经验，无规范依据）。
+- 【工程经验】切换前处理仍在飞行的请求：作废或取消与旧连接绑定的流程（工程经验，无规范依据）。
+- 【工程经验】断开当前连接后，界面回到与「无连接」一致的空状态，而不是保留旧地址（工程经验，无规范依据）。
+- 【工程经验】把连接列表渲染与「当前连接」展示分开，避免切换瞬间出现两个高亮项（工程经验，无规范依据）。
+
+## 常见错误
+
+- 把 useConnections 与 useConnectors 混用（【实现行为】前者是活动连接列表，后者是可用 connector 列表；依据：wagmi useConnections、useConnectors）。
+- 继续依赖 useSwitchConnection().connectors（【实现行为】该返回值已废弃；依据：wagmi v2→v3 迁移指南）。
+- 切换后不清理旧连接的 pending 流程（【工程经验】）。
+- 断开当前连接后界面未回到空状态（【工程经验】）。
+- 用地址而非连接标识渲染列表项，切换后出现错位（【工程经验】）。
+
+## 面试官追问
+
+1. 用户同时连接两个钱包时，签名请求应该发给谁？
+2. 切换连接后，按链与地址隔离的查询缓存如何处理？
+3. 断开其中一条连接与断开全部连接，交互差异是什么？
+4. 多连接列表的持久化要考虑哪些隐私边界？
+5. useConnections 与 useConnectors 各自适合渲染什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 useConnections 返回活动连接，useSwitchConnection 用于切换。
+- 知道活动连接与可用 connector 是两份不同的数据。
+
+### 中级回答
+
+- 能说明切换后的状态清理范围，包括表单与待签内容。
+- 能说明断开当前连接后的空状态处理。
+
+### 高级回答
+
+- 能设计多连接场景下的事件、缓存与请求归属规则。
+- 能说明切换连接对查询隔离与用户预期的影响。
+
+## 参考资料
+
+- [wagmi：useConnections（§Usage）](https://wagmi.sh/react/api/hooks/useConnections)
+- [wagmi：useSwitchConnection（§Usage、§Return Type）](https://wagmi.sh/react/api/hooks/useSwitchConnection)
+- [wagmi：从 v2 迁移到 v3（§Removed useDisconnect().connectors & useSwitchConnection().connectors）](https://wagmi.sh/react/guides/migrate-from-v2-to-v3)

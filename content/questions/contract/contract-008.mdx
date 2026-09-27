@@ -1,0 +1,92 @@
+---
+id: contract-008
+slug: nonstandard-erc20-behaviors
+title: 非标准 ERC-20 行为对前端的影响
+summary: 说明标准对 transfer 返回值的要求、部分实现不返回数据带来的解码差异，以及以事件与链上余额对账的做法。
+status: review
+difficulty: intermediate
+category: contract
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - erc-20
+  - compatibility
+  - usdt
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-20：Token 标准（§Specification：transfer、transferFrom、Transfer 事件、balanceOf、allowance）"
+    url: https://eips.ethereum.org/EIPS/eip-20
+  - title: "Etherscan：Tether USD（USDT）主网合约（页面级实现行为依据）"
+    url: https://etherscan.io/address/0xdac17f958d2ee523a2206206994597c13d831ec7
+  - title: "ethereum.org：与智能合约交互（页面级：读调用与写调用）"
+    url: https://ethereum.org/en/developers/docs/smart-contracts/interacting/
+---
+
+## 题目
+
+一个聚合器按标准 ABI 解码每个代币的 transfer 返回值，接入某个稳定币后交易明明成功，前端却提示「调用失败」；另一个页面在用户点击转账后直接把本地余额减去输入金额。请说明这两处的问题与处理方式。
+
+## 考察目标
+
+- ERC-20 标准对 transfer 与 transferFrom 返回值的要求。
+- 非标准实现带来的解码差异与兼容方式。
+- 以事件与链上余额作为对账依据。
+
+## 30 秒回答
+
+ERC-20 标准要求 transfer 与 transferFrom 返回 bool，并要求成功的转账发出携带发送方、接收方与金额的 Transfer 事件；部分实现并不返回数据，按标准 ABI 直接解码会失败。链上事实以事件与余额读取为依据。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】ERC-20 规范声明 transfer 与 transferFrom 返回 bool，并声明成功的转账会发出 Transfer 事件，事件中包含发送方、接收方与金额（依据：EIP-20 §Specification 的 transfer、transferFrom、Transfer 事件定义）。
+- 【协议保证】balanceOf 返回账户余额，allowance 返回授权额度；对账可以基于这两者与事件重新读取链上状态（依据：EIP-20 §Specification 的 balanceOf、allowance 定义）。
+- 【实现行为】以太坊主网的 USDT 合约中，transfer 与 transferFrom 不返回数据；按标准 ABI 解码返回值会失败，需要在调用侧按「无返回值」分支处理（依据：Etherscan 上 USDT 主网合约页面）。
+- 【工程经验】兼容写法是：对可能无返回值的代币，把解码结果为空视作成功，并以事件与重新读取的余额复核结果（依据：EIP-20 §Specification 的 Transfer 事件定义）。
+- 【工程经验】本地余额更新以交易收据中的事件与随后的链上读取为准，不使用输入金额直接扣减（依据：EIP-20 §Specification 的 Transfer 事件定义）。
+- 【工程经验】接入新代币时，用一笔小额真实交易核对「输入额、事件金额、余额变化」三者是否一致（依据：工程经验，无规范依据）。
+- 【工程经验】授权展示同时给出 allowance 现值与本次请求的新值，便于用户核对本次操作与当前额度的关系（依据：EIP-20 §Specification 的 allowance 定义）。
+- 【工程经验】转账结果的提示以收据状态与事件为准，交易哈希只用于跟踪，不用于推断业务结果（依据：ethereum.org 与智能合约交互页面「读调用与写调用」）。
+
+## 常见错误
+
+- 对每个代币都按标准 ERC-20 解码返回值，遇到无返回数据的实现就判为失败（【实现行为】存在不返回值的实现，依据：Etherscan 上 USDT 主网合约页面）。
+- 用输入金额直接更新本地余额，未以事件与链上读取核对。
+- 把用户输入的金额当作链上到账金额展示。
+- 只依据交易哈希提示成功，未确认事件与余额。
+- 把某一代币的行为推广成通用惯例，缺少逐币种核对。
+
+## 面试官追问
+
+1. 交易成功但余额没有按预期变化时，排查步骤是什么？
+2. 兼容无返回值代币的解码分支可能掩盖真实失败，如何设计以避免误判？
+3. 通用代币组件与逐币种适配，各自的维护成本与风险是什么？
+4. 授权额度展示需要包含哪些信息，才能让用户判断风险？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 ERC-20 对 transfer 返回值的要求。
+- 知道存在不返回值的实现，并知道需要兼容。
+
+### 中级回答
+
+- 能说明兼容解码的方式以及以事件、余额对账的原因。
+- 能指出直接把输入金额写入本地余额的问题。
+
+### 高级回答
+
+- 能设计代币兼容层，覆盖返回值差异、事件核对与失败提示。
+- 能说明新代币接入时的验证清单与回归手段。
+
+## 参考资料
+
+- [EIP-20：Token 标准（§Specification：transfer、transferFrom、Transfer 事件、balanceOf、allowance）](https://eips.ethereum.org/EIPS/eip-20)
+- [Etherscan：Tether USD（USDT）主网合约（页面级实现行为依据）](https://etherscan.io/address/0xdac17f958d2ee523a2206206994597c13d831ec7)
+- [ethereum.org：与智能合约交互（页面级：读调用与写调用）](https://ethereum.org/en/developers/docs/smart-contracts/interacting/)

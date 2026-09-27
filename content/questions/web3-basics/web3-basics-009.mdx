@@ -1,0 +1,92 @@
+---
+id: web3-basics-009
+slug: contract-account-initiated-actions
+title: 合约账户如何「主动」执行操作
+summary: 从多签与 ERC-4337 两条路径说明合约账户动作的来源，并厘清 UserOperation 与交易收据之间的对应关系。
+status: review
+difficulty: advanced
+category: web3-basics
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - erc-4337
+  - smart-account
+  - contract-account
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-4337：Account Abstraction Using Alt Mempool（§Specification、§JSON-RPC API for ERC-4337、§Semi-abstracted Nonce Support）
+    url: https://eips.ethereum.org/EIPS/eip-4337
+  - title: Ethereum Yellow Paper：World State（§4.1）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+  - title: EIP-7702：Set Code for EOAs（§Specification 的 Transaction origination）
+    url: https://eips.ethereum.org/EIPS/eip-7702
+---
+
+## 题目
+
+一个使用智能账户的产品需要在用户没有 ETH 的情况下完成授权与兑换；另一个多签金库由多名 owner 分别确认。请说明这两类「合约账户发起的动作」在协议层是如何落地的，以及前端各自追踪什么对象。
+
+## 考察目标
+
+- 协议层「合约账户不主动发起交易」的约束。
+- 多签与 ERC-4337 两条执行路径的区别。
+- UserOperation、EntryPoint 与交易收据的对应关系。
+
+## 30 秒回答
+
+在以太坊账户模型中，交易由 EOA 签名提交，合约账户的代码在收到调用时执行，不存在由合约账户自行签发的交易；多签钱包由 owner 提交交易、合约校验签名后执行；ERC-4337 则由用户签 UserOperation，bundler 将其打包为交易交给 EntryPoint 处理，paymaster 可以承担费用。4337 路径的对账对象是 UserOperation receipt（由 userOpHash 查询），底层交易哈希用于确认链上承载。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】有非委托代码的账户不能发起交易；合约账户的行为由其代码决定，代码在收到调用时加载执行（依据：EIP-7702 §Specification 的 Transaction origination 与 Delegation indicator；Yellow Paper §4.1）。
+- 【协议保证】EIP-4337 的 UserOperation 由用户签名，bundler 将其打包成普通交易并提交给 EntryPoint 合约（依据：EIP-4337 §Specification）。
+- 【协议保证】EntryPoint 按校验与执行两个阶段处理 UserOperation：校验阶段验证签名与预付款，执行阶段调用目标合约完成用户意图（依据：EIP-4337 §Specification）。
+- 【协议保证】paymaster 可以为 UserOperation 承担 gas 费用，使账户不必持有原生代币也能完成操作（依据：EIP-4337 §Specification）。
+- 【协议保证】ERC-4337 定义了 eth_sendUserOperation 与 eth_getUserOperationReceipt；userOpHash 是对 UserOperation（不含 signature）与 EntryPoint、chainId 的哈希，前端应先用 userOpHash 查询 UserOperation receipt，再关联底层交易哈希与交易收据（依据：EIP-4337 §JSON-RPC API for ERC-4337；§Smart Contract Account Interface 对 userOpHash 的定义）。
+- 【工程经验】多签钱包场景中，owner 调用合约发起交易，合约校验签名阈值后执行；前端追踪的是这笔链上交易的收据，而不是 owner 的签名动作本身（依据：工程经验，无规范依据）。
+- 【工程经验】前端应把「走 4337 还是普通交易」做成基于能力探测的分支，并统一映射为产品层的进度状态：普通交易路径跟踪 transaction receipt，4337 路径先跟踪 UserOperation receipt，再关联底层 transaction receipt（依据：EIP-4337 §JSON-RPC API for ERC-4337；工程经验）。
+- 【工程经验】「用户免 gas」描述的是费用承担方的改变，界面需要说明由谁付费以及以什么方式结算（依据：EIP-4337 §Specification 的 paymaster 机制）。
+
+## 常见错误
+
+- 说合约账户自己签名并发起交易（【协议保证】有非委托代码的账户不能发起交易，依据：EIP-7702 §Specification 的 Transaction origination）。
+- 拿 UserOperation 的哈希去查普通交易收据（【协议保证】UserOperation 的查询接口是 eth_getUserOperationReceipt，依据：EIP-4337 §JSON-RPC API for ERC-4337）。
+- 把免 gas 理解为链上没有成本，忽略 paymaster 的结算与额度。
+- 只展示签名成功，未跟踪 UserOperation receipt 与底层交易归属。
+- 在多签流程中把「签名达到阈值」当作链上执行完成。
+
+## 面试官追问
+
+1. bundler 未在预期时间内打包 UserOperation 时，前端应如何呈现与重试？
+2. paymaster 额度耗尽或拒绝赞助时，用户操作如何降级？
+3. 把 gas 支付能力交给第三方合约会引入哪些信任与一致性判断？
+4. 用 4337 统一各类用户路径，与以普通交易为主、4337 作为增强，各自的取舍是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 能说明合约账户不持有私钥，交易由 EOA 签名发起。
+- 知道 4337 中用户签的是 UserOperation。
+
+### 中级回答
+
+- 能描述 EntryPoint 的校验与执行两阶段，以及 paymaster 的费用承担方式。
+- 能区分 userOpHash 与交易哈希，并用 UserOperation receipt 对账、再关联底层交易收据。
+
+### 高级回答
+
+- 能设计普通交易与 4337 路径并存时的能力探测与状态收敛方案。
+- 能说明赞助代付场景下的额度、失败与信任边界。
+
+## 参考资料
+
+- [EIP-4337：Account Abstraction Using Alt Mempool（§Specification、§JSON-RPC API for ERC-4337、§Semi-abstracted Nonce Support）](https://eips.ethereum.org/EIPS/eip-4337)
+- [Ethereum Yellow Paper：World State（§4.1）](https://ethereum.github.io/yellowpaper/paper.pdf)
+- [EIP-7702：Set Code for EOAs（§Specification 的 Transaction origination）](https://eips.ethereum.org/EIPS/eip-7702)

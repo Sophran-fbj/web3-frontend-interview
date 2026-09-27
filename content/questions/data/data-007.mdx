@@ -1,0 +1,92 @@
+---
+id: data-007
+slug: historical-state-archive-node
+title: 读历史状态为什么需要 archive 节点
+summary: 说明全节点与 archive 节点的状态保留差异、历史读取的失败表现，以及成本与替代方案。
+status: review
+difficulty: advanced
+category: data
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - archive-node
+  - historical-state
+  - rpc
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：Archive nodes（页面级）
+    url: https://ethereum.org/en/developers/docs/nodes-and-clients/archive-nodes/
+  - title: ethereum.org：JSON-RPC（§eth_getBalance、§eth_getCode、§eth_call）
+    url: https://ethereum.org/en/developers/docs/apis/json-rpc/
+  - title: EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+一个「资产快照」功能要读取某个历史区块上的余额与存储。开发环境一切正常，上线后对较早区块的查询开始报错，部分用户还看到空数据。请说明原因，并给出可行的架构选择。
+
+## 考察目标
+
+- 全节点与 archive 节点在状态保留上的差异。
+- 历史状态查询的失败表现与常见触发点。
+- 成本、降级与替代方案的设计。
+
+## 30 秒回答
+
+节点对历史状态的保留程度不同：常规全节点会对旧状态做裁剪，archive 节点保留历史状态。对较早区块执行依赖当时状态的读取（如带区块参数的余额、存储或 eth_call）时，所用节点缺少对应状态会让请求失败。历史读取需要明确选择具备对应能力的端点，并设计成本与降级方案。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】archive 节点保留历史状态，用于查询较早区块上的状态；常规全节点会对旧状态做裁剪以控制存储（依据：ethereum.org Archive nodes 页面）。
+- 【实现行为】对较早区块执行依赖当时状态的查询（eth_getBalance、eth_getCode、eth_call 等）时，若所用节点未保留对应状态，请求会失败（依据：ethereum.org Archive nodes 页面）。
+- 【协议保证】JSON-RPC 读取方法通过区块参数（区块号、区块哈希或标签）指定查询位置（依据：EIP-1474 §Block Identifier）。
+- 【实现行为】托管 RPC 服务与自建节点在归档能力与计费方式上存在差异，选用前需要确认端点是否支持目标区块范围（依据：ethereum.org Archive nodes 页面；具体政策因服务商而异）。
+- 【工程经验】把实时读取与历史读取分开设计：实时数据走常规端点，历史快照按需走归档端点并设置配额（依据：工程经验，无规范依据）。
+- 【工程经验】替代方案包括用索引器预计算、重放事件自建状态，或把快照固定在业务可接受的时间点上（依据：ethereum.org Archive nodes 页面；工程经验）。
+- 【工程经验】上线前用目标区块做一次归档查询验证，避免把本地节点的能力当成线上端点的能力（依据：工程经验，无规范依据）。
+- 【工程经验】历史查询的成本与延迟通常高于最新状态查询，不适合放进高频轮询（依据：ethereum.org Archive nodes 页面；工程经验）。
+
+## 常见错误
+
+- 认为公共端点可以读取较早区块上的历史状态。
+- 把历史查询失败当作合约问题或网络抖动，重试无果后没有降级。
+- 把归档查询放进高频轮询，成本与延迟都失控。
+- 快照时间点没有产品定义，前端在用户操作时临时触发对很早期区块的查询。
+- 没有区分「该区块的状态不可用」与「该区块本身不存在」两类失败。
+
+## 面试官追问
+
+1. 同一份前端代码在本地节点可用、线上失败，你会如何定位差异？
+2. 历史快照失败时页面应该展示什么，如何避免用户误以为余额为 0？
+3. 索引器预计算与直连归档端点两种方案，你会如何取舍？
+4. 需要支持较长历史范围的查询时，你会怎样设计配额与缓存？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 archive 节点用于历史状态查询、常规节点会裁剪旧状态。
+- 知道带区块参数的历史查询可能失败。
+
+### 中级回答
+
+- 能说明区块参数在读取方法中的作用与常见失败表现。
+- 能给出至少一种替代方案，并解释其代价。
+
+### 高级回答
+
+- 能设计实时读取与历史读取分离的数据架构，覆盖端点选择、配额、缓存与降级。
+- 能把历史读取失败映射到明确的 UI 状态与监控指标。
+
+## 参考资料
+
+- [ethereum.org：Archive nodes（页面级）](https://ethereum.org/en/developers/docs/nodes-and-clients/archive-nodes/)
+- [ethereum.org：JSON-RPC（§eth_getBalance、§eth_getCode、§eth_call）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)

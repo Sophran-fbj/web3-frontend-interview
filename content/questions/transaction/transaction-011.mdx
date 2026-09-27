@@ -1,0 +1,99 @@
+---
+id: transaction-011
+slug: basefee-burn-and-adjustment
+title: baseFee 的销毁与 12.5% 调整机制
+summary: 解释 baseFee 的调整规则、销毁去向与优先费的关系，并说明费用预估与展示的合理口径。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-1559
+  - base-fee
+  - fee-market
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1559：Fee market change for ETH 1.0 chain（§Simple Summary、§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-1559
+  - title: ethereum.org：Gas and fees（§What is gas?、§How are gas fees calculated?）
+    url: https://ethereum.org/en/developers/docs/gas/
+---
+
+## 题目
+
+一个页面把 baseFee 解释成「给验证者的费用」，另一个页面用固定倍数预估下一块费用，在拥堵时段频繁失准。请说明 baseFee 的调整机制与去向，以及它对费用预估与展示意味着什么。
+
+## 考察目标
+
+- 理解 baseFee 的调整规则与销毁机制。
+- 说明优先费、上限费用与实际费用之间的关系。
+- 设计费用预估与展示口径。
+
+## 30 秒回答
+
+baseFee 由协议按父区块用量相对目标用量的偏离调整，单块变化幅度上限为 12.5%；baseFee 会被销毁，不支付给验证者，优先费才是给验证者的部分。实际费用由消耗的 gas 与（baseFee + 优先费）计算，且在 `maxFeePerGas` 不低于 baseFee 的前提下，优先费为零的交易仍然有效。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】baseFee 依据父区块的 gas 用量相对目标用量的偏离进行调整，单个区块的变化幅度上限为 12.5%（依据：EIP-1559 §Specification）。
+
+【协议保证】baseFee 会被销毁，不支付给验证者；给验证者的部分是优先费（小费）（依据：EIP-1559 §Simple Summary）。
+
+【协议保证】实际费用由消耗的 gas 与（baseFee + 实际优先费）共同决定（依据：EIP-1559 §Specification）。
+
+【协议保证】实际优先费取 `maxPriorityFeePerGas` 与（`maxFeePerGas` − baseFee）中的较小者（依据：EIP-1559 §Specification）。
+
+【协议保证】在 `maxFeePerGas` 不低于 baseFee 的前提下，优先费为零的交易仍然有效（依据：EIP-1559 §Specification 的有效性条件）。
+
+【协议保证】区块 gas 用量围绕目标用量波动，调整率上限使相邻区块的 baseFee 处于可计算的范围（依据：EIP-1559 §Specification）。
+
+【工程经验】钱包对下一块费用的预估区间来自调整率上限；持续拥堵时费用会沿多个区块累积变化，固定倍数的预估容易失准（依据：EIP-1559 §Simple Summary；工程经验）。
+
+【工程经验】费用展示把 baseFee 与优先费分开：前者是销毁部分，后者才是验证者收入，避免把两者混为一谈（依据：EIP-1559 §Simple Summary；工程经验）。
+
+【工程经验】替换交易与提高 `maxFeePerGas` 是不同的操作语义：替换按同一 nonce 竞争打包，费用上限调整影响可接受的 baseFee 范围（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把 baseFee 说成支付给验证者的费用。
+- 用固定倍数预估下一块费用，忽略调整率机制与持续拥堵的累积效应。
+- 把「提高优先费」与「提高费用上限」混为一谈。
+- 展示费用时只给一个数字，不区分销毁部分与验证者收入。
+- 在费用上限设置过低时反复重试，而不是调整上限或提示用户。
+
+## 面试官追问
+
+1. 为什么调整率上限让下一块费用的预估相对可靠？
+2. 交易只支付 baseFee 时，它还有哪些被打包的可能？
+3. 用户在拥堵时点击加速，你会调整哪个字段，界面如何解释？
+4. 费用展示如何区分「已销毁」与「支付给验证者」两部分？
+5. 长时间拥堵下，前端如何在费用预估与用户等待之间做取舍？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 baseFee 按区块用量调整，并且会被销毁。
+- 知道优先费是给验证者的部分。
+
+### 中级回答
+
+- 能说明单块调整上限与费用预估区间的关系。
+- 能解释 `maxFeePerGas`、`maxPriorityFeePerGas` 与实际优先费的取值关系。
+
+### 高级回答
+
+- 能设计费用预估、替换与展示的完整口径，并说明与钱包参数的一致性。
+- 能讨论拥堵场景下的用户体验取舍，并给出监控与回归验证方式。
+
+## 参考资料
+
+- [EIP-1559：Fee market change for ETH 1.0 chain（§Simple Summary、§Specification）](https://eips.ethereum.org/EIPS/eip-1559)
+- [ethereum.org：Gas and fees（§What is gas?、§How are gas fees calculated?）](https://ethereum.org/en/developers/docs/gas/)

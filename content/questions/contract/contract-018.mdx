@@ -1,0 +1,91 @@
+---
+id: contract-018
+slug: safe-transfer-from-callback
+title: safeTransferFrom 对合约接收方的回调要求
+summary: 说明 ERC-721 与 ERC-1155 安全转账的接收回调、与普通 transferFrom 的差异，以及前端处理方式。
+status: review
+difficulty: advanced
+category: contract
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - erc-721
+  - safe-transfer
+  - callback
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-721：Non-Fungible Token Standard（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-721
+  - title: EIP-1155：Multi Token Standard（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-1155
+---
+
+## 题目
+
+一个 NFT 市场的上架流程需要把用户持有的 NFT 转入市场托管合约。有用户反馈用 safeTransferFrom 转入时交易失败，改成普通 transferFrom 后转账通过，但这个 NFT 之后在托管合约里转不出来。请说明两种转账方式的差异，并给出前端应该怎么处理。
+
+## 考察目标
+
+- safeTransferFrom 对合约接收方的回调约定与失败条件。
+- 普通 transferFrom 不触发接收检查带来的后果。
+- ERC-721 与 ERC-1155 在接收回调上的对应关系。
+- 单笔 ERC-1155 批量转账的整笔回滚语义，与多笔独立交易编排的区别。
+
+## 30 秒回答
+
+对合约接收方，ERC-721 的 safeTransferFrom 会调用 onERC721Received，接收方返回约定的魔术值（0x150b7a02）后转账完成；未返回约定值时该调用失败。普通 transferFrom 不触发接收检查，接收地址能否再转出取决于该地址自身的实现。ERC-1155 有对应的接收回调；单笔 safeBatchTransferFrom 的回调失败会使整笔交易回滚，批次内部不存在部分成功。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】ERC-721 的 safeTransferFrom 在接收方为合约时调用 onERC721Received，接收方返回约定值 0x150b7a02 时转账完成；未返回约定值时该调用失败（依据：EIP-721 §Specification 的 safeTransferFrom 与 onERC721Received 定义）。
+- 【协议保证】接收方为 EOA 时跳过接收回调，因为该地址不执行合约代码（依据：EIP-721 §Specification 对合约接收方条件的描述）。
+- 【协议保证】ERC-1155 的 safeTransferFrom 与 safeBatchTransferFrom 在接收方为合约时调用 onERC1155Received 或 onERC1155BatchReceived，接收方需要返回对应的约定值（依据：EIP-1155 §Specification）。
+- 【协议保证】单笔 ERC-1155 safeBatchTransferFrom 的回调失败会使整笔交易回滚，批次内部不存在部分成功；部分成功只出现在前端分别发送多笔独立交易的编排场景（依据：EIP-1155 §Specification 的 Safe Transfer Rules）。
+- 【工程经验】普通 transferFrom 不调用接收方回调，转入托管合约后能否再转出取决于该合约是否实现了转出逻辑（依据：工程经验，无规范依据；对照 EIP-721 §Specification 仅为 safe 变体定义接收检查）。
+- 【工程经验】向市场、托管或智能账户这类合约地址转账时，优先使用 safe 变体，让接收能力在转账时暴露（依据：工程经验，无规范依据）。
+- 【工程经验】自建合约需要接收 NFT 时实现对应回调，否则 safe 变体的转入会失败；改用普通 transferFrom 可以让转账通过，但后续转出能力需要该合约自行提供（依据：工程经验，无规范依据）。
+- 【工程经验】前端把「接收方未按约定返回」与「用户拒绝」区分为两类失败，并给出可执行的下一步（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为两种 transferFrom 的差异只在 gas，忽略接收回调这一层。
+- 用户报告失败后直接改用普通 transferFrom 绕过检查，把问题转移到后续转出环节。
+- 自建接收合约未实现回调，导致 safe 变体转入失败时只在前端反复重试。
+- 回调魔术值写错，或在 ERC-721 与 ERC-1155 的回调之间混用返回值。
+- 对 EOA 接收方也期待出现接收回调。
+- 把单笔 ERC-1155 safeBatchTransferFrom 的回调失败理解为批次内部的部分成功（依据：EIP-1155 §Specification 的 Safe Transfer Rules）。
+
+## 面试官追问
+
+1. safeTransferFrom 的接收方是合约但未实现回调时会发生什么，你如何在提交前预判？
+2. 用户坚持用普通 transferFrom 转入一个转出逻辑有缺陷的合约，你会如何设计提示与后续补偿？
+3. ERC-721 与 ERC-1155 的接收回调在参数与返回值上有哪些差异会影响前端解码？
+4. 前端分别发送多笔转账交易时，部分成功、部分失败的状态你会如何展示与对账？（注意：单笔 ERC-1155 safeBatchTransferFrom 的回调失败会让整笔交易回滚，不存在批次内部的部分成功。）
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 safeTransferFrom 对合约接收方有回调检查，普通 transferFrom 没有。
+- 知道回调未按约定返回时转账会失败。
+
+### 中级回答
+
+- 能说明回调返回值的要求以及 EOA 与合约接收方的区别，并指出 ERC-1155 的对应回调。
+- 能解释绕过 safe 变体可能带来的后续转出问题。
+
+### 高级回答
+
+- 能针对市场、托管与自建合约设计接收校验与失败补偿方案。
+- 能区分单笔 ERC-1155 批量转账的整笔回滚语义与多笔独立交易编排的部分成功，并说明后者的展示与对账方式。
+
+## 参考资料
+
+- [EIP-721：Non-Fungible Token Standard（§Specification）](https://eips.ethereum.org/EIPS/eip-721)
+- [EIP-1155：Multi Token Standard（§Specification）](https://eips.ethereum.org/EIPS/eip-1155)

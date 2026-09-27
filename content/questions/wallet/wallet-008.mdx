@@ -1,0 +1,99 @@
+---
+id: wallet-008
+slug: eip1193-request-promise-contract
+title: request 的 Promise 契约与错误对象
+summary: 理解 EIP-1193 request 的返回与拒绝约定，并把错误码映射为可执行的 UI 处理。
+status: review
+difficulty: beginner
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-1193
+  - json-rpc
+  - error-handling
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1193：Ethereum Provider JavaScript API（§request、§Provider Errors）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: EIP-1474：Remote Procedure Call 规范（§Error codes）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+一个 DApp 的「连接钱包」按钮在用户取消后弹出红色报错，另一个「切换网络」按钮在钱包不支持某个方法时反复重试。请你从 EIP-1193 的 `request` 契约出发，说明成功值与失败值的结构、错误码的含义，以及这两个问题应该怎么修。
+
+## 考察目标
+
+- `request` 成功返回值与失败拒绝值的结构。
+- `ProviderRpcError` 的 `code` 分类与界面处理的对应关系。
+- 区分用户行为、能力缺失与连接故障三类失败。
+
+## 30 秒回答
+
+`request` 成功时 resolve 该方法规范定义的结果，失败时 reject 一个带整数 `code` 与人类可读 `message` 的 `ProviderRpcError`，而不是 JSON-RPC 的响应外壳。错误码中，4001 表示用户拒绝请求，4100 表示请求的账户或方法未经授权，4200 表示钱包不支持该方法，4900 表示与链的连接已断开，4901 表示请求的目标链未连接；EIP-1474 还定义了 -32601 方法不存在、-32602 参数无效、-32603 内部错误。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】`request` 返回 Promise：成功时 resolve 该方法的结果值，而不是包含 `jsonrpc`、`id`、`result` 的响应外壳（依据：EIP-1193 §request）。
+
+【协议保证】失败时 Promise 被 reject，拒绝值是 `ProviderRpcError`，包含人类可读的 `message`、整数 `code`，以及可选的 `data` 字段（依据：EIP-1193 §Provider Errors）。
+
+【协议保证】4001 的语义是用户拒绝了这次请求（依据：EIP-1193 §Provider Errors）。
+
+【协议保证】4100 的语义是请求的方法或账户未经用户授权（依据：EIP-1193 §Provider Errors）。
+
+【协议保证】4200 的语义是钱包不支持该方法（依据：EIP-1193 §Provider Errors）。
+
+【协议保证】4900 表示钱包与链的连接已断开，4901 表示请求的目标链没有连接（依据：EIP-1193 §Provider Errors）。
+
+【协议保证】除钱包侧错误码外，调用还可能收到 JSON-RPC 错误：-32601 方法不存在、-32602 参数无效、-32603 内部错误（依据：EIP-1474 §Error codes）。
+
+【协议保证】规范用整数 `code` 表达错误类别，`message` 用作人类阅读；二者在错误对象中同时存在（依据：EIP-1193 §Provider Errors）。
+
+【协议保证】未授权（4100）、断连（4900）、目标链未连接（4901）与不支持方法（4200）是四类不同的规范错误，各自的恢复条件不同（依据：EIP-1193 §Provider Errors）。
+
+## 常见错误
+
+- 把 `request` 的返回值当作 `{ jsonrpc, id, result }` 外壳去解构。
+- 把用户拒绝（4001）与系统故障混在一起，统一弹红色错误。
+- 对 4001 做自动重试，用户在拒绝之后还会收到新的弹窗。
+- 对 4200 不降级而是循环调用。
+- 通过 `message` 文案匹配判断错误类型；在文案被本地化或改写的实现中，这种判断会失效。
+
+## 面试官追问
+
+1. 用户拒绝后，按钮状态与重试入口应该如何处理？
+2. 如何区分「用户拒绝」与「RPC 节点不可用」这两类失败？
+3. 钱包对某个方法返回 4200 时，产品层可以降级成什么？
+4. 为什么用 `code` 而不是 `message` 作为程序判别依据？
+5. 一次写操作分别遇到「未授权」与「目标链未连接」时，恢复路径有什么不同？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 `request` 返回 Promise，成功给结果、失败给错误对象。
+- 知道 4001 表示用户拒绝。
+
+### 中级回答
+
+- 能把 4001、4100、4200、4900、4901 分类，并说明各自的处理方向。
+- 能区分协议错误码与业务错误，避免把各类失败提示为同一句话。
+
+### 高级回答
+
+- 能设计一套「错误码 → 界面状态 → 重试策略 → 日志字段」的映射，并说明用户在各类失败后看到什么。
+- 能把错误分类落到监控与回归测试用例上，并说明 `message` 文案不进入判别逻辑的原因。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§request、§Provider Errors）](https://eips.ethereum.org/EIPS/eip-1193)
+- [EIP-1474：Remote Procedure Call 规范（§Error codes）](https://eips.ethereum.org/EIPS/eip-1474)

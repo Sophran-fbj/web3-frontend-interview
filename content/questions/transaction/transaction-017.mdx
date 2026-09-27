@@ -1,0 +1,92 @@
+---
+id: transaction-017
+slug: safe-finalized-block-tags
+title: safe 与 finalized 标签在确认中的应用
+summary: 说明区块参数标签的用法、safe 与 finalized 的差别，以及读接口中标签选择与降级的取舍。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - finality
+  - block-tag
+  - pos
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：JSON-RPC（§eth_call、§eth_getBalance 的区块参数说明）
+    url: https://ethereum.org/en/developers/docs/apis/json-rpc/
+  - title: wagmi：useReadContract（§blockTag）
+    url: https://wagmi.sh/react/api/hooks/useReadContract
+  - title: EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+页面上有一个「当前余额」和一个「结算后的余额」。工程师提出读取时分别使用 latest 与 finalized 两个标签，另一位同事担心部分网络不支持这两个取值。请解释这些标签的含义差异，并给出兼容处理方案。
+
+## 考察目标
+
+- 区块参数用高度与用标签表示的区别。
+- safe 与 finalized 的强度差异。
+- 标签可用性不足时的降级路径。
+
+## 30 秒回答
+
+读接口的区块参数可以用区块高度表示，也可以用标签表示，标签决定这次读取落在哪一个区块上。区块越新，被链上区块组织变化影响的可能性越大；不同标签对应不同强度的确定性。safe 与 finalized 的语义与可用性属于节点实现层面的事。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】JSON-RPC 的区块参数可以用区块号表示，也可以用 earliest、latest、pending 等标签表示（依据：EIP-1474 §Block Identifier 及方法条目中的区块参数说明）。
+- 【协议保证】不同区块参数指向不同区块，同一读取可能返回不同结果（依据：EIP-1474 §Block Identifier）。
+- 【实现行为】wagmi 的读取类 Hook 暴露 blockTag 参数，取值包含 latest、earliest、pending、safe 与 finalized（依据：wagmi useReadContract §blockTag）
+- 【工程经验】safe 与 finalized 标签能否被节点接受取决于其版本与配置；使用前应做能力探测，并为不支持的情况准备按区块高度读取的降级路径（依据：工程经验，无规范依据）
+- 【工程经验】读取「可能继续变化」的数据用 latest，读取「用于结算或核对」的数据用更强的最终性口径，可以让界面语义与风险一致（依据：工程经验，无规范依据）
+- 【工程经验】节点不识别某个标签时，降级路径可以按高度读取，再在前端按区块深度自行判断（依据：工程经验，无规范依据）
+- 【工程经验】缓存与查询键应把标签纳入，避免把最新视图的结果复用到最终性视图上（依据：工程经验，无规范依据）
+- 【工程经验】把标签选择收敛到数据层统一下发，可以减少页面之间口径不一致的情况（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 把 safe 与 finalized 当成同一强度的保证（依据：wagmi useReadContract §blockTag 把二者列为不同取值）
+- 默认用 latest 读取，却在文案上把结果描述成「已最终」（依据：工程经验，无规范依据）
+- 节点返回不支持该标签的错误时没有降级，把失败直接抛给用户（依据：工程经验，无规范依据）
+- 把「落后多少个 epoch」这类数字写进产品文案或校验逻辑（依据：该数值随网络状况变化，不适合作为固定假设；工程经验）
+- 在同一条产品的多条网络上沿用同一套标签假设（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 节点报出标签不支持时，你的降级路径是什么？
+2. 用 finalized 读取余额时，用户刚完成的转账看不到，产品上如何解释？
+3. 读出「已最终」结果之后，还需要复查链上区块组织变化吗？
+4. 标签选择由页面决定，还是由数据层统一决定，如何取舍？
+
+## 评分标准
+
+### 初级回答
+
+- 知道区块参数可以用高度或标签表示。
+- 知道不同标签指向不同区块，结果可能不同。
+
+### 中级回答
+
+- 能说明 safe 与 finalized 的强度差别。
+- 知道标签可用性取决于节点实现，并给出一种降级思路。
+
+### 高级回答
+
+- 能设计标签降级、缓存隔离与口径统一的方案。
+- 能说明最终性口径下的产品文案处理与复查策略。
+
+## 参考资料
+
+- [ethereum.org：JSON-RPC（§eth_call、§eth_getBalance 的区块参数说明）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [wagmi：useReadContract（§blockTag）](https://wagmi.sh/react/api/hooks/useReadContract)
+- [EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)

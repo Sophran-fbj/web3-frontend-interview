@@ -1,0 +1,95 @@
+---
+id: transaction-019
+slug: transaction-hash-derivation
+title: 交易哈希是如何计算出来的
+summary: 说明交易哈希来自序列化后的交易字节、哪些变化会产生新哈希，以及跟踪流程中如何使用它。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - transaction-hash
+  - rlp
+  - keccak
+stacks:
+  viem: "2.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-2718：Typed Transaction Envelope（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-2718
+  - title: ethereum.org：Transactions（§What's a transaction?、§Typed Transaction Envelope）
+    url: https://ethereum.org/en/developers/docs/transactions/
+  - title: EIP-155：Simple replay attack protection（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-155
+  - title: EIP-1474：Remote procedure call specification（§Error codes、方法条目）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+用户点击「加速」之后，钱包里出现了第二笔交易。工程师发现之前保存的哈希查不到结果，误以为交易丢失。请解释交易哈希的计算方式，并说明加速、替换与轮询之间的关系。
+
+## 考察目标
+
+- 交易序列化与哈希的关系。
+- 哪些字段变化会产生新的哈希。
+- 发送与跟踪流程中哈希的使用方式。
+
+## 30 秒回答
+
+交易在被签名之后按固定的序列化形式编码，哈希是对这段字节做哈希运算得到的结果。交易的字段或签名发生变化，序列化结果随之变化，哈希也变成另一个值；因此替换交易对应的是新的哈希。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】EIP-2718 定义的类型化交易以「类型前缀 + 载荷」的形式序列化，不同类型的交易对应的序列化结构不同（依据：EIP-2718 §Specification）
+- 【协议保证】交易的身份来自其序列化字节的哈希；签名属于参与序列化的内容，签名不同的两笔交易对应不同的哈希（依据：EIP-2718 §Specification）
+- 【协议保证】序列化载荷不包含发起者字段，发起者由签名恢复得到（依据：EIP-1559 §Specification 的 payload 列表；EIP-1474 §eth_getTransactionByHash 返回的 from）。
+- 【协议保证】签名覆盖链标识等字段，同一操作意图在不同链上得到的签名与哈希不同（依据：EIP-155 §Specification；EIP-1559 §Specification）。
+- 【工程经验】哈希在广播之前就已经可以算出，因此「本地已有哈希」不代表节点已经接受或已经转发该交易（依据：工程经验，无规范依据）
+- 【工程经验】替换交易应被视为一笔新交易：跟踪流程需要更新为新哈希，并把旧哈希标记为被替换而不是失败（依据：工程经验，无规范依据）
+- 【工程经验】把哈希与提交时间、来源账户、链标识一起保存，便于在排查中区分「查不到」与「已被替换」两种情况（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 把交易哈希理解为节点分配的自增编号（依据：EIP-2718 §Specification 的序列化定义）
+- 替换之后继续用旧哈希轮询，并把无结果当成失败（依据：工程经验，无规范依据）
+- 广播被拒绝时界面已经显示「已提交」，状态与事实不一致（依据：工程经验，无规范依据）
+- 认为哈希中包含发起者字段（依据：ethereum.org Transactions §What's a transaction?）
+- 假设各类交易的序列化结构与哈希方式相同（依据：EIP-2718 §Specification 的类型信封定义）
+
+## 面试官追问
+
+1. 用户加速交易之后，原来的哈希还能查到什么？
+2. 为什么前端在发送之前就能算出哈希？
+3. 广播失败但本地已有哈希，状态机要怎么设计？
+4. 交易被换到另一个区块时，哈希会变化吗，为什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道哈希来自对交易内容的哈希运算。
+- 知道交易内容变化会带来新的哈希。
+
+### 中级回答
+
+- 能说明签名参与序列化、发起者由签名恢复。
+- 能解释替换交易为什么对应新哈希。
+
+### 高级回答
+
+- 能把哈希、状态机与替换处理结合起来设计发送与跟踪流程。
+- 能说明多链与节点不可用场景下哈希与状态的对应关系。
+
+## 参考资料
+
+- [EIP-2718：Typed Transaction Envelope（§Specification）](https://eips.ethereum.org/EIPS/eip-2718)
+- [ethereum.org：Transactions（§What's a transaction?、§Typed Transaction Envelope）](https://ethereum.org/en/developers/docs/transactions/)
+- [EIP-155：Simple replay attack protection（§Specification）](https://eips.ethereum.org/EIPS/eip-155)
+- [EIP-1474：Remote procedure call specification（§Error codes、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)

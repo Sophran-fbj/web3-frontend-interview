@@ -1,0 +1,102 @@
+---
+id: transaction-007
+slug: cross-provider-transaction-state-inconsistency
+title: 同一笔交易在不同节点与浏览器上状态不一致
+summary: 说明 pending 查询的边界与节点视图差异，给出以 receipt 与最终性为准的确认与对账方案。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - rpc
+  - mempool
+  - consistency
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：JSON-RPC API（§eth_getTransactionByHash、§eth_getTransactionReceipt）
+    url: https://ethereum.org/en/developers/docs/apis/json-rpc/
+  - title: ethereum.org：Transactions（§Transaction lifecycle）
+    url: https://ethereum.org/en/developers/docs/transactions/
+  - title: EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+前端轮询时发现某笔交易在一个 RPC 上查得到，换一个 RPC 就查不到，页面上出现过「交易丢失」的提示。请说明 pending 查询的边界、节点视图差异，以及以什么为准确认交易状态。
+
+## 考察目标
+
+- 理解 receipt 在 pending 阶段的行为。
+- 说明不同节点视图差异的来源与影响。
+- 设计以 receipt 与区块确认为基准的确认流程。
+
+## 30 秒回答
+
+交易未被打包时，receipt 查询返回 `null`，这个结果表示尚无回执，而不是交易失败；交易查询与 receipt 查询返回的是查询节点在查询时刻的视图，不同节点与服务的可见性可能不一致。确认状态以 receipt 与区块推进情况为依据。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】交易未被打包时查询收据得到空结果（依据：EIP-1474 §eth_getTransactionReceipt 的说明）。
+
+【协议保证】交易查询与收据查询都以交易哈希为输入（依据：EIP-1474 §eth_getTransactionByHash、§eth_getTransactionReceipt）。
+
+【实现行为】内存池可见性、广播传播速度与查询响应因节点与服务商而异，同一时刻不同 RPC 的结果可能不一致（依据：因节点与服务商而异）。
+
+【工程经验】确认状态以 receipt 为依据，并进一步结合区块确认深度判断；单次 pending 查询为空不足以判定交易丢失（依据：工程经验，无规范依据）。
+
+【工程经验】多 RPC 场景下定义主节点与对账策略：以拿到 receipt 的节点结果为准，其他节点用于可用性备份（依据：工程经验，无规范依据）。
+
+【工程经验】切换 RPC 后仍可用同一交易哈希查询，但展示状态要重新以新拿到的 receipt 为准，避免混用两段视图（依据：工程经验，无规范依据）。
+
+【工程经验】重复广播同一笔交易可能产生多条传播路径，需要去重与幂等处理，避免界面重复展示（依据：工程经验，无规范依据）。
+
+【工程经验】对用户的到账时间承诺给出区间而不是时点，并在区块确认推进时更新界面状态（依据：工程经验，无规范依据）。
+
+【工程经验】把「未在本地 RPC 查到」与「交易被替换或丢弃」区分开：前者属于视图问题，后者需要结合 nonce 与替换检测判断（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 用一次 pending 查询为空的结果提示「交易丢失」或直接发起重发。
+- 把不同 RPC 的查询结果混用在同一条状态流里。
+- 把 receipt 为 `null` 当作交易失败。
+- 交易广播后不再跟踪，界面长期停留在「处理中」。
+- 同时向多个 RPC 广播同一笔交易却不做去重，界面出现重复条目。
+
+## 面试官追问
+
+1. 如何在多 RPC 环境下定义一笔交易的权威状态来源？
+2. 交易长时间处于 pending，你会从哪些角度排查而不是直接重发？
+3. receipt 返回 `null` 与返回失败状态，界面上如何区分？
+4. 如果用户在此期间切换了网络节点，已发出的交易状态如何追踪？
+5. 对账系统与前端展示应该共享哪些确认标准？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出未打包交易的 receipt 为 `null`，这不是失败。
+- 知道不同节点的查询结果可能不一致。
+
+### 中级回答
+
+- 能说明 pending 查询与 receipt 的边界，并给出以 receipt 为准的确认流程。
+- 能指出多 RPC 场景需要定义权威视图与对账策略。
+
+### 高级回答
+
+- 能设计包含广播、轮询、确认与对账的状态机，并说明节点差异下的兜底路径。
+- 能讨论替换交易、重复广播与用户承诺时间之间的处理方式，并给出验证方案。
+
+## 参考资料
+
+- [ethereum.org：JSON-RPC API（§eth_getTransactionByHash、§eth_getTransactionReceipt）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [ethereum.org：Transactions（§Transaction lifecycle）](https://ethereum.org/en/developers/docs/transactions/)
+- [EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)

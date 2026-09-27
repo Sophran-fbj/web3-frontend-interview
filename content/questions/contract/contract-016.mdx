@@ -1,0 +1,93 @@
+---
+id: contract-016
+slug: receive-fallback-frontend
+title: 给合约转 ETH 会走哪个函数
+summary: 从 receive 与 fallback 的触发条件出发，说明向合约发送 ETH 的执行路径、失败条件与前端处理方式。
+status: review
+difficulty: advanced
+category: contract
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - receive
+  - fallback
+  - eth-transfer
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: Solidity 文档：Contracts（§Receive Ether Function、§Fallback Function）
+    url: https://docs.soliditylang.org/en/latest/contracts.html
+  - title: ethereum.org：Transactions（§What's a transaction?、§Transaction lifecycle）
+    url: https://ethereum.org/en/developers/docs/transactions/
+  - title: EIP-140：REVERT instruction（§Abstract、§Motivation）
+    url: https://eips.ethereum.org/EIPS/eip-140
+---
+
+## 题目
+
+一个 DApp 提供「向合约地址存入 ETH」的功能。测试时出现三种情况：有的合约地址收到 ETH 后余额增加，但页面期待的函数逻辑没有生效；有的地址转账直接失败；还有的地址在区块链浏览器上显示有代码，却看不到转入记录。请说明向合约发送 ETH 时执行路径是怎样的，以及前端应该如何处理这几种结果。
+
+## 考察目标
+
+- receive 与 fallback 的触发条件。
+- 缺少可接收 ETH 入口时的失败语义。
+- 失败原因的分类与用户提示。
+
+## 30 秒回答
+
+向合约地址发送 ETH 时会执行目标合约的代码：calldata 为空时执行 receive()，合约未实现 receive 但存在 payable fallback 时会走 fallback；calldata 非空且没有匹配到函数时走 fallback；若合约没有可接收 ETH 的 payable 入口，这笔转账会失败并消耗 gas。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】对合约地址发起的普通 ETH 转账会执行合约代码；calldata 为空时触发 receive()，前提是合约实现了 receive 函数（依据：Solidity 文档 §Receive Ether Function）。
+- 【协议保证】合约未实现 receive 但存在 payable 的 fallback 时，calldata 为空的转账会走 fallback；两类入口都缺失时，这笔转账会失败（依据：Solidity 文档 §Receive Ether Function、§Fallback Function）。
+- 【协议保证】调用携带 calldata 且没有匹配到函数签名时会走 fallback；fallback 未声明为 payable 时，携带 value 的调用会失败（依据：Solidity 文档 §Fallback Function）。
+- 【协议保证】在 gas 最坏情况下（例如通过 transfer 或 send 发起的转账），receive 与 payable fallback 只有 2300 gas 可用，适合放置简单的记账逻辑（依据：Solidity 文档 §Receive Ether Function、§Fallback Function）。
+- 【协议保证】目标地址没有代码时，调用以空代码执行，不进入合约逻辑（依据：EIP-7702 §Specification 的 Precompiles 段落对空代码执行的描述）。
+- 【协议保证】交易失败时状态变更被回滚，已消耗的 gas 按实际用量结算（依据：EIP-140 §Abstract、§Motivation；EIP-1559 §Specification 的 gas 结算与退款）。
+- 【工程经验】提交前用 eth_getCode 判断目标地址是否有代码，据此决定是否需要提示检查 payable 入口（依据：工程经验，无规范依据）。
+- 【工程经验】把「钱包里拒绝」与「链上执行失败」分开提示：前者回到可重试状态，后者展示失败原因与重试入口（依据：工程经验，无规范依据）。
+- 【工程经验】出现「转账成功但业务逻辑没有生效」时，按 calldata 与 ABI 是否匹配、目标入口是否 payable 的顺序排查（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把向合约地址发送 ETH 当成普通转账，忽略会执行合约代码这一路径（对 calldata 为空的转账同样成立）。
+- 认为合约存在 receive 或 fallback 就可以接收 ETH，忽略入口需要声明为 payable。
+- calldata 非空时寄望 receive 被触发；该场景的实际路径是函数匹配或 fallback。
+- 交易失败时统一提示「网络错误」，忽略用户拒绝与合约侧拒绝的差异。
+- 对 receive 中逻辑较复杂的合约使用 send 或 transfer 转账，触发 2300 gas 不足的失败。
+
+## 面试官追问
+
+1. 合约没有实现 receive，但存在 payable fallback，你如何确认一笔 ETH 转账实际走了哪条路径？
+2. 钱包显示已提交、浏览器显示 reverted 时，你会如何向用户解释并修正页面状态？
+3. 如果产品需要在 receive 中做较复杂的记账，2300 gas 的边界会带来什么问题，你会改合约还是改调用方式？
+4. 同一笔转 ETH 的交易，目标从 EOA 换成合约后，前端需要增加哪些校验？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 calldata 为空的转账走 receive、有 calldata 且无匹配函数时走 fallback。
+- 知道缺少可接收 ETH 的 payable 入口时转账会失败。
+
+### 中级回答
+
+- 能说明 receive 与 fallback 的触发条件差异，以及 payable 条件缺失时的失败结果。
+- 能区分用户拒绝与合约执行失败，并给出不同的页面处理。
+
+### 高级回答
+
+- 能结合 gas 边界与重入风险讨论 receive 与 fallback 的实现取舍，并给出前端校验与提示设计。
+- 能设计失败交易的状态对账流程，覆盖页面状态、gas 消耗与重试入口。
+
+## 参考资料
+
+- [Solidity 文档：Contracts（§Receive Ether Function、§Fallback Function）](https://docs.soliditylang.org/en/latest/contracts.html)
+- [ethereum.org：Transactions（§What's a transaction?、§Transaction lifecycle）](https://ethereum.org/en/developers/docs/transactions/)
+- [EIP-140：REVERT instruction（§Abstract、§Motivation）](https://eips.ethereum.org/EIPS/eip-140)

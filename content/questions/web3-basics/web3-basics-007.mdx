@@ -1,0 +1,105 @@
+---
+id: web3-basics-007
+slug: address-normalization-and-comparison
+title: 地址的规范化比较与展示
+summary: 从校验和地址的工作原理出发，说明比较、展示与输入校验应当如何配合，并给出可落地的规范化流程。
+status: review
+difficulty: beginner
+category: web3-basics
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - addresses
+  - validation
+  - eip-55
+stacks: { viem: "2.x" }
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-55：混合大小写校验和地址编码（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-55
+  - title: ethereum.org：Ethereum 账户（§Account types、§An account examined、§A note on wallets）
+    url: https://ethereum.org/en/developers/docs/accounts/
+  - title: Ethereum Yellow Paper：World State（§4.1）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+---
+
+## 题目
+
+一个资产面板里，用户从钱包复制来一个地址，粘贴到输入框后页面提示「地址不合法」；另一个页面上，两段看起来相同的地址被判定为「不是同一个地址」。请说明地址比较与展示应当怎么做，并指出这两处问题各自出在哪里。
+
+## 考察目标
+
+- EIP-55 校验和地址的生成依据与作用范围。
+- 地址比较前的规范化流程与常见实现工具。
+- 地址展示、复制与输入校验的可用性要求。
+
+## 30 秒回答
+
+EIP-55 依据地址内容的哈希决定 40 位十六进制字符中字母的大小写，使校验和地址能够暴露抄写错误；十六进制中字母的大小写不改变地址指向的账户，同一地址的不同写法在链上指向同一账户。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】EIP-55 对去掉 0x 前缀的 40 位十六进制内容计算 keccak256，并按哈希结果决定其中字母为大写还是小写，让地址自身携带校验信息（依据：EIP-55 §Specification）。
+- 【协议保证】地址在 EVM 中作为 160 位标识参与状态映射，数值相同即同一账户（依据：Yellow Paper §4.1 World State）；大小写是表示形式差异（依据：EIP-55 §Specification）。
+- 【工程经验】比较两个地址前先做规范化：统一转为小写比较，或统一转为校验和形式后再比较；直接对原始字符串做相等判断，会把同一地址的两种写法判为不同（依据：EIP-55 §Specification）。
+- 【工程经验】输入校验按顺序处理：先去除首尾空白与不可见字符，再检查 0x 前缀与总长度，最后做校验和验证；顺序颠倒会在带空格的输入上误报（依据：EIP-55 §Specification）。
+- 【工程经验】优先使用 SDK 提供的地址校验与规范化函数，而不是在组件里手写正则；这类函数一般同时覆盖长度、字符集与校验和检查（依据：工程经验，无规范依据）。
+- 【工程经验】展示层同时提供缩写与可展开的完整校验和地址，并附复制按钮；仅给缩写会让用户失去核对手段，长串直接铺满列表则影响可读性（依据：ethereum.org 账户 §A note on wallets）。
+- 【工程经验】与 ENS 这类名称服务并用时，界面同时展示名称与解析后的地址，并在名称解析异常或变更时以地址为准（依据：工程经验，无规范依据）。
+
+## 示例代码
+
+以下片段只演示地址规范化这一层，省略了 UI 与错误提示部分。
+
+```ts
+import { getAddress, isAddress } from "viem";
+
+export function normalize(value: string): string | null {
+  const trimmed = value.trim();
+  if (!isAddress(trimmed)) return null;
+  return getAddress(trimmed);
+}
+```
+
+## 常见错误
+
+- 用原始字符串相等判断比较混合大小写地址，把同一账户判成两个（【协议保证】字母大小写不改变地址指向，依据：EIP-55 §Specification）。
+- 正则只检查 0x 前缀与长度，放过字符错误的地址。
+- 只展示缩写地址且不可展开，用户没有核对完整地址的途径。
+- 复制粘贴后未处理首尾空格与不可见字符，把带空格的输入判为非法。
+- 把校验和通过当作身份认证或防钓鱼手段（【工程经验】校验和覆盖的是抄写错误，不构成身份证明）。
+
+## 面试官追问
+
+1. 用户粘贴的地址校验和验证失败，但该地址来自可信来源，界面应该给出什么处理路径？
+2. ENS 名称解析结果与地址簿记录冲突时，前端应以哪个为准，如何提示？
+3. 把地址规范化放在组件层、数据访问层与展示层，各自的取舍是什么？
+4. 多链应用中，同一地址在不同链上出现，地址比较需要引入哪些额外维度？
+
+## 评分标准
+
+### 初级回答
+
+- 能说明 EIP-55 通过哈希决定字母大小写，目的是暴露抄写错误。
+- 知道比较地址前要统一大小写。
+
+### 中级回答
+
+- 能给出「去空白、校验格式与长度、校验 checksum、再比较」的处理顺序，并说明顺序原因。
+- 能区分「校验和验证失败」与「地址格式非法」两类提示。
+
+### 高级回答
+
+- 能设计一套贯穿输入、存储、展示与比较的地址规范化约定，并说明把它放在数据层的原因。
+- 能说明校验和的边界：它降低抄写错误概率，但不用于身份认证，也无法阻止用户主动确认错误地址。
+
+## 参考资料
+
+- [EIP-55：混合大小写校验和地址编码（§Specification）](https://eips.ethereum.org/EIPS/eip-55)
+- [ethereum.org：Ethereum 账户（§Account types、§An account examined、§A note on wallets）](https://ethereum.org/en/developers/docs/accounts/)
+- [Ethereum Yellow Paper：World State（§4.1）](https://ethereum.github.io/yellowpaper/paper.pdf)

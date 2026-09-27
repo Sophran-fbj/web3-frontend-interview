@@ -1,0 +1,88 @@
+---
+id: security-003
+slug: wallet-watch-asset-security
+title: wallet_watchAsset 向钱包添加资产的安全边界
+summary: 说明 wallet_watchAsset 的返回值含义、请求有效性条件，以及前端在调用时机、展示与日志上的安全约束。
+status: review
+difficulty: intermediate
+category: security
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - wallet-watchasset
+  - phishing
+  - security
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-747：wallet_watchAsset 资产观察（§wallet_watchAsset Returns、§Security Considerations）"
+    url: https://eips.ethereum.org/EIPS/eip-747
+  - title: "EIP-55：混合大小写校验和地址编码（§Specification）"
+    url: https://eips.ethereum.org/EIPS/eip-55
+---
+
+## 题目
+
+一个 DApp 在页面加载时批量调用 wallet_watchAsset，给用户钱包塞进多个项目代币；另一个页面在接口返回 true 后直接提示「已添加成功」，用户却在钱包里找不到对应资产。请说明这个接口的边界与正确用法。
+
+## 考察目标
+
+- wallet_watchAsset 的返回值语义。
+- 请求参数的有效性条件。
+- 调用时机、展示与日志上的安全约束。
+
+## 30 秒回答
+
+wallet_watchAsset 被钱包接收并识别请求时返回 true，这个返回值表示请求进入处理，不表示资产已经出现在用户钱包中，也不表示用户已经看到提示；请求中的地址需要是校验和形式，链标识需要被钱包识别，否则请求无效。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】wallet_watchAsset 在钱包接收并识别请求时返回 true；返回值描述的是请求被处理，不承诺资产已经加入，也不承诺用户被提示（依据：EIP-747 §wallet_watchAsset Returns）。
+- 【协议保证】请求的 options 中，代币地址需要是校验和形式，链标识需要是钱包能够识别的链，不符合时请求无效（依据：EIP-747 §ERC20 type；EIP-55 §Specification）。
+- 【协议保证】EIP-747 的安全考量说明第三方可以借助该请求让资产出现在用户的钱包列表中，因此调用时机与展示方式需要受约束（依据：EIP-747 §Security Considerations）。
+- 【实现行为】钱包可以按自身的 allowlist 与 denylist 策略、图片加载结果或用户设置拒绝请求；返回 true 之后的确认与展示由钱包实现决定（依据：EIP-747 §wallet_watchAsset Returns）。
+- 【工程经验】调用时机放在用户点击「添加资产」之后，单次请求对应一次用户操作；批量弹出多张确认会干扰用户，也降低后续提示的可信度（依据：EIP-747 §Security Considerations）。
+- 【工程经验】对图片资源的来源与可替换性做检查，加载失败时给出占位而不是空白（依据：工程经验，无规范依据）。
+- 【工程经验】请求参数进入日志前做脱敏，避免把用户地址与资产偏好原文写入日志系统（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把返回 true 当作「资产已添加成功」展示（【协议保证】返回值描述请求被处理，依据：EIP-747 §wallet_watchAsset Returns）。
+- 在页面加载或连接钱包时自动调用，打扰用户。
+- 传入非校验和地址或钱包无法识别的链标识，请求被丢弃后没有提示。
+- 在日志中记录完整地址与请求参数。
+- 借该接口把自建代币混入用户资产列表，诱导用户误认资产来源。
+
+## 面试官追问
+
+1. 用户点击「添加资产」后接口返回 true，但钱包里没有出现该资产，前端应如何提示？
+2. 如何避免该接口被用来向用户推送来源不明的资产？
+3. 添加资产的入口放在哪些页面位置更合适？请说明取舍。
+4. 调用前是否需要先校验链与地址？说明理由。
+
+## 评分标准
+
+### 初级回答
+
+- 能说明返回 true 的含义与「已添加」之间的差别。
+- 知道调用应发生在用户明确操作之后。
+
+### 中级回答
+
+- 能说明参数有效性条件与钱包侧的拒绝原因。
+- 能给出提示文案与失败回退的处理方式。
+
+### 高级回答
+
+- 能设计资产添加入口的交互与安全检查，覆盖 URL、图片与参数来源。
+- 能说明该接口被用于钓鱼时的产品侧防线与日志策略。
+
+## 参考资料
+
+- [EIP-747：wallet_watchAsset 资产观察（§wallet_watchAsset Returns、§Security Considerations）](https://eips.ethereum.org/EIPS/eip-747)
+- [EIP-55：混合大小写校验和地址编码（§Specification）](https://eips.ethereum.org/EIPS/eip-55)

@@ -1,0 +1,88 @@
+---
+id: contract-013
+slug: usdt-approve-zero-pattern
+title: 主网 USDT 的 approve 为什么需要先置 0
+summary: 说明 ERC-20 的 approve 标准语义、主网 USDT 的差异化实现，以及两步授权流程的状态管理与失败恢复。
+status: review
+difficulty: intermediate
+category: contract
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - erc-20
+  - approve
+  - compatibility
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-20：Token 标准（§Specification：approve、allowance、Approval 事件）"
+    url: https://eips.ethereum.org/EIPS/eip-20
+  - title: "Etherscan：Tether USD（USDT）主网合约（页面级实现行为依据）"
+    url: https://etherscan.io/address/0xdac17f958d2ee523a2206206994597c13d831ec7
+---
+
+## 题目
+
+接入主网 USDT 后，把授权从 100 改成 200 的交易在钱包里直接失败；另一个组件在第二笔授权失败后界面仍显示「授权完成」。请说明原因与处理方式。
+
+## 考察目标
+
+- ERC-20 的 approve 与 allowance 标准语义。
+- 主网 USDT 实现的差异与两步授权流程。
+- 两步交易的顺序与状态展示。
+
+## 30 秒回答
+
+ERC-20 规范的 approve 把授权额度设置为新值，allowance 返回当前额度；以太坊主网 USDT 的实现拒绝在已有非零额度时直接改设为另一个非零值，需要先把额度置为 0 再设置新值。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】ERC-20 定义 approve(spender, value) 把调用者对 spender 的额度设为 value，并通过 Approval 事件记录（依据：EIP-20 §Specification 的 approve 与 Approval 事件定义）。
+- 【协议保证】ERC-20 定义 allowance(owner, spender) 返回当前额度；授权前读取它，可以判断本次操作从什么状态出发（依据：EIP-20 §Specification 的 allowance 定义）。
+- 【实现行为】以太坊主网 USDT 合约的 approve 实现在当前额度非零且新值也非零时回滚；把额度从一个非零值改为另一个非零值需要先置 0（依据：Etherscan 上 USDT 主网合约页面）。
+- 【工程经验】通用授权组件先读取 allowance：额度为零时一步设置；额度非零时按目标代币行为决定是否走「置 0 再设置」的两步流程（依据：EIP-20 §Specification 的 allowance 定义）。
+- 【工程经验】两步交易按提交顺序管理 nonce，并在第二步完成前把界面状态标为进行中（依据：工程经验，无规范依据）。
+- 【工程经验】第二步失败后，链上额度停留在第一步设置的值；界面把该状态如实呈现并提供重试入口（依据：EIP-20 §Specification 的 approve 定义）。
+- 【工程经验】额度展示同时给出现值与本次请求的新值，让用户判断影响范围；对较大额度给出额外提示（依据：EIP-20 §Specification 的 approve 定义）。
+
+## 常见错误
+
+- 假设各代币的 approve 都支持直接改额度（【实现行为】存在拒绝非零改非零的实现，依据：Etherscan 上 USDT 主网合约页面）。
+- 两步流程中忽略 nonce 顺序，先提交第二步。
+- 第二步失败后仍展示「授权完成」。
+- 把某代币的 approve 行为当作 ERC-20 标准要求。
+- 不读取 allowance 就假定当前额度为零。
+
+## 面试官追问
+
+1. 用户在两步之间关闭页面，重新进入时如何确定额度状态？
+2. 大额授权与按需授权的风险差异是什么，界面应如何提示？
+3. 通用授权组件与按代币定制流程，维护成本与兼容性如何取舍？
+4. 授权交易与后续业务交易之间需要怎样的顺序保证？
+
+## 评分标准
+
+### 初级回答
+
+- 能说明 approve 的标准语义。
+- 知道主网 USDT 需要先置 0 再设置新值。
+
+### 中级回答
+
+- 能描述读取 allowance 后再决定一步或两步流程的做法。
+- 能说明两步之间失败时的状态呈现。
+
+### 高级回答
+
+- 能设计兼容多种代币行为的授权组件，覆盖读取、流程选择、顺序与失败恢复。
+- 能说明授权额度、nonce 与业务交易之间的对账方案。
+
+## 参考资料
+
+- [EIP-20：Token 标准（§Specification：approve、allowance、Approval 事件）](https://eips.ethereum.org/EIPS/eip-20)
+- [Etherscan：Tether USD（USDT）主网合约（页面级实现行为依据）](https://etherscan.io/address/0xdac17f958d2ee523a2206206994597c13d831ec7)

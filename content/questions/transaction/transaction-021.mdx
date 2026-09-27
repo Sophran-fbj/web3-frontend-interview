@@ -1,0 +1,91 @@
+---
+id: transaction-021
+slug: eip155-chainid-replay-protection
+title: chainId 参与签名与跨链重放防护
+summary: 说明链标识如何进入签名内容、为什么切链之后需要重新签名，以及多链前端如何组织链配置。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-155
+  - replay-protection
+  - chain-id
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-155：Simple replay attack protection（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-155
+  - title: ethereum.org：Transactions（§Typed Transaction Envelope）
+    url: https://ethereum.org/en/developers/docs/transactions/
+  - title: EIP-1559：Fee market change（§Specification、§Backwards Compatibility）
+    url: https://eips.ethereum.org/EIPS/eip-1559
+---
+
+## 题目
+
+用户先在测试网签名了一笔交易，随后切换到主网，页面直接复用之前的签名广播，结果交易无法执行。请解释原因，并说明前端在多链场景下应该如何处理链标识。
+
+## 考察目标
+
+- 链标识在签名内容中的位置。
+- 切链后重新签名的必要性。
+- 多链场景下的链配置管理。
+
+## 30 秒回答
+
+链标识会进入签名覆盖的内容，因此同一份操作意图在不同链上得到的签名不同；签名一旦生成，就与生成它的链绑定在一起。前端在做签名与广播时使用的链标识需要与当前链一致。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】EIP-155 规定签名哈希覆盖 chainId、nonce、gasPrice、gasLimit、接收方、金额与数据等字段（依据：EIP-155 §Specification）
+- 【协议保证】在 EIP-155 的签名规则下，链标识还参与 v 值的计算，因此签名结果携带链的信息（依据：EIP-155 §Specification）
+- 【协议保证】类型化交易载荷包含链标识字段，签名覆盖该字段（依据：EIP-1559 §Specification 的 payload 与签名载荷）。
+- 【协议保证】节点在处理交易时会校验其声明的链标识，与当前链不一致的交易会被拒绝（依据：EIP-155 §Specification）
+- 【工程经验】切链之后需要重新构造并签名交易；已经签好但尚未广播的交易应当作废，而不是尝试在新链上复用（依据：工程经验，无规范依据）
+- 【工程经验】链标识应作为集中配置与页面上下文一起管理，避免在多个位置各自硬编码（依据：工程经验，无规范依据）
+- 【工程经验】当钱包报出的链与页面配置不一致时，先比对链标识，再决定是提示切链还是重建签名（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 在一条链上签名、到另一条链上广播（依据：EIP-155 §Specification）
+- 把链标识当成展示字段，忽略它参与签名（依据：EIP-155 §Specification）
+- 离线签名系统中遗漏链标识与目标链的校验（依据：工程经验，无规范依据）
+- 在多处硬编码链标识，新增网络时出现不一致（依据：工程经验，无规范依据）
+- 切换链之后继续使用旧的待签名请求（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 用户切链后，页面上尚未提交的签名请求应该如何处理？
+2. 把链标识放进签名与只在广播时校验，安全性差别在哪里？
+3. 多链产品的链配置怎么组织，才能减少人为错误？
+4. 钱包返回的链与页面配置不一致时，你的处理顺序是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道链标识参与签名，签名与链绑定。
+- 知道切链后需要重新签名。
+
+### 中级回答
+
+- 能指出链标识来源不一致的常见场景。
+- 能说明节点校验链标识的位置与失败表现。
+
+### 高级回答
+
+- 能设计集中式链配置与切链后的状态清理、重新签名流程。
+- 能说明服务端离线签名与前端交互在链标识上的一致性要求。
+
+## 参考资料
+
+- [EIP-155：Simple replay attack protection（§Specification）](https://eips.ethereum.org/EIPS/eip-155)
+- [ethereum.org：Transactions（§Typed Transaction Envelope）](https://ethereum.org/en/developers/docs/transactions/)
+- [EIP-1559：Fee market change（§Specification、§Backwards Compatibility）](https://eips.ethereum.org/EIPS/eip-1559)

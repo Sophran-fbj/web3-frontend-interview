@@ -1,0 +1,97 @@
+---
+id: wallet-015
+slug: eth-chainid-vs-net-version
+title: eth_chainId 与 net_version 的区别及历史坑
+summary: 对照两个方法的返回形态与命名空间差异，给出判断当前网络的工程做法与比较时的常见错误。
+status: review
+difficulty: beginner
+category: wallet
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - eip-155
+  - chain-id
+  - json-rpc
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1474：Remote Procedure Call 规范（§net_version）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-1193：Ethereum Provider JavaScript API（§request）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+---
+
+## 题目
+
+一个页面用 `net_version` 判断当前是否主网，另一个页面把 `eth_chainId` 的十六进制字符串与配置中的数字直接比较，判断条件一直没有成立。请说明这两个方法的返回格式、命名空间差异，以及判断网络时的推荐做法。
+
+## 考察目标
+
+- 掌握 `net_version` 与 `eth_chainId` 的返回类型与所属命名空间。
+- 识别字符串、进制与类型比较带来的问题。
+- 设计链信息读取与缓存的时机。
+
+## 30 秒回答
+
+`net_version` 返回十进制字符串形式的网络 ID，属于 `net` 命名空间；`eth_chainId` 返回十六进制字符串形式的 chainId。两者位于不同的方法集合，返回格式也不同；页面在处理链信息时需要按各自格式解析，并在链变化后重新读取。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】`net_version` 返回十进制字符串形式的网络 ID（依据：EIP-1474 §net_version）。
+
+【协议保证】`eth_chainId` 的返回值是十六进制字符串（依据：EIP-1193 §request 的调用示例）。
+
+【协议保证】两个方法分属不同命名空间：`net_version` 位于 `net` 方法集合，`eth_chainId` 位于 `eth` 方法集合（依据：EIP-1474 §net_version；EIP-1193 §request）。
+
+【工程经验】判断当前网络以 `eth_chainId` 为准，把它的返回值解析为数字后与配置比较（依据：工程经验，无规范依据）。
+
+【工程经验】比较前统一进制与类型：十六进制字符串先解析，十进制字符串按十进制解析，避免字符串与数字混比（依据：工程经验，无规范依据）。
+
+【工程经验】页面初始化、刷新、重连与链事件到达后重新读取 chainId，缓存中的链信息随之失效（依据：工程经验，无规范依据）。
+
+【工程经验】把 chainId 写死绕过配置会让新增网络时的维护成本上升，建议从配置或钱包读取（依据：工程经验，无规范依据）。
+
+【工程经验】界面上的网络名称与 chainId 分开维护：名称属于展示层，判断逻辑围绕 chainId 展开（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 用 `net_version` 的返回值判断主网或测试网。
+- 把 `eth_chainId` 的十六进制字符串与配置中的十进制数字直接比较。
+- 混用字符串与数字类型比较，判断条件不按预期成立。
+- 只在初始化时读取一次 chainId，切链后继续沿用缓存值。
+- 把 chainId 硬编码在业务逻辑里，忽略多网络配置。
+
+## 面试官追问
+
+1. 为什么判断网络更适合用 `eth_chainId` 而不是 `net_version`？
+2. 如果后端接口只返回网络名称，前端如何与 chainId 对齐？
+3. 多链页面中，chainId 应该在哪些位置参与缓存键与请求参数？
+4. 用户切链后旧链的请求仍在飞行，你会如何处理先后顺序？
+5. 本地开发链与测试网的 chainId 管理，你会如何避免误连主网？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 `net_version` 返回十进制字符串、`eth_chainId` 返回十六进制字符串。
+- 知道比较前需要解析进制。
+
+### 中级回答
+
+- 能说明两个方法所在命名空间与用途不同，并给出统一的解析与比较方案。
+- 能指出切链后需要重新读取并让缓存失效。
+
+### 高级回答
+
+- 能设计多链配置与 chainId 解析工具，说明展示层与判断逻辑的分工。
+- 能说明链信息在各数据层的传递方式，并给出误连网络的防护与测试方案。
+
+## 参考资料
+
+- [EIP-1474：Remote Procedure Call 规范（§net_version）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-1193：Ethereum Provider JavaScript API（§request）](https://eips.ethereum.org/EIPS/eip-1193)

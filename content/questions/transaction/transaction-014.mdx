@@ -1,0 +1,92 @@
+---
+id: transaction-014
+slug: block-timestamp-deadline-vs-local-time
+title: 链上截止时间：block.timestamp 与本地时间
+summary: 说明链上时间的来源、签名有效期字段的校验方式，以及倒计时与重新签名在用户路径中的位置。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - deadline
+  - timestamp
+  - ux
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：Transactions（§Transaction lifecycle）
+    url: https://ethereum.org/en/developers/docs/transactions/
+  - title: EIP-2612：Permit extension（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-2612
+  - title: Solidity 文档：全局变量（§Block and Transaction Properties）
+    url: https://docs.soliditylang.org/en/latest/units-and-global-variables.html
+---
+
+## 题目
+
+一个签名授权相关的功能需要用户签名，签名里包含有效期字段，合约在链上按区块时间判断是否过期。产品经理希望页面上有一个倒计时，并在过期后自动重新请求签名。请说明倒计时、重新签名与链上判断之间的关系。
+
+## 考察目标
+
+- 链上时间与本地时间的区别。
+- 有效期字段的校验位置与失效条件。
+- 过期后的用户路径与重新签名的边界。
+
+## 30 秒回答
+
+合约在做过期判断时读取的是所在区块的时间戳，该值由区块生产者给出，而不是用户设备上的时间；本地时间适合做近似展示。有效期字段在签名被提交并执行时由合约校验，校验不通过的调用会被回滚。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】Solidity 中 block.timestamp 表示当前区块的时间戳，由区块生产者设置（依据：Solidity 文档 §Block and Transaction Properties）
+- 【协议保证】EIP-2612 的 permit 携带 deadline 字段，合约在校验签名时把该字段与当前区块时间比较，超出范围的签名不再被接受（依据：EIP-2612 §Specification）
+- 【协议保证】由于比较发生在执行阶段，同一份签名在区块时间不同的区块上可能得到不同结果：在区块时间尚未超过 deadline 的区块上可以通过校验（依据：EIP-2612 §Specification；Solidity 文档 §Block and Transaction Properties）
+- 【协议保证】permit 的签名还绑定 nonce，用于避免同一份签名被重复使用（依据：EIP-2612 §Specification）
+- 【协议保证】交易在未被打包时查询收据得到空结果；被打包后由收据记录执行结果（依据：EIP-1474 §eth_getTransactionReceipt 的说明）。
+- 【工程经验】前端倒计时适合作为提示；提交与重新签名之前以链上读取到的时间为参考，更贴近合约的判断（依据：工程经验，无规范依据）
+- 【工程经验】deadline 的取值需要在「用户有足够时间完成确认」与「签名有效窗口尽量短」之间取平衡，具体数值取决于业务场景（依据：工程经验，无规范依据）
+- 【工程经验】过期后引导用户重新签名，而不是复用过期签名重试，可以避免可预期的失败（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 用设备时间判断链上是否过期（依据：Solidity 文档 §Block and Transaction Properties）
+- 把 deadline 设为 0 或极长的时间，使签名的有效窗口超出业务需要（依据：工程经验，无规范依据）
+- 倒计时结束后继续提交同一份签名（依据：EIP-2612 §Specification 的 deadline 校验）
+- 提示文案使用固定的分钟数，在设备时间偏差下与实际结果不符（依据：工程经验，无规范依据）
+- 把 nonce 与 deadline 混为同一个问题，重复请求签名却不检查 nonce 的消耗情况（依据：EIP-2612 §Specification）
+
+## 面试官追问
+
+1. 用户设备时间比真实时间快若干分钟，会出现什么现象，前端如何兜底？
+2. deadline 与 nonce 在时效与防重放上分别承担什么职责？
+3. 倒计时结束后自动重新请求签名，还是让用户手动触发，如何取舍？
+4. 为什么前端不能把「是否过期」作为最终判断？
+
+## 评分标准
+
+### 初级回答
+
+- 知道链上时间来自区块，而不是本地时钟。
+- 知道有效期校验不通过时调用会被回滚。
+
+### 中级回答
+
+- 能把 deadline 与 nonce 的职责分开说明。
+- 能说明前端倒计时与提交前重新取值的差别。
+
+### 高级回答
+
+- 能设计包含重新签名、失败提示与限量重试的用户路径。
+- 能说明设备时间偏差、节点滞后等条件下倒计时与提示的降级策略。
+
+## 参考资料
+
+- [ethereum.org：Transactions（§Transaction lifecycle）](https://ethereum.org/en/developers/docs/transactions/)
+- [EIP-2612：Permit extension（§Specification）](https://eips.ethereum.org/EIPS/eip-2612)
+- [Solidity 文档：全局变量（§Block and Transaction Properties）](https://docs.soliditylang.org/en/latest/units-and-global-variables.html)

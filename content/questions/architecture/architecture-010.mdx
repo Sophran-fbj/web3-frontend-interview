@@ -1,0 +1,118 @@
+---
+id: architecture-010
+slug: wagmi-error-classification
+title: 按错误类型分类处理 wagmi 与 viem 的错误
+summary: 用错误对象的 name 做判别，把类型映射为可执行的产品文案、重试策略与脱敏日志。
+status: review
+difficulty: intermediate
+category: architecture
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - errors
+  - observability
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：错误处理指南（§Error Handling）
+    url: https://wagmi.sh/react/guides/error-handling
+  - title: wagmi：连接钱包指南（§Build Your Own）
+    url: https://wagmi.sh/react/guides/connect-wallet
+---
+
+## 题目
+
+一个 DApp 收到三类反馈：用户取消了钱包里的请求，页面却弹出红色的「网络异常」；RPC 被限流时按钮自动重试，反复打扰用户；排查线上问题时，日志里只剩一句原始英文报错。请说明 wagmi 与 viem 的错误应该怎样分类处理。
+
+## 考察目标
+
+- hook 返回的错误对象形态与判别入口。
+- 从错误类型到用户文案、重试策略的映射。
+- 日志脱敏与「出问题后仍能定位」之间的边界。
+
+## 30 秒回答
+
+wagmi 官方文档把 hook 的 error 定义为与 hook 对应的强类型对象，并建议用 name 属性判别具体错误类型；文档给出的示例包括 HttpRequestError 与 LimitExceededRpcError，分别对应传输层失败与 RPC 限流。因此分类的入口是类型而不是 message：message 面向人类阅读，可能随版本与语言环境变化。围绕类型去决定文案、重试与日志属于工程取舍。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】wagmi 的 hook 把错误放在 error 字段中，该字段与 hook 对应的错误类型绑定，可以在编译期收窄，也可以在运行期按 name 分支处理（依据：wagmi 错误处理指南 §Error Handling）。
+- 【实现行为】文档示例用 error.name 分支：HttpRequestError 表示 HTTP 层失败并携带状态码，LimitExceededRpcError 表示被限流并携带 code（依据：wagmi 错误处理指南 §Error Handling 的两个 name 分支示例）。
+- 【实现行为】连接按钮的准备状态可以用 connector.getProvider() 的结果推导：指南示例在 effect 中异步获取 provider，读到空值时先禁用按钮（依据：wagmi 连接钱包指南 §Build Your Own 第 3 步）。
+- 【工程经验】判别入口长期锁定在类型或 name 上，避免把 message 当作分支条件（工程经验，无规范依据）。
+- 【工程经验】文案由类型映射产生：用户取消属于正常操作，回到可重试状态即可；传输失败与限流分别提示「网络异常」与「请求过于频繁」，而不是把原始 message 转发给用户（工程经验，无规范依据）。
+- 【工程经验】重试策略按类型区分：对用户取消不重试，对传输失败可以有限次退避重试，对限流要降低请求频率而不是立即重试（工程经验，无规范依据）。
+- 【工程经验】连接流程的失败类别与查询、写交易的失败类别分开处理，避免把连接失败混进交易错误提示（工程经验，无规范依据）。
+- 【工程经验】日志要脱敏：RPC URL、请求参数与地址等标识按最小必要原则记录，原始 message 不适合直接上报或展示（工程经验，无规范依据）。
+- 【工程经验】保留错误的 cause 链，让最外层错误可以回溯到底层原因，否则线上问题难以复现（工程经验，无规范依据）。
+- 【工程经验】把分类抽成独立层次，组件只消费分类结果；升级 wagmi 或 viem 时集中核对错误类型集合的变化（工程经验，无规范依据）。
+
+## 示例代码
+
+```ts
+type ErrorKind = "http" | "rate-limited" | "unknown";
+
+// 按错误对象的 name 做最小分流。
+// 实际项目中还应保留 cause 链，并在脱敏后再上报日志。
+export function classifyError(error: unknown): ErrorKind {
+  if (typeof error !== "object" || error === null || !("name" in error)) {
+    return "unknown";
+  }
+
+  switch ((error as { name?: string }).name) {
+    case "HttpRequestError":
+      return "http";
+    case "LimitExceededRpcError":
+      return "rate-limited";
+    default:
+      return "unknown";
+  }
+}
+```
+
+示例省略了 UI 层与日志上报实现，错误名称取自 wagmi 3.x 错误处理文档的示例。
+
+## 常见错误
+
+- 用统一 toast 把各类失败都说成「操作失败，请重试」。
+- 把 error.message 原样渲染给用户（【工程经验】message 面向人类阅读，不适合作为稳定文案）。
+- 对用户取消类错误自动重试，造成重复弹窗（【工程经验】）。
+- 上报日志时只留最外层一句话，丢掉 cause 链（【工程经验】）。
+- 日志里带上完整 RPC URL 与请求参数（【工程经验】）。
+
+## 面试官追问
+
+1. 用户取消后按钮停在 pending 状态，你会怎么恢复？
+2. 如何区分「用户取消」「RPC 限流」与「节点暂时不可用」三类失败？
+3. 分类逻辑放在组件里，还是抽成统一层？两种做法的取舍是什么？
+4. 为什么把 message 当判别依据会带来维护风险？
+5. 升级 wagmi 或 viem 后，如何确认既有分类仍然有效？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 hook 的 error 是结构化对象而非字符串。
+- 知道可以用 error.name 区分不同失败类型。
+
+### 中级回答
+
+- 能把用户取消、传输失败、限流映射为不同的文案与重试策略。
+- 能说明 message 不适合作为判别依据，并给出日志脱敏的做法。
+
+### 高级回答
+
+- 能设计统一的错误分类层，并给出重试上限与退避规则。
+- 能说明 cause 链在定位与监控中的作用，以及依赖升级时的核对方式。
+
+## 参考资料
+
+- [wagmi：错误处理指南（§Error Handling）](https://wagmi.sh/react/guides/error-handling)
+- [wagmi：连接钱包指南（§Build Your Own）](https://wagmi.sh/react/guides/connect-wallet)

@@ -1,0 +1,94 @@
+---
+id: web3-basics-005
+slug: eoa-address-derivation
+title: EOA 地址是如何从私钥推导出来的
+summary: 说明外部拥有账户地址的推导步骤、可校验的表示方式，以及与合约账户地址生成方式的区别。
+status: review
+difficulty: intermediate
+category: web3-basics
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - accounts
+  - address
+  - cryptography
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：Accounts（§Externally-owned accounts and key pairs、§Contract accounts）
+    url: https://ethereum.org/en/developers/docs/accounts/
+  - title: EIP-55：Mixed-case checksum address encoding（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-55
+  - title: EIP-2：Homestead 变更（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-2
+  - title: EIP-1014：Skinny CREATE2（§Specification、§Rationale）
+    url: https://eips.ethereum.org/EIPS/eip-1014
+---
+
+## 题目
+
+面试者被问到「地址是怎么来的」。请完整描述外部拥有账户地址的推导过程，并说明为什么合约账户与委托后的账户不能套用同一套推导。
+
+## 考察目标
+
+- 私钥、公钥与地址之间的推导顺序。
+- 推导的单向性与其安全含义。
+- 外部拥有账户与合约账户在地址来源上的区别。
+
+## 30 秒回答
+
+外部拥有账户的地址由密钥推导得到：私钥经曲线运算得到公钥，公钥经哈希运算取固定长度的一段作为账户地址。这一过程是单向的，由地址无法反推私钥。合约账户的地址来自部署过程，不使用私钥推导。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】以太坊交易签名使用 secp256k1 曲线，签名校验包含对 secp256k1n/2 的约束（依据：EIP-2 §Specification）。
+- 【工程经验】私钥推导公钥、公钥经哈希截断得到地址，属于钱包与库的密钥管理实现惯例；EIP/ERC 未规定推导算法，跨实现核对时应以签名恢复结果为准（依据：工程经验，无规范依据）。
+- 【协议保证】地址在展示与输入场景中可以使用带大小写的校验和表示，用于发现部分录入错误（依据：EIP-55 §Specification）
+- 【协议保证】合约账户的地址来自部署过程：CREATE 由部署者地址与 nonce 决定，CREATE2 由部署者地址、salt 与 init code 哈希决定（依据：EIP-1014 §Specification、§Rationale）。
+- 【工程经验】同一私钥在不同 EVM 网络上会得到同一个地址，因此地址本身不适合作为「某条链上的用户身份」（依据：工程经验，无规范依据）
+- 【工程经验】前端不需要自行实现地址推导，交给经过验证的库处理可以减少实现错误（依据：工程经验，无规范依据）
+- 【工程经验】对没有私钥的账户（合约账户与委托后的账户），前端不能用「由私钥推导地址」的思路理解其控制权（依据：ethereum.org Accounts §Contract accounts；工程经验）
+
+## 常见错误
+
+- 认为地址就是公钥（依据：ethereum.org Accounts §Externally-owned accounts and key pairs）
+- 认为地址由私钥直接编码得到，与公钥无关（依据：ethereum.org Accounts §Externally-owned accounts and key pairs）
+- 把「地址相同」等同于「账户状态相同」（依据：工程经验，无规范依据）
+- 用外部拥有账户的推导规则去解释合约账户或委托后的账户（依据：ethereum.org Accounts §Contract accounts）
+- 只检查长度与前缀就认为地址输入正确（依据：EIP-55 §Specification）
+
+## 面试官追问
+
+1. 用户导入同一份助记词后看到同一个地址，为什么会这样？
+2. 前端有没有必要自己实现地址推导？
+3. 用户把地址抄错一位时，哪些环节可以发现，哪些环节发现不了？
+4. 面对没有对应私钥的账户，前端在权限与提示上要怎么处理？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出私钥、公钥与地址之间的推导顺序。
+- 知道推导是单向的。
+
+### 中级回答
+
+- 能指出合约账户地址来自部署过程。
+- 能说明校验和表示在展示与输入环节的作用。
+
+### 高级回答
+
+- 能说明地址与链的关系，以及委托场景下控制权与地址来源的分离。
+- 能给出地址输入与展示的完整校验链路。
+
+## 参考资料
+
+- [ethereum.org：Accounts（§Externally-owned accounts and key pairs、§Contract accounts）](https://ethereum.org/en/developers/docs/accounts/)
+- [EIP-55：Mixed-case checksum address encoding（§Specification）](https://eips.ethereum.org/EIPS/eip-55)
+- [EIP-2：Homestead 变更（§Specification）](https://eips.ethereum.org/EIPS/eip-2)
+- [EIP-1014：Skinny CREATE2（§Specification、§Rationale）](https://eips.ethereum.org/EIPS/eip-1014)

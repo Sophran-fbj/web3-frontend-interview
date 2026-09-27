@@ -1,0 +1,93 @@
+---
+id: contract-005
+slug: state-mutability-read-write
+title: 合约函数的可变性如何决定读还是写
+summary: 依据 stateMutability 判断函数应当走读调用还是写交易，并说明 nonpayable 与「会改状态」并不是同一件事。
+status: review
+difficulty: beginner
+category: contract
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - abi
+  - solidity
+  - read-write
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: "Solidity 文档：合约结构（§State Mutability）"
+    url: https://docs.soliditylang.org/en/latest/contracts.html
+  - title: "ethereum.org：与智能合约交互（页面级：读调用与写调用）"
+    url: https://ethereum.org/en/developers/docs/smart-contracts/interacting/
+  - title: "wagmi：useReadContract（§Parameters、§blockTag、§Returns）"
+    url: https://wagmi.sh/react/api/hooks/useReadContract
+---
+
+## 题目
+
+一个组件用读调用去取 ERC-20 余额，另一个组件把 approve 写成了读调用；还有开发者看到 ABI 中函数标注 nonpayable，就把它当成会修改状态的写方法。请说明 stateMutability 四种取值对应的行为，以及前端如何据此选择读或写。
+
+## 考察目标
+
+- view、pure、nonpayable、payable 四种可变性定义。
+- 读调用与写交易在协议层的差别。
+- stateMutability 与「是否修改状态」之间的关系。
+
+## 30 秒回答
+
+Solidity 用 stateMutability 描述函数对状态的承诺以及是否接收 Ether：view 声明不修改状态，pure 进一步声明不读取状态，nonpayable 表示调用不接收 Ether，payable 表示调用可以接收随调用发送的 Ether。只读需求可以走读调用取回结果，写路径需要构造交易并签名。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】Solidity 的 State Mutability 定义四类函数：view 声明不修改状态，pure 进一步声明不读取状态，nonpayable 表示调用不接收 Ether，payable 表示调用可以接收 Ether（依据：Solidity 文档 §State Mutability）。
+- 【协议保证】nonpayable 只描述「不接收 Ether」，与「会修改状态」是两件事：一个 nonpayable 函数可以既不接收 Ether 也不改动状态（依据：Solidity 文档 §State Mutability）。
+- 【协议保证】对以 Solidity 编写的 nonpayable 函数，随调用发送非零 value 会触发失败，因为该可变性声明不接受 Ether（依据：Solidity 文档 §State Mutability）。
+- 【协议保证】eth_call 用于立即执行一次消息调用并返回结果；修改状态的路径需要发送交易（依据：EIP-1474 §eth_call、§eth_sendTransaction）。
+- 【实现行为】wagmi 的 useReadContract 面向只读调用，参数中接收的 ABI 在类型层约束为包含读方法的定义（依据：wagmi useReadContract §Parameters）。
+- 【工程经验】按 ABI 的 stateMutability 做初步分流：view 与 pure 走读路径，nonpayable 与 payable 走写路径；若某个 nonpayable 函数在实现上只读，可以评估用读调用取回结果，这属于实现层判断（依据：wagmi useReadContract §Parameters）。
+- 【工程经验】读到的值对应某个区块的状态快照，展示时标注它对应的区块条件，刷新时重新读取（依据：wagmi useReadContract §blockTag）。
+- 【工程经验】表单按可变性隐藏金额输入：stateMutability 为 nonpayable 时，界面不提供随调用发送 Ether 的输入项（依据：Solidity 文档 §State Mutability）。
+- 【工程经验】把 ABI 的 stateMutability 视为配置而非运行时保证：代理合约更换实现后，旧 ABI 与实际行为可能不一致（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 用写方法满足查询需求（例如把授权额度查询做成写路径），触发签名窗口（【工程经验】读需求优先选 view/pure 方法）。
+- 看到 nonpayable 就认定函数会修改状态，把只读需求做成写交易。
+- 给 nonpayable 函数传 value，触发失败并消耗 gas（【协议保证】nonpayable 不接收 Ether，依据：Solidity 文档 §State Mutability）。
+- 把读调用拿到的值当作实时值，忽略它对应特定区块的快照。
+- 把 ABI 中的可变性当作长期有效，升级型合约更换实现后未重新核对。
+
+## 面试官追问
+
+1. 一个函数标注为 nonpayable，但调用它时钱包提示会改动状态，你如何判断实际路径？
+2. 读调用返回的数据对应哪个区块？界面如何向用户说明这一点？
+3. 把只读需求错误地做成写交易，会带来哪些成本与风险？
+4. 对同一份数据，选择定时读调用与监听事件，取舍是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 view/pure 不修改状态，nonpayable/payable 与 Ether 接收的关系。
+- 知道读调用不需要用户签名与 gas。
+
+### 中级回答
+
+- 能区分 nonpayable 与「会改状态」，并说明按 ABI 分流读写的依据。
+- 能说明读调用结果与区块快照的对应关系。
+
+### 高级回答
+
+- 能设计合约调用封装层，按 stateMutability 与业务语义选择读写路径，并统一错误处理。
+- 能说明代理合约升级后 ABI 与 stateMutability 失效时的检查方案。
+
+## 参考资料
+
+- [Solidity 文档：合约结构（§State Mutability）](https://docs.soliditylang.org/en/latest/contracts.html)
+- [ethereum.org：与智能合约交互（页面级：读调用与写调用）](https://ethereum.org/en/developers/docs/smart-contracts/interacting/)
+- [wagmi：useReadContract（§Parameters、§blockTag、§Returns）](https://wagmi.sh/react/api/hooks/useReadContract)

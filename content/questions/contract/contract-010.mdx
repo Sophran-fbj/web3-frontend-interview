@@ -1,0 +1,91 @@
+---
+id: contract-010
+slug: eth-call-from-spoofing
+title: eth_call 的 from 可以是任意地址
+summary: 说明 eth_call 的只读语义与 from 参数的角色，并给出模拟预检与签名验签之间的责任划分。
+status: review
+difficulty: intermediate
+category: contract
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eth-call
+  - security
+  - simulation
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：JSON-RPC API（§eth_call）
+    url: https://ethereum.org/en/developers/docs/apis/json-rpc/
+  - title: ethereum.org：与智能合约交互（页面级：读调用与写调用）
+    url: https://ethereum.org/en/developers/docs/smart-contracts/interacting/
+  - title: EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+服务端把「以用户地址模拟调用成功」当作登录凭据，另一处前端在省略 from 的模拟结果上进行权限判断。请说明 eth_call 里 from 的语义，以及这些做法的问题所在。
+
+## 考察目标
+
+- eth_call 的语义与 from 参数的角色。
+- 模拟成功与身份、权限之间的关系。
+- 默认参数的实现依赖问题。
+
+## 30 秒回答
+
+eth_call 是节点侧的只读执行，不写入链上状态，也不验证签名；from 只是调用方指定的消息发送者参数，可以被填写为任意地址，因此模拟成功不能证明身份或账户控制权。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】eth_call 用于立即执行一次消息调用并返回结果，不提交交易（依据：EIP-1474 §eth_call）。
+- 【协议保证】eth_call 的调用对象包含可选的 from 字段，作为消息发送者参与执行（依据：EIP-1474 §eth_call 的 from 参数说明）。
+- 【工程经验】eth_call 不涉及签名与交易，from 由调用方填写，不能作为身份或授权证明（依据：工程经验，无规范依据）。
+- 【工程经验】模拟通过反映的是当时状态下这段调用的结果，可以作为权限预检的辅助信息，但不构成用户身份或账户控制的证明（依据：ethereum.org JSON-RPC §eth_call）。
+- 【工程经验】身份场景使用签名挑战：服务端给出一次性消息，前端请求钱包签名，服务端按地址恢复签名者并校验有效期与用途（依据：工程经验，无规范依据）。
+- 【工程经验】省略 from 时，节点采用什么样的默认发送者属于实现细节，跨节点与跨服务商可能不同；对结果敏感的调用显式传入 from（依据：工程经验，无规范依据）。
+- 【工程经验】合约内的权限判断在真实交易中执行，模拟只是预演；关键操作仍需在收据阶段复核事件与状态（依据：ethereum.org 与智能合约交互页面「读调用与写调用」）。
+
+## 常见错误
+
+- 把服务端的 eth_call 结果当作登录凭据（【协议保证】from 是可选的调用者参数，依据：EIP-1474 §eth_call 的 from 参数说明）。
+- 用模拟通过判断用户具备某个角色。
+- 依赖省略 from 的默认行为，跨节点结果出现差异。
+- 把只读模拟的成功提示为操作完成。
+- 记录模拟参数时未做脱敏。
+
+## 面试官追问
+
+1. 服务端已经验签，但合约内又做了一次权限判断，两者结果不一致时如何处理？
+2. 模拟需要以某地址身份进行时，前端如何保证参数来源可信？
+3. 把模拟做成登录前置检查，与把验签做成独立流程，架构上各自的取舍是什么？
+4. 读调用结果用于风控展示时，需要哪些附加信息来帮助判断？
+
+## 评分标准
+
+### 初级回答
+
+- 能说明 eth_call 是只读执行，不产生交易。
+- 知道 from 可以被指定为任意地址。
+
+### 中级回答
+
+- 能说明模拟结果与身份验证之间的差别，并给出替代方案。
+- 能指出省略 from 带来的实现依赖问题。
+
+### 高级回答
+
+- 能设计模拟预检与签名验签并行的方案，并说明各自的责任边界。
+- 能说明服务端与合约层权限判断重复出现时的对账策略。
+
+## 参考资料
+
+- [ethereum.org：JSON-RPC API（§eth_call）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [ethereum.org：与智能合约交互（页面级：读调用与写调用）](https://ethereum.org/en/developers/docs/smart-contracts/interacting/)
+- [EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)

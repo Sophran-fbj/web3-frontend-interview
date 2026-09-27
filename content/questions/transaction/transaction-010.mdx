@@ -1,0 +1,108 @@
+---
+id: transaction-010
+slug: balance-gas-reservation-maxfee
+title: 余额校验为什么要把 gas 预留算进去
+summary: 从协议有效性条件出发说明余额与 gas 预留的关系，并给出前端计算、展示与错误提示的落地方案。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - balance
+  - max-fee
+  - preflight
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：Gas and fees（§What is gas?、§What is the gas limit?）
+    url: https://ethereum.org/en/developers/docs/gas/
+  - title: EIP-1559：Fee market change for ETH 1.0 chain（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-1559
+---
+
+## 题目
+
+用户余额刚好覆盖转账金额，交易却被拒绝；另一个页面用 `gasUsed` 估算预留，在替换交易时预留不足。请说明余额校验需要考虑哪些部分，以及前端如何计算、展示与提示。
+
+## 考察目标
+
+- 理解 EIP-1559 交易的有效性条件与余额关系。
+- 区分上限预留与实际结算两个口径。
+- 设计预留计算、展示与错误提示流程。
+
+## 30 秒回答
+
+在 EIP-1559 交易的有效性条件中，发送者余额需要覆盖 `value` 与 `gasLimit × maxFeePerGas` 的合计；未使用的 gas 在结算时退回，但有效性校验按上限进行。因此余额仅覆盖转账金额时，请求可能在验证阶段被拒绝。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】EIP-1559 交易的有效性条件要求发送者余额覆盖 `value` 与 `gasLimit × maxFeePerGas` 的合计（依据：EIP-1559 §Specification 的有效性条件）。
+
+【协议保证】交易有效性按费用上限校验，实际结算按消耗量与生效价格计算，差额退回（依据：EIP-1559 §Specification）。
+
+【协议保证】余额不足时请求会在验证或提交阶段被拒绝，错误信息通常会说明资金不足以覆盖费用与金额（依据：EIP-1559 §Specification 的有效性条件）。
+
+【工程经验】预留计算用上限费用而不是 `gasUsed`：`gasUsed` 反映历史消耗，无法代表这笔交易的上限占用（依据：工程经验，无规范依据）。
+
+【工程经验】金额与余额用 BigInt 参与运算，格式化为展示值时再按精度处理，避免浮点与数值范围问题（依据：工程经验，无规范依据）。
+
+【工程经验】替换或加速交易会以更高的费用上限重新预留，需要与原始交易一并纳入余额评估（依据：工程经验，无规范依据）。
+
+【工程经验】多笔并发提交时按合计预留评估，否则后提交的交易可能在验证阶段被拒（依据：工程经验，无规范依据）。
+
+【工程经验】界面区分「可用余额」「本次预留」「完成后剩余」三个数字，让用户理解差额来源（依据：工程经验，无规范依据）。
+
+【工程经验】对携带额外费用字段的交易类型，预留口径还要计入对应部分（依据：工程经验，无规范依据）。
+
+## 示例代码
+
+```ts
+// 省略了余额读取、估算与错误处理，仅示意预留口径
+// amountWei、gasLimit、maxFeePerGas 均为 bigint
+const reserved = amountWei + gasLimit * maxFeePerGas;
+const enough = balanceWei >= reserved;
+```
+
+## 常见错误
+
+- 用 `gasUsed` 估算预留，忽略了按上限校验的有效性条件。
+- 把界面上的 ether 数值与 wei 混用，出现数量级错误。
+- 替换交易时沿用原始交易的预留，导致余额校验失败。
+- 并发提交多笔交易时按单笔评估余额。
+- 余额不足的错误提示只写「失败」，没有说明差额与调整方向。
+
+## 面试官追问
+
+1. 余额刚好覆盖金额加预计费用时，交易是否会被受理？为什么？
+2. 用户看到「可用余额足够」却提交失败，你会如何排查与解释？
+3. 替换交易的预留口径与普通交易有什么不同？
+4. 前端预留计算与钱包侧的校验结果不一致时，以哪个为准？
+5. 多笔并发交易场景下，预留如何展示才能不误导用户？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出余额校验需要覆盖金额与 gas 费用两部分。
+- 知道未使用的 gas 会退回，但校验按上限进行。
+
+### 中级回答
+
+- 能写出按 `gasLimit × maxFeePerGas` 的预留公式，并指出 BigInt 的使用原因。
+- 能说明替换交易与并发交易的额外预留来源。
+
+### 高级回答
+
+- 能设计包含预留、结算与展示的余额模型，并说明与钱包校验结果不一致时的处理。
+- 能讨论错误分类、提示文案与用户调整路径的设计，并给出测试要点。
+
+## 参考资料
+
+- [ethereum.org：Gas and fees（§What is gas?、§What is the gas limit?）](https://ethereum.org/en/developers/docs/gas/)
+- [EIP-1559：Fee market change for ETH 1.0 chain（§Specification）](https://eips.ethereum.org/EIPS/eip-1559)

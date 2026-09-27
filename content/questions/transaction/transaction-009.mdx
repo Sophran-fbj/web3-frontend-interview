@@ -1,0 +1,108 @@
+---
+id: transaction-009
+slug: gas-limit-used-refund-failed-costs
+title: gasLimit、gasUsed、退款与失败交易的成本
+summary: 说明上限与实际消耗的结算关系、失败交易的收费口径，以及费用展示中容易混淆的数字。
+status: review
+difficulty: beginner
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - gas
+  - refund
+  - failed-transaction
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：Gas and fees（§What is gas?、§What is the gas limit?、§How are gas fees calculated?）
+    url: https://ethereum.org/en/developers/docs/gas/
+  - title: ethereum.org：Transactions（§Transaction lifecycle）
+    url: https://ethereum.org/en/developers/docs/transactions/
+  - title: EIP-140：REVERT instruction（§Abstract、§Motivation）
+    url: https://eips.ethereum.org/EIPS/eip-140
+  - title: EIP-1559：Fee market change（§Specification、§Backwards Compatibility）
+    url: https://eips.ethereum.org/EIPS/eip-1559
+  - title: EIP-2930：Optional access lists（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-2930
+---
+
+## 题目
+
+产品希望费用展示既不至于高估、又能保证交易成功；开发同学认为「`gasLimit` 设大一些反正用不完会退」。请解释 `gasLimit`、`gasUsed`、未用完部分与失败交易成本之间的关系，并给出费用展示的口径。
+
+## 考察目标
+
+- 区分费用上限与实际消耗。
+- 说明退款、失败与验证阶段拒绝三种情况下的费用口径。
+- 设计面向用户的费用展示。
+
+## 30 秒回答
+
+`gasLimit` 是这笔交易允许消耗的上限，`gasUsed` 是实际消耗，未使用的部分按实际价格退回；不带 calldata 与 access list 的普通 ETH 转账，其固有成本为 21000 gas，带数据或访问列表时固有成本更高。执行中触发回滚时未使用的 gas 不消耗；gas 不足（out of gas）则属于异常中止，会消耗剩余 gas。在验证阶段因参数无效被拒绝的交易不进入区块。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】`gasLimit` 是交易允许消耗的上限，实际结算按 gas used，差额退回（依据：EIP-1559 §Specification 的退款逻辑）。
+
+- 【协议保证】不带 calldata 与 access list 的普通 ETH 转账，其固有成本为 21000 gas；固有成本公式在此基础上按 calldata 字节与 access list 条目增加（依据：EIP-1559 §Specification 的内在成本公式；EIP-2930 §Specification）。
+
+- 【协议保证】执行中触发 REVERT 时，状态变更被撤销，未使用的 gas 不消耗（依据：EIP-140 §Abstract）；gas 不足（out of gas）属于异常中止，会消耗剩余 gas（依据：EIP-140 §Motivation 对 running out of gas 的描述）。
+
+- 【协议保证】交易费用由 gas used 与实际生效的 gas 价格共同决定（依据：EIP-1559 §Specification 的 effective_gas_price 计算）。
+
+- 【协议保证】交易有效性要求发送者余额覆盖 value 与 gasLimit × maxFeePerGas；不满足条件的请求无法进入区块（依据：EIP-1559 §Specification 的有效性条件）。
+
+- 【协议保证】已打包但执行回滚的交易仍按已消耗的 gas 结算，回滚不返还已消耗部分（依据：EIP-140 §Abstract、§Motivation；EIP-1559 §Specification）。
+
+【工程经验】费用展示区分「上限」与「预计」两组数字：上限用于让用户理解最坏情况，预计用于日常认知（依据：工程经验，无规范依据）。
+
+【工程经验】提交前用估算接口得到 gas 建议值并加入缓冲，而不是复用历史交易的固定值（依据：工程经验，无规范依据）。
+
+【工程经验】把失败成本写进产品文案与错误提示，避免用户误认为失败交易没有费用（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 认为 `gasLimit` 设置得越高，实际支付的费用就越多。
+- 认为失败的交易不产生费用。
+- 用 `gasLimit` 显示预计消耗，或用 `gasUsed` 显示费用上限。
+- 直接用历史交易的 `gasLimit` 作为新交易的参数。
+- 验证阶段被拒绝与执行失败在提示文案上不做区分。
+
+## 面试官追问
+
+1. 用户在钱包中看到的「预计费用」与最终账单为什么可能不同？
+2. 交易失败后如何向用户解释费用去向，并给出下一步动作？
+3. 哪些情况下交易不进入区块，也不产生费用？
+4. gas 估算结果与 `gasLimit` 之间留多少缓冲，你会如何决定？
+5. 批量操作与单笔交易在 gas 上限设置上有什么不同考虑？
+
+## 评分标准
+
+### 初级回答
+
+- 能区分 `gasLimit` 与 `gasUsed`，知道未用完的部分会退回。
+- 知道失败的交易同样会产生费用。
+
+### 中级回答
+
+- 能说明验证阶段拒绝与执行回滚的费用差异，并给出费用展示口径。
+- 能指出 gas 估算与上限设置的关系，并给出缓冲策略。
+
+### 高级回答
+
+- 能设计覆盖上限、预计与失败成本的费用展示与文案，并说明与错误分类的配合。
+- 能讨论估算波动、批量场景与用户预期之间的取舍，并给出验证方式。
+
+## 参考资料
+
+- [ethereum.org：Gas and fees（§What is gas?、§What is the gas limit?、§How are gas fees calculated?）](https://ethereum.org/en/developers/docs/gas/)
+- [ethereum.org：Transactions（§Transaction lifecycle）](https://ethereum.org/en/developers/docs/transactions/)
+- [EIP-140：REVERT instruction（§Abstract、§Motivation）](https://eips.ethereum.org/EIPS/eip-140)
+- [EIP-1559：Fee market change（§Specification、§Backwards Compatibility）](https://eips.ethereum.org/EIPS/eip-1559)
+- [EIP-2930：Optional access lists（§Specification）](https://eips.ethereum.org/EIPS/eip-2930)

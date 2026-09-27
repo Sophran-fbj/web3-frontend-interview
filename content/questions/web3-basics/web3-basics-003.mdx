@@ -1,0 +1,95 @@
+---
+id: web3-basics-003
+slug: account-state-fields
+title: Ethereum 账户的四个状态字段
+summary: 说明账户状态由哪四个字段组成、各自代表什么，以及前端读取这些字段的方式与常见误区。
+status: review
+difficulty: intermediate
+category: web3-basics
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - accounts
+  - state
+  - evm
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：Accounts（§An account examined）
+    url: https://ethereum.org/en/developers/docs/accounts/
+  - title: ethereum.org：JSON-RPC（§eth_getBalance、§eth_getTransactionCount、§eth_getCode、§eth_getStorageAt）
+    url: https://ethereum.org/en/developers/docs/apis/json-rpc/
+  - title: Ethereum Yellow Paper：World State（§4.1）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+  - title: EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+页面需要展示某个地址的概况：余额、是否有代码、交易次数。请说明这些信息在链上对应哪些字段，以及为什么不宜用其中某个字段单独判断「这是一个活跃用户」。
+
+## 考察目标
+
+- 账户状态的四个字段与各自含义。
+- 两类账户在 nonce 语义上的差异。
+- 读取字段所对应的 JSON-RPC 方法。
+
+## 30 秒回答
+
+链上账户的状态由 nonce、balance、codeHash 与 storageRoot 四个字段组成。nonce 在外部拥有账户上表示已发送的交易数量，在合约账户上表示创建过的合约数量；codeHash 标识账户代码的哈希，storageRoot 是账户存储的根哈希。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】账户状态包含 nonce、balance、codeHash 与 storageRoot 四个字段（依据：Yellow Paper §4.1 World State）。
+- 【协议保证】nonce 对 EOA 表示已发送的交易数量，对合约账户表示其创建过的合约数量（依据：Yellow Paper §4.1 World State）。
+- 【协议保证】balance 表示账户持有的原生资产数量，以 wei 为单位记账（依据：Yellow Paper §4.1 World State）。
+- 【协议保证】codeHash 指向账户代码的哈希；没有代码的账户对应空内容的哈希（依据：Yellow Paper §4.1 World State）。
+- 【协议保证】storageRoot 是账户存储数据的根哈希（依据：Yellow Paper §4.1 World State）。
+- 【协议保证】账户字段可以分别通过 JSON-RPC 方法读取：余额、交易计数、代码与存储各有对应方法（依据：EIP-1474 §eth_getBalance、§eth_getTransactionCount、§eth_getCode、§eth_getStorageAt）。
+- 【工程经验】拼出一个地址的概况需要多次读取或批量请求，按账户与链维度缓存结果可以减少重复请求（依据：工程经验，无规范依据）
+- 【工程经验】把交易计数大于零当成「活跃用户」的判据并不成立：合约账户的 nonce 语义不同，且该计数不反映行为与时间（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 把 storageRoot 理解为可以直接还原出账户的完整存储内容（依据：ethereum.org Accounts §An account examined 对存储根的说明）
+- 认为节点为每个账户维护一个可变对象，并且可以一次取回四个字段（依据：ethereum.org JSON-RPC 的方法划分）
+- 用交易计数大于零判断地址是活跃用户（依据：工程经验，无规范依据）
+- 用普通数值类型承载余额，忽略 wei 的量级（依据：工程经验，无规范依据）
+- 忽略合约账户与外部拥有账户在 nonce 语义上的差异（依据：ethereum.org Accounts §An account examined）
+
+## 面试官追问
+
+1. 想展示一个地址的概况，最少需要发起哪些读取？
+2. 为什么读到的存储根不能让前端直接还原出该账户的存储？
+3. 对使用代理模式的合约，读状态与读逻辑分别要注意什么？
+4. 合约账户的 nonce 与外部拥有账户不同，这对前端展示有什么影响？
+
+## 评分标准
+
+### 初级回答
+
+- 能列出四个字段并说出各自含义。
+- 知道余额以 wei 记账。
+
+### 中级回答
+
+- 能区分两类账户的 nonce 语义。
+- 知道读取不同字段对应不同的读取方法。
+
+### 高级回答
+
+- 能设计账户概况的批量读取与缓存方案。
+- 能说明代理合约与委托场景下读取目标选择的边界。
+
+## 参考资料
+
+- [ethereum.org：Accounts（§An account examined）](https://ethereum.org/en/developers/docs/accounts/)
+- [ethereum.org：JSON-RPC（§eth_getBalance、§eth_getTransactionCount、§eth_getCode、§eth_getStorageAt）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [Ethereum Yellow Paper：World State（§4.1）](https://ethereum.github.io/yellowpaper/paper.pdf)
+- [EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)

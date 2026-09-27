@@ -1,0 +1,91 @@
+---
+id: contract-004
+slug: create-vs-create2-address
+title: CREATE 与 CREATE2 的地址生成差异
+summary: 说明两种部署方式下合约地址的计算依据、确定性部署的价值，以及前端使用预期地址时的注意点。
+status: review
+difficulty: intermediate
+category: contract
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - create2
+  - contract-address
+  - determinism
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1014：Skinny CREATE2（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-1014
+  - title: ethereum.org：Accounts（§Contract accounts、§An account examined）
+    url: https://ethereum.org/en/developers/docs/accounts/
+  - title: Ethereum Yellow Paper：World State（§4.1）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+---
+
+## 题目
+
+产品需要在合约部署前就向用户展示将要交互的地址，团队在讨论用 CREATE 还是 CREATE2 部署。请说明两种方式的地址计算差异，以及前端使用「预期地址」时要注意什么。
+
+## 考察目标
+
+- 两种部署方式下地址的计算依据。
+- 确定性地址的价值与前提。
+- 多链同地址的核验边界。
+
+## 30 秒回答
+
+CREATE 的地址与部署者地址和部署者的创建计数相关，同一个部署者每次部署得到的地址不同；CREATE2 的地址由部署者地址、盐值与初始化代码的哈希按固定公式算出，可以在部署前确定。合约地址的生成与外部拥有账户的地址推导是两套机制。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】CREATE2 的地址按固定公式计算：部署者地址、盐值与初始化代码的哈希共同参与，结果取哈希的末 20 字节（依据：EIP-1014 §Specification 的地址公式）
+- 【协议保证】CREATE2 的地址计算不依赖部署者的创建计数，因此参数固定的前提下可以提前算出（依据：EIP-1014 §Specification）
+- 【协议保证】CREATE 的地址由部署者地址与部署者 nonce 决定；部署者每发起一笔交易，其 nonce 递增（依据：EIP-1014 §Rationale 的 Address formula 对 `keccak256(rlp([sender, nonce]))` 的说明）。
+- 【协议保证】CREATE2 的地址由部署者地址、salt 与 init code 哈希计算，不使用部署者 nonce（依据：EIP-1014 §Specification）。
+- 【工程经验】提前展示预期地址，可以让用户在部署完成前完成充值等准备动作，但需要处理「部署尚未发生」的中间状态（依据：工程经验，无规范依据）
+- 【工程经验】多链上出现相同合约地址通常来自确定性部署，但地址相同并不表示实现代码、管理员或初始化参数一致，逐链核验仍然需要（依据：工程经验，无规范依据）
+- 【工程经验】部署失败、地址已存在目标代码等分支需要在产品流程里显式设计，而不是默认部署成功（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 用部署者的创建计数去预测 CREATE2 的地址（依据：EIP-1014 §Specification 的公式）
+- 把「地址已经能算出」理解为「代码已经存在」（依据：工程经验，无规范依据）
+- 看到多条链上地址相同就认为合约相同（依据：工程经验，无规范依据）
+- 把合约地址的计算方式套用到外部拥有账户（依据：ethereum.org Accounts §Contract accounts）
+- 部署流程没有考虑失败与重试，用户界面停留在等待状态（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 用户要在合约部署前完成充值，前端如何处理「地址已定、代码未部署」的阶段？
+2. 目标地址上已经有代码时，部署流程会走向什么结果？
+3. 确定性地址给多链产品带来哪些便利，又带来哪些核验成本？
+4. 前端做多链同地址核验时，最少要核对哪些信息？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 CREATE 与 CREATE2 地址计算依据的差异。
+- 知道确定性地址与盐值有关。
+
+### 中级回答
+
+- 能解释确定性地址为什么可以提前计算。
+- 能指出多链同地址与「同一份合约」不是一回事。
+
+### 高级回答
+
+- 能设计部署前充值、部署失败分支与多链核验的组合方案。
+- 能说明核验信息（实现、管理员、初始化参数）的取舍与更新机制。
+
+## 参考资料
+
+- [EIP-1014：Skinny CREATE2（§Specification）](https://eips.ethereum.org/EIPS/eip-1014)
+- [ethereum.org：Accounts（§Contract accounts、§An account examined）](https://ethereum.org/en/developers/docs/accounts/)
+- [Ethereum Yellow Paper：World State（§4.1）](https://ethereum.github.io/yellowpaper/paper.pdf)

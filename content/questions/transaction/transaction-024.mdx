@@ -1,0 +1,92 @@
+---
+id: transaction-024
+slug: sponsored-transaction-models
+title: 用户不持有 ETH 也能完成链上操作：代付模型怎么落地？
+summary: 对比 permit、ERC-4337 paymaster 与 7702 赞助三类代付路径，说明各自的协议依据、风险与前端展示要点。
+status: review
+difficulty: advanced
+category: transaction
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - sponsored-transaction
+  - paymaster
+  - relayer
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-2612：Permit extension（§Specification、§Rationale）
+    url: https://eips.ethereum.org/EIPS/eip-2612
+  - title: EIP-4337：Account Abstraction Using Alt Mempool（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-4337
+  - title: EIP-7702：Set EOA account code（§Motivation、§Specification、§Security Considerations）
+    url: https://eips.ethereum.org/EIPS/eip-7702
+---
+
+## 题目
+
+产品希望让新用户在没有 ETH 的情况下完成首次授权与交易，市场文案写的是「全程零费用」。请说明可选的代付路径、每条路径的边界，以及前端应该向用户展示哪些信息。
+
+## 考察目标
+
+- 三类代付路径的协议机制与差异。
+- 代付方承担的风险与成本归属。
+- 前端对成本与失败的展示方式。
+
+## 30 秒回答
+
+代付的思路是让签名与付费分离：签名授权可以由其他地址代为提交，提交者支付这笔交易的费用；或者由 paymaster 在链上代为结算。链上执行的费用依然存在，只是承担方发生变化。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】EIP-2612 的 permit 允许持有者以签名方式给出授权，并由其他地址代为提交，因此签名者本身不需要持有 ETH 来完成这一步（依据：EIP-2612 §Specification、§Rationale）
+- 【协议保证】permit 的签名绑定 nonce 与 deadline，二者共同限制签名的重复使用与有效窗口（依据：EIP-2612 §Specification）
+- 【协议保证】ERC-4337 用 UserOperation 表达用户意图，由 bundler 打包为外部交易调用 EntryPoint，EntryPoint 负责校验与执行（依据：EIP-4337 §Specification）
+- 【协议保证】paymaster 在这些流程中承担费用，链上依据其自身规则验证并结算这笔费用（依据：EIP-4337 §Specification）
+- 【协议保证】EIP-7702 允许 EOA 通过类型 4 交易把自身代码设置为委托指示，这为赞助交易提供了一条不由账户主动发起交易的路径（依据：EIP-7702 §Specification 的委托指示定义、§Motivation 的赞助场景）
+- 【协议保证】在赞助交易中，relayer 需要应对授权被撤销或账户资产在执行前被转移的情况，这些风险在规范的安全考量中被点名（依据：EIP-7702 §Security Considerations 的赞助交易中继相关条目）
+- 【工程经验】前端把「由谁支付费用、以什么资产结算、失败时成本由谁承担」写进用户可见的摘要，文案上避免使用「免费」这类描述（依据：工程经验，无规范依据）
+- 【工程经验】代付入口配合限额、频次与目标合约白名单等风控手段，可以降低被批量滥用的概率（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 把「用户不需要持有 ETH」宣传成零成本（依据：EIP-4337 §Specification 的 paymaster 结算语义）
+- 拿到 UserOperation 的标识后按交易哈希的方式去查收据（依据：EIP-4337 §Specification 对 UserOperation 与外部交易关系的描述）
+- 认为 permit 签名可以长期重复使用（依据：EIP-2612 §Specification 的 nonce 与 deadline 校验）
+- 赞助方在没有风控的情况下为大量地址垫付（依据：EIP-7702 §Security Considerations）
+- 前端在代付失败或超时后没有把状态与费用归属说清楚（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 授权在被打包前被撤销，垫付方会承担什么，如何降低这类风险？
+2. 三种代付路径分别适合什么产品与用户群？
+3. 前端至少要展示哪些信息，用户才能判断成本由谁承担？
+4. bundler 服务不可用时，用户的授权与资金处于什么状态？
+
+## 评分标准
+
+### 初级回答
+
+- 知道代付是把付费方与签名方分开。
+- 知道费用仍然存在，只是承担方变化。
+
+### 中级回答
+
+- 能区分 permit、paymaster 与委托授权三类路径的机制。
+- 能说明各路径的适用条件与用户侧表现。
+
+### 高级回答
+
+- 能给出包含风控、成本归属展示与失败处理的落地设计。
+- 能说明 relayer 在撤销、抢先执行等情况下需要覆盖的风险控制点。
+
+## 参考资料
+
+- [EIP-2612：Permit extension（§Specification、§Rationale）](https://eips.ethereum.org/EIPS/eip-2612)
+- [EIP-4337：Account Abstraction Using Alt Mempool（§Specification）](https://eips.ethereum.org/EIPS/eip-4337)
+- [EIP-7702：Set EOA account code（§Motivation、§Specification、§Security Considerations）](https://eips.ethereum.org/EIPS/eip-7702)

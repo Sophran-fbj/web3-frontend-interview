@@ -1,0 +1,91 @@
+---
+id: contract-020
+slug: use-read-contract-options
+title: useReadContract 的关键参数与查询选项
+summary: 说明读取参数、账户与区块位置的含义，以及查询选项与返回值的使用方式。
+status: review
+difficulty: intermediate
+category: contract
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - read-contract
+  - query
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：useReadContract（§Parameters、§query、§Return Type）
+    url: https://wagmi.sh/react/api/hooks/useReadContract
+  - title: viem：readContract（§Parameters）
+    url: https://viem.sh/docs/contract/readContract
+---
+
+## 题目
+
+一个余额组件在切换账户后仍显示旧数据，另一个页面为了「保持最新」把轮询间隔设得很短。请说明 useReadContract 的读取参数与查询选项应如何使用，并给出更合理的刷新方式。
+
+## 考察目标
+
+- 读取参数与账户、链、区块位置的关系。
+- 查询选项的作用与使用边界。
+- 返回值中可用于失效的字段。
+
+## 30 秒回答
+
+useReadContract 的基础参数是 abi、address、functionName 与 args，account 决定读取时的调用方，chainId 决定读哪条链，blockNumber 与 blockTag 决定读取采用的区块位置。query.enabled 用于条件不满足时暂停请求，query 下可配置 refetchInterval、staleTime 与 retry 等刷新与重试选项。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】useReadContract 的基础参数为 abi、address、functionName 与 args（依据：wagmi useReadContract §Parameters）。
+- 【实现行为】account 用于指定读取时扮演的调用方地址，影响依赖 msg.sender 的读取结果（依据：wagmi useReadContract §Parameters；viem readContract §Parameters）。
+- 【实现行为】chainId 指定在配置内的哪条链上读取（依据：wagmi useReadContract §Parameters）。
+- 【实现行为】blockNumber 与 blockTag 可以指定读取采用的区块位置（依据：wagmi useReadContract §Parameters）。
+- 【实现行为】query.enabled 用于在条件未满足时暂停请求，避免 address 或 args 尚未就绪就发起读取（依据：wagmi useReadContract §query 的 enabled）。
+- 【实现行为】query 下可配置 refetchInterval、staleTime 与 retry 等选项（依据：wagmi useReadContract §query）。
+- 【实现行为】viem 的 readContract 用于执行只读函数调用，account 决定调用方，blockNumber 指定读取的区块（依据：viem readContract §Parameters）。
+- 【工程经验】args 依赖当前账户或地址时，切换后重新计算参数并清理旧展示，避免错显（依据：工程经验，无规范依据）。
+- 【工程经验】用失效与按需刷新替代全局短间隔轮询，降低端点压力（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- address 或 args 尚未就绪就发起读取。
+- 参数没有与当前账户绑定，切换账户后展示旧数据。
+- 用高频轮询代替失效策略。
+- 指定历史区块读取时，忽略所用端点是否具备对应状态。
+- 失效范围没有覆盖其他页面复用的同一份数据。
+
+## 面试官追问
+
+1. 切换账户后余额没有更新，你会从参数、缓存与失效哪一环开始排查？
+2. 需要展示历史区块上的余额时，你会如何评估可行性与成本？
+3. query.enabled 与条件渲染两种方式，你会如何选择？
+4. 多个组件读取同一份数据时，如何减少重复请求？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出基础读取参数与 query.enabled 的作用。
+- 知道 account 与 chainId 会影响读取结果。
+
+### 中级回答
+
+- 能说明区块位置参数的意义与历史读取的注意点。
+- 能为读取结果设计定点失效与按需刷新，减少无效轮询。
+
+### 高级回答
+
+- 能设计读取参数、缓存与刷新策略的组合方案，覆盖账户切换与多组件复用。
+- 能说明历史读取的成本评估与降级方案。
+
+## 参考资料
+
+- [wagmi：useReadContract（§Parameters、§query、§Return Type）](https://wagmi.sh/react/api/hooks/useReadContract)
+- [viem：readContract（§Parameters）](https://viem.sh/docs/contract/readContract)

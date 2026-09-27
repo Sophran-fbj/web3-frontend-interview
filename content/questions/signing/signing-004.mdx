@@ -1,0 +1,94 @@
+---
+id: signing-004
+slug: connect-vs-login
+title: 钱包连接为什么不能当成登录
+summary: 用服务端挑战与地址签名证明控制权，再把会话与连接状态解耦。
+status: review
+difficulty: intermediate
+category: signing
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - authentication
+  - siwe
+  - session
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-4361：Sign-In with Ethereum（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-4361
+  - title: EIP-712：Ethereum typed structured data hashing and signing（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-712
+  - title: EIP-191：Signed Data Standard（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-191
+---
+
+## 题目
+
+产品希望实现「连接钱包后自动登录」，初步方案是连接成功就把地址写入本地会话，后续请求带上该地址。请说明这个方案的问题，以及正确的登录流程应该包含哪些要素。
+
+## 考察目标
+
+- 连接与登录的边界。
+- 签名挑战的要素与防重放设计。
+- 会话与连接状态的生命周期管理。
+
+## 30 秒回答
+
+连接只让页面获得钱包授权与地址；EIP-4361 把登录定义为：由地址对应的密钥对一条包含域名、地址、URI、chain-id、nonce 与时间的消息签名，依赖方验证签名与字段后确认控制权。nonce 由依赖方生成并做一次性校验，用于防止签名被重放。EIP-191 定义了签名数据的前缀格式，EIP-712 定义了结构化数据的哈希与签名方式。因此登录需要服务端下发挑战、用户签名、服务端验签后签发自己的会话。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】EIP-4361 定义登录消息的字段与语义，包括 domain、address、uri、version、chain-id、nonce、issued-at 以及可选的有效期等，签名用于证明地址控制权（依据：EIP-4361 §Specification 的字段定义）。
+- 【协议保证】nonce 由依赖方生成并在验证时校验，用于防止签名被重复使用（依据：EIP-4361 §Specification 的 nonce 字段说明）。
+- 【协议保证】domain、uri 与 chain-id 把签名绑定到具体站点与链，避免同一份签名被平移到其它场景（依据：EIP-4361 §Specification 的字段定义）。
+- 【协议保证】EIP-191 定义签名数据的前缀格式与版本字节，personal_sign 使用其中一类前缀，使这类签名与交易签名可区分（依据：EIP-191 §Specification）。
+- 【协议保证】EIP-712 定义结构化数据的类型哈希与域分隔符（name、version、chainId、verifyingContract），用于对结构化消息签名（依据：EIP-712 §Specification）。
+- 【工程经验】服务端签发自己的会话，并把地址、链、nonce 与时效绑定在会话记录里（工程经验，无规范依据）。
+- 【工程经验】会话与连接状态解耦：切号、断连或授权撤销后重新验证，不依赖本地缓存的地址（工程经验，无规范依据）。
+- 【工程经验】给签名请求写清用途与范围，避免登录签名被复用到资产授权场景（工程经验，无规范依据）。
+- 【工程经验】登录挑战要有一次性与时效语义，过期或重复使用的签名直接拒绝（依据：EIP-4361 §Specification 的签发时间与有效期字段；工程经验）。
+
+## 常见错误
+
+- 用连接返回的地址直接注册或登录（【协议保证】EIP-4361 的登录语义建立在地址签名之上；依据：EIP-4361 §Specification）。
+- 挑战没有 nonce 与时效（【协议保证】nonce 与签发时间由规范定义；依据：EIP-4361 §Specification）。
+- 把连接状态缓存成长期会话（【工程经验】）。
+- 登录签名与资产授权使用同一段文案，造成用途混淆（【工程经验】）。
+- 切换账户后不重新验证服务端会话（【工程经验】）。
+
+## 面试官追问
+
+1. 服务端如何从签名推导出签名者的地址并完成校验？
+2. nonce 与会话如何存储、过期与失效？
+3. 使用 EIP-4361 消息与使用 EIP-712 结构化数据，取舍分别是什么？
+4. 用户在钱包里撤销授权后，服务端会话应该如何响应？
+5. 如何避免登录签名被复用到交易或授权场景？
+
+## 评分标准
+
+### 初级回答
+
+- 知道连接只提供地址，不能证明控制权。
+- 知道登录需要用户签名。
+
+### 中级回答
+
+- 能列出签名挑战的关键字段，并说明 nonce 与时效的作用。
+- 能说明会话与连接状态需要解耦。
+
+### 高级回答
+
+- 能设计挑战生成、验签、会话签发与撤销的完整流程。
+- 能说明域绑定与用途分离如何降低跨场景重放风险。
+
+## 参考资料
+
+- [EIP-4361：Sign-In with Ethereum（§Specification）](https://eips.ethereum.org/EIPS/eip-4361)
+- [EIP-712：Ethereum typed structured data hashing and signing（§Specification）](https://eips.ethereum.org/EIPS/eip-712)
+- [EIP-191：Signed Data Standard（§Specification）](https://eips.ethereum.org/EIPS/eip-191)

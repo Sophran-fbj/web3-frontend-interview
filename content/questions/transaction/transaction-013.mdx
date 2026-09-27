@@ -1,0 +1,99 @@
+---
+id: transaction-013
+slug: pre-sign-transaction-validation
+title: 签名前的交易参数校验清单
+summary: 给出签名前的校验项与各自的依据，说明展示与签名同源、目标地址类型与链标识一致性的处理方式。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - preflight
+  - validation
+  - security
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-55：Mixed-case checksum address encoding（§Specification）"
+    url: https://eips.ethereum.org/EIPS/eip-55
+  - title: "EIP-1559：Fee market change（§Specification）"
+    url: https://eips.ethereum.org/EIPS/eip-1559
+  - title: "EIP-1474：Remote procedure call specification（§eth_call、§eth_sendTransaction）"
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: "EIP-7702：Set Code for EOAs（§Specification）"
+    url: https://eips.ethereum.org/EIPS/eip-7702
+  - title: "EIP-20：Token Standard（§Specification）"
+    url: https://eips.ethereum.org/EIPS/eip-20
+---
+
+## 题目
+
+团队准备上线一个质押按钮：点击后调用合约的写入方法。测试时发现两类问题——页面上显示的金额与钱包内看到的金额不一致，以及有交易被发到了没有代码的地址上。请给出一份签名前的校验清单，并说明每一项的依据。
+
+## 考察目标
+
+- 交易字段与签名之间的关系。
+- 目标地址是否有代码对调用结果的影响。
+- 地址表示形式与金额单位的校验。
+- 模拟结果与链上结果的区别。
+
+## 30 秒回答
+
+交易的字段在签名时被固定下来，链上执行的对象是这些字段；页面展示的信息与提交给钱包的信息若来自不同的计算过程，二者出现差异时以签名内容为准。发往有代码地址的交易会执行对方的代码，发往没有代码的地址时随交易携带的数据不引发合约执行。地址的校验和表示可以在输入与展示环节帮助发现部分录入错误。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】交易包含链标识、nonce、费用字段、gasLimit、目标、金额、data 与 accessList 等签名覆盖字段；展示摘要若与这些字段不同源，用户核对的对象可能与实际执行内容不一致（依据：EIP-1559 §Specification 的签名载荷列表）。
+- 【协议保证】代码执行操作会加载目标地址的代码并执行；目标地址没有代码时调用以空代码执行（依据：EIP-7702 §Specification 的 Delegation indicator 与 Precompiles 段落）。
+- 【协议保证】金额字段以 wei 为单位（依据：EIP-1474 §eth_call、§eth_sendTransaction 的参数说明）；代币金额的展示需要结合代币自身的位数设置（依据：EIP-20 §Specification 的 decimals）。
+- 【协议保证】EIP-55 通过地址字符串的哈希决定字母大小写，形成可校验的表示形式，可以在输入与展示环节发现部分录入错误（依据：EIP-55 §Specification）
+- 【协议保证】读取合约状态通过 eth_call 执行并返回结果；修改状态通过 eth_sendTransaction 提交交易，两者路径与失败表现不同（依据：EIP-1474 §eth_call、§eth_sendTransaction）。
+- 【工程经验】签名前的清单可以包含：链标识与页面预期一致、目标地址上有代码、地址为校验和形式、金额单位与位数正确、gas 上限与费用上限处于可接受范围、待处理交易与即将使用的 nonce 关系明确（依据：工程经验，无规范依据）
+- 【工程经验】条件允许时先做一次模拟，可以把确定性的回滚提前暴露给用户，降低「付了费用却得到失败交易」的概率（依据：工程经验，无规范依据）
+- 【工程经验】用户拒绝签名之后，界面应回到可重试状态，并保留用户已经填好的参数（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 页面上的金额与提交给钱包的参数分别计算，二者可能来自不同的小数位或单位换算（依据：工程经验，无规范依据）
+- 只检查地址长度与 `0x` 前缀，不检查校验和（依据：EIP-55 §Specification）
+- 把模拟通过当成链上执行成功的依据（依据：工程经验，无规范依据；模拟对应某一区块状态下的执行）
+- 没有确认目标地址在当前链上是否有代码，把写调用发到无语义地址（依据：EIP-7702 §Specification 对空代码执行的描述）
+- 用户拒绝后按钮停留在等待状态，没有恢复可操作（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 页面上显示的收款方与钱包内显示的不一致时，你会先排查什么？
+2. 模拟通过但在链上仍然失败，可能有哪些条件变化？
+3. 这份校验清单放在前端、后端还是钱包侧，各自的边界在哪里？
+4. 多链产品中同一个地址在不同链上含义不同，你的校验流程如何处理？
+
+## 评分标准
+
+### 初级回答
+
+- 能给出发送前需要核对的字段清单。
+- 知道地址有校验和表示，金额存在单位与位数问题。
+
+### 中级回答
+
+- 能说明展示与签名同源的意义，并指出目标地址是否有代码会影响调用结果。
+- 能区分模拟结果与链上执行结果的差别。
+
+### 高级回答
+
+- 能把校验清单拆成「可自动拦截」与「需要用户确认」两类，并说明误报与漏报的取舍。
+- 能说明多链、多账户与用户拒绝场景下的状态管理与降级路径。
+
+## 参考资料
+
+- [EIP-55：Mixed-case checksum address encoding（§Specification）](https://eips.ethereum.org/EIPS/eip-55)
+- [EIP-1559：Fee market change（§Specification）](https://eips.ethereum.org/EIPS/eip-1559)
+- [EIP-1474：Remote procedure call specification（§eth_call、§eth_sendTransaction）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-7702：Set Code for EOAs（§Specification）](https://eips.ethereum.org/EIPS/eip-7702)
+- [EIP-20：Token Standard（§Specification）](https://eips.ethereum.org/EIPS/eip-20)

@@ -1,0 +1,92 @@
+---
+id: wallet-025
+slug: connector-selection
+title: 当前官方 connectors 与选型
+summary: 对照官方清单与 v3 的可选依赖机制，按场景选择接入方式并避免重复入口。
+status: review
+difficulty: beginner
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - connectors
+  - selection
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：Connectors（§Available Connectors）
+    url: https://wagmi.sh/react/api/connectors
+  - title: wagmi：从 v2 迁移到 v3（§Install Connector Dependencies、§Removed useConnect().connectors & useReconnect().connectors）
+    url: https://wagmi.sh/react/guides/migrate-from-v2-to-v3
+---
+
+## 题目
+
+一个团队在升级后把文档里看到的 connector 全部注册进了应用：进页面出现两个同名 MetaMask 入口，包体也明显变大。请说明当前官方 connectors 的清单、v3 的依赖机制，以及选型时应当考虑的因素。
+
+## 考察目标
+
+- 当前官方 connectors 的范围。
+- v3 中 connector 与三方依赖的关系。
+- 选型维度与避免重复入口的方法。
+
+## 30 秒回答
+
+wagmi 的 connectors 入口当前提供 injected、metaMask、walletConnect、coinbaseWallet、baseAccount、safe、mock 与 tempoWallet 等接入方式，文档提示部分 connector 需要三方依赖。v3 的迁移指南说明 connector 依赖改为可选 peerDependencies：使用哪个 connector 就安装它对应的依赖。因此默认应只注册产品实际支持的接入方式，并避免注册多个功能重叠的入口。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】connectors 入口当前列出的接入方式包括 baseAccount、coinbaseWallet、injected、metaMask、mock、safe、tempoWallet 与 walletConnect（依据：wagmi Connectors §Available Connectors）。
+- 【实现行为】文档在 connectors 页面提示：部分 connector 需要三方包，版本与许可见各 connector 页面（依据：wagmi Connectors §Available Connectors 的 TIP）。
+- 【实现行为】v3 起 connector 依赖作为可选 peerDependencies，由使用方自行安装（依据：wagmi 从 v2 迁移到 v3 §Overview、§Install Connector Dependencies）。
+- 【实现行为】迁移指南逐项列出各 connector 需要的依赖包，例如 walletConnect 对应 @walletconnect/ethereum-provider（依据：wagmi 从 v2 迁移到 v3 §Install Connector Dependencies 的 walletConnect 小节）。
+- 【实现行为】useConnect 与 useReconnect 的 connectors 返回值不再受支持，改用 useConnectors 获取可用列表（依据：wagmi 从 v2 迁移到 v3 §Removed useConnect().connectors & useReconnect().connectors）。
+- 【工程经验】选型按覆盖场景拆分：桌面注入、移动端扫码、目标生态与是否需要智能账户（工程经验，无规范依据）。
+- 【工程经验】同时注册功能重叠的注入类入口，容易让列表出现重复项，需要在产品层做取舍（工程经验，无规范依据）。
+- 【工程经验】把依赖体积与许可纳入选型：只安装需要的 connector 依赖，升级节奏由团队控制（依据：wagmi 从 v2 迁移到 v3 §Overview；工程经验）。
+- 【工程经验】写死的 connector 清单要跟随版本核对，避免长期停留在旧版本（工程经验，无规范依据）。
+
+## 常见错误
+
+- 一次性注册全部 connector，导致入口重复与包体变大（【工程经验】）。
+- 升级 v3 后忘记安装对应 connector 的三方依赖（【实现行为】迁移指南列出了各依赖；依据：wagmi v2→v3 迁移指南）。
+- 继续使用 useConnect().connectors 渲染列表（【实现行为】该返回值已移除，改用 useConnectors；依据：wagmi v2→v3 迁移指南）。
+- 用固定清单判断可用钱包，忽略移动端没有注入钱包的情形（【工程经验】）。
+- 忽略三方依赖的许可差异（【实现行为】迁移指南标注了各依赖的许可信息；依据：wagmi v2→v3 迁移指南）。
+
+## 面试官追问
+
+1. 只做移动端网页时，connector 组合会怎么选？
+2. 两个入口指向同一个钱包时，产品上怎么处理？
+3. v3 把 connector 依赖交给使用方管理，收益与成本分别是什么？
+4. 如何在不明显增加包体的前提下覆盖更多钱包？
+5. 选型时你会如何评估许可与供应链风险？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 connectors 入口包含多种接入方式，覆盖注入与扫码等场景。
+- 知道部分 connector 需要单独安装依赖。
+
+### 中级回答
+
+- 能说明 v3 的可选 peerDependencies 机制与注册清单的关系。
+- 能识别重复入口产生的原因并给出规避方案。
+
+### 高级回答
+
+- 能给出覆盖场景、依赖体积、许可与升级节奏兼顾的选型矩阵。
+- 能说明遗留 API 迁移与清单维护的落地方式。
+
+## 参考资料
+
+- [wagmi：Connectors（§Available Connectors）](https://wagmi.sh/react/api/connectors)
+- [wagmi：从 v2 迁移到 v3（§Install Connector Dependencies、§Removed useConnect().connectors & useReconnect().connectors）](https://wagmi.sh/react/guides/migrate-from-v2-to-v3)

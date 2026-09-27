@@ -1,0 +1,91 @@
+---
+id: web3-basics-006
+slug: eip55-checksum-address
+title: EIP-55 校验和地址的作用
+summary: 说明校验和地址的生成方式、能发现与不能发现的问题，以及展示与比较时的规范做法。
+status: review
+difficulty: beginner
+category: web3-basics
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-55
+  - checksum
+  - addresses
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-55：Mixed-case checksum address encoding（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-55
+  - title: ethereum.org：Accounts（§An account examined）
+    url: https://ethereum.org/en/developers/docs/accounts/
+  - title: Ethereum Yellow Paper：World State（§4.1）
+    url: https://ethereum.github.io/yellowpaper/paper.pdf
+---
+
+## 题目
+
+用户把收款地址从聊天记录里复制到输入框，其中字母大小写被改动了。请说明校验和地址如何帮助发现这类错误，以及它在安全上能覆盖与覆盖不到的范围。
+
+## 考察目标
+
+- 校验和的生成方式与表示特点。
+- 大小写差异与地址同一性的关系。
+- 展示与比较环节的规范做法。
+
+## 30 秒回答
+
+EIP-55 用地址字符串的哈希决定其中字母的大小写，形成可以自我校验的表示形式。大小写不同而实际地址相同的情况属于表示差异，不是地址差异。校验和用于发现录入错误，不承担身份认证的功能。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】EIP-55 的校验和通过对地址字符串做哈希运算，并按哈希结果的取值决定各字母的大小写（依据：EIP-55 §Specification）
+- 【协议保证】校验和的表达依赖字母大小写，只包含数字的地址片段对大小写不敏感（依据：EIP-55 §Specification）
+- 【协议保证】地址在 EVM 中作为 160 位标识参与状态映射，数值相同即同一账户（依据：Yellow Paper §4.1 World State）。
+- 【工程经验】在展示与输入环节使用校验和形式，可以检出部分录入错误，但不能覆盖全部输入问题（依据：工程经验，无规范依据）
+- 【工程经验】比较地址之前先统一表示形式，避免因大小写或空白差异把同一地址判断为不同（依据：工程经验，无规范依据）
+- 【工程经验】界面给出完整地址与复制能力，比只显示缩写形式更利于用户核对（依据：工程经验，无规范依据）
+- 【工程经验】校验和属于显示层的辅助手段；把地址作为身份或授权依据的做法仍然需要其他机制配合（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 认为校验和可以防止钓鱼或替代身份验证（依据：工程经验，无规范依据）
+- 用大小写差异判断两个地址不同（依据：EIP-55 §Specification 的表示语义）
+- 只检查前缀与长度，不做校验和校验（依据：EIP-55 §Specification）
+- 展示缩写地址且无法展开，用户无从核对（依据：工程经验，无规范依据）
+- 复制粘贴后带有不可见字符却未做清理与规范化（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 为什么有的地址带有大小写差异却仍然指向同一账户？
+2. 校验和能发现哪些错误，发现不了哪些错误？
+3. 前后端比较地址时应该在哪一层统一表示形式？
+4. 用户从截图或聊天记录复制地址的流程中，还有哪些环节可以降低出错概率？
+
+## 评分标准
+
+### 初级回答
+
+- 知道校验和借助字母大小写表达。
+- 知道校验和用于发现录入错误。
+
+### 中级回答
+
+- 能说明校验和能覆盖与覆盖不到的范围。
+- 知道比较地址前需要统一表示形式。
+
+### 高级回答
+
+- 能把校验和、完整地址展示与二次确认组合成可落地的核对流程。
+- 能说明该流程在复制、粘贴与跨应用传递场景下的边界。
+
+## 参考资料
+
+- [EIP-55：Mixed-case checksum address encoding（§Specification）](https://eips.ethereum.org/EIPS/eip-55)
+- [ethereum.org：Accounts（§An account examined）](https://ethereum.org/en/developers/docs/accounts/)
+- [Ethereum Yellow Paper：World State（§4.1）](https://ethereum.github.io/yellowpaper/paper.pdf)

@@ -1,0 +1,92 @@
+---
+id: performance-ux-002
+slug: calldata-size-gas-cost
+title: calldata 体积与 gas 成本的关系
+summary: 说明交易固有成本中按字节省略的计费方式、零字节与非零字节的费率差异，以及控制数据体积的可行方向。
+status: review
+difficulty: intermediate
+category: performance-ux
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - calldata
+  - gas-cost
+  - optimization
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1559：Fee market change（§Specification 的固有成本定义）
+    url: https://eips.ethereum.org/EIPS/eip-1559
+  - title: EIP-2028：Transaction data gas cost reduction（§Motivation、§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-2028
+  - title: ethereum.org：Gas（§What is gas?、§What is the gas limit?）
+    url: https://ethereum.org/en/developers/docs/gas/
+---
+
+## 题目
+
+某个 DApp 把一段较长的 JSON 配置当作参数写进合约方法，用户反馈同样的操作费用比以前高了。请解释 calldata 体积与 gas 成本之间的关系，并给出降低成本的可行方向。
+
+## 考察目标
+
+- 交易固有成本中按字节计费的部分。
+- 零字节与非零字节的费率差异。
+- 把大体积数据放进交易的实际代价与替代方案。
+
+## 30 秒回答
+
+以太坊交易的固有成本包含按 calldata 字节计费的部分：零字节与非零字节的费率不同，字节数越多，这部分成本越高。执行阶段的 gas 消耗是另一个来源，由被调用的代码路径决定。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】EIP-2028 把 calldata 的计费从每非零字节 68 gas 调整为每非零字节 16 gas，同时保留零字节 4 gas 的费率（依据：EIP-2028 §Motivation、§Specification）
+- 【协议保证】EIP-1559 给出的交易固有成本包含固定项与按字节项，按字节项由零字节与非零字节的数量分别乘以各自费率得到（依据：EIP-1559 §Specification 的固有成本定义）
+- 【协议保证】交易的内在成本包含 calldata 字节与执行消耗两部分：calldata 按字节计费，执行消耗取决于代码路径（依据：EIP-1559 §Specification 的内在成本公式；EIP-2028 §Motivation）。
+- 【协议保证】gasLimit 是交易允许消耗的上限；交易有效性要求发送者余额覆盖 value 与 gasLimit × maxFeePerGas 的合计，未使用的 gas 在结算时退回（依据：EIP-1559 §Specification）。
+- 【协议保证】区块能容纳的交易总 gas 受区块 gas 上限约束，因此 calldata 体积还会影响一笔交易能否被打包（依据：EIP-1559 §Specification 的区块 gas 上限规则）
+- 【工程经验】把长文本、图片编码或整段 JSON 放进调用参数，会让每笔交易承担更高的字节费用；把大体积数据留在链下、在链上保存引用或承诺，是常见的替代做法（依据：工程经验，无规范依据）
+- 【工程经验】压缩会减少字节数，但压缩产物的字节分布会影响实际费率：非零字节占比高的内容，节省幅度与纯体积比例并不一致（依据：EIP-2028 §Specification 的费率差异）
+- 【工程经验】批量调用与聚合可以减少重复的固定开销，但聚合调用自身的编码会带来额外字节，是否划算需要在目标链上实测（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 认为 calldata 不计费，只看执行阶段的 gas（依据：EIP-1559 §Specification 的固有成本定义）
+- 用同一个费率估算零字节与非零字节（依据：EIP-2028 §Specification）
+- 向用户展示 gasLimit 对应的上限金额，而不用实际结算口径说明（依据：ethereum.org Gas §What is the gas limit?）
+- 为了省字节费用把参数改成难以审计的编码形式，牺牲可验证性（依据：工程经验，无规范依据）
+- 在参数里直接传大数组，却没有评估区块 gas 上限对交易的约束（依据：EIP-1559 §Specification 的区块 gas 上限规则）
+
+## 面试官追问
+
+1. 同一份数据在压缩前后字节分布不同，费用差额从哪里来？
+2. 如果产品需要链上可检索的数据，你会如何设计以控制字节成本？
+3. 估算阶段报 gas 不足或调用直接失败，与 calldata 体积可能有什么关系？
+4. 把 gasLimit 调高或调低，会改变哪一部分成本，哪一部分保持不变？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 calldata 按字节计费，数据越大这部分费用越高。
+- 知道零字节与非零字节的费率不同。
+
+### 中级回答
+
+- 能把固有成本与执行成本分开说明，并指出两者来源不同。
+- 能解释压缩或批量在什么条件下会改变费用。
+
+### 高级回答
+
+- 能按字节分布、聚合编码开销与区块上限三个方面给出量化取舍方案。
+- 能设计链下存数据、链上存引用的方案，并说明可验证性与成本之间的边界。
+
+## 参考资料
+
+- [EIP-1559：Fee market change（§Specification 的固有成本定义）](https://eips.ethereum.org/EIPS/eip-1559)
+- [EIP-2028：Transaction data gas cost reduction（§Motivation、§Specification）](https://eips.ethereum.org/EIPS/eip-2028)
+- [ethereum.org：Gas（§What is gas?、§What is the gas limit?）](https://ethereum.org/en/developers/docs/gas/)

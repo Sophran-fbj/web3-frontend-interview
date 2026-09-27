@@ -1,0 +1,99 @@
+---
+id: wallet-013
+slug: duplicate-wallet-request-32002
+title: 重复发起钱包请求与 -32002
+summary: 解释 -32002 在错误码体系中的位置，给出按钮锁定、状态探测与重复请求防护的工程方案。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - metamask
+  - error-handling
+  - wallet-ux
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1474：Remote Procedure Call 规范（§Error codes）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: EIP-1193：Ethereum Provider JavaScript API（§request、§Provider Errors）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+---
+
+## 题目
+
+「连接钱包」按钮被快速点击两次时，第二次请求返回了 -32002，页面把它当成网络错误重试，用户随后看到了多个钱包弹窗。请说明这个错误码的含义、它与其他错误码的区别，以及前端应该如何避免与处理。
+
+## 考察目标
+
+- 理解 -32002 在 JSON-RPC 错误分类中的位置。
+- 区分重复请求、未授权与断连三类失败的处理方式。
+- 设计连接按钮与自动重连的互斥与去重。
+
+## 30 秒回答
+
+-32002 在 EIP-1474 的错误码分类中属于 Resource unavailable；`request` 失败时以 `ProviderRpcError` 拒绝，`code` 为整数、`message` 为人类可读文本。重复发起同一类请求是否会命中该码、在什么条件下命中，取决于钱包实现。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】-32002 在 EIP-1474 的错误码列表里归类为 Resource unavailable（依据：EIP-1474 §Error codes）。
+
+【协议保证】`request` 失败时拒绝值是 `ProviderRpcError`，其 `code` 为整数、`message` 为人类可读文本（依据：EIP-1193 §Provider Errors）。
+
+- 【协议保证】EIP-1474 的错误码表中 -32002 对应 Resource unavailable（依据：EIP-1474 §Error codes）。
+
+【协议保证】读取当前已暴露账户可以借助 `request` 调用 `eth_accounts` 完成（依据：EIP-1193 §request）。
+
+【工程经验】连接按钮在请求进行期间进入 pending 状态并锁定，入口处做去抖，避免一次用户操作发出多个请求（依据：工程经验，无规范依据）。
+
+【工程经验】主动发起连接之前，先用 `eth_accounts` 探测当前授权状态：已授权时可以直接进入已连接界面，减少一次弹窗（依据：工程经验，无规范依据）。
+
+【工程经验】收到 -32002 时不循环重试，而是提示用户先完成钱包中已弹出的请求，并在完成后重新读取状态（依据：工程经验，无规范依据）。
+
+【工程经验】多标签页同时操作与自动重连并发时，用本地互斥或页面间协调避免重复发起（依据：工程经验，无规范依据）。
+
+【工程经验】把 -32002 与断连（4900）、未授权（4100）分开处理，便于监控定位重复请求的来源（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把 -32002 当作网络错误并自动重试，用户在钱包里看到堆积的弹窗。
+- 连接按钮在手势结束后没有锁定，快速点击会发出多个请求。
+- 在 effect 中无条件调用连接方法，渲染循环触发重复请求。
+- 自动重连与用户手动连接同时进行，互相竞争。
+- 收到 -32002 后直接清空界面状态，而用户仍在钱包中处理已有请求。
+
+## 面试官追问
+
+1. 用户点击连接后没有在钱包中完成操作，界面应该给什么反馈？
+2. 多标签页同时发起连接，如何判断该由哪个标签页继续处理弹窗？
+3. -32002 与 4100 在日志与埋点上如何区分？
+4. 连接按钮的 pending 状态在哪些时机解除，失败后又如何恢复可点？
+5. 如果产品要求「打开页面即自动重连」，你会如何避免与手动连接冲突？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 -32002 表示资源不可用，并知道它是 JSON-RPC 错误码。
+- 知道连接请求失败后不应立即自动重试。
+
+### 中级回答
+
+- 能说明重复请求被拒绝的常见来源，并给出按钮锁定与去抖方案。
+- 能用 `eth_accounts` 探测授权状态，减少重复触发连接流程。
+
+### 高级回答
+
+- 能设计请求互斥、自动重连与用户操作协调的连接状态机，并说明多标签页场景的处理。
+- 能把 -32002 与其他错误码分类到不同的监控与提示策略，并给出回归验证方法。
+
+## 参考资料
+
+- [EIP-1474：Remote Procedure Call 规范（§Error codes）](https://eips.ethereum.org/EIPS/eip-1474)
+- [EIP-1193：Ethereum Provider JavaScript API（§request、§Provider Errors）](https://eips.ethereum.org/EIPS/eip-1193)

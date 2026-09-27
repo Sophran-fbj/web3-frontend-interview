@@ -1,0 +1,94 @@
+---
+id: wallet-023
+slug: switch-chain-hook-failures
+title: useSwitchChain 的失败分支处理
+summary: 说明切链的调用方式与错误分类，覆盖用户拒绝、方法不支持、目标链未配置与钱包需要添加链的场景。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - switch-chain
+  - error-handling
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：useSwitchChain（§Usage、§Parameters）
+    url: https://wagmi.sh/react/api/hooks/useSwitchChain
+  - title: wagmi：createConfig（§chains）
+    url: https://wagmi.sh/react/api/createConfig
+  - title: EIP-1193：Ethereum Provider JavaScript API（§Provider Errors）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+---
+
+## 题目
+
+DApp 支持多条链。用户点击「切换到目标链」时出现几种失败：有的用户在钱包里点了取消；有的钱包提示不支持切换；还有的目标链在页面上可见但没有配置。请说明 useSwitchChain 的用法与各失败分支的处理方式。
+
+## 考察目标
+
+- useSwitchChain 的调用方式与参数来源。
+- 失败分支的分类与对应处理。
+- 切链后的数据一致性处理。
+
+## 30 秒回答
+
+useSwitchChain 通过 `mutate({ chainId })` 触发切换，chainId 取值应来自配置中的链列表；失败时按错误分流：用户拒绝对应 4001，回到可重试状态；方法不支持对应 4200，提示该钱包的能力限制；目标链未连接对应 4901，需要先建立目标链连接；部分钱包会用实现特有的错误码表示目标链尚未添加，需要查对应钱包文档。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】EIP-1193 为常见失败定义了错误码：4001 用户拒绝、4100 未授权、4200 方法不支持、4900 与各链的连接断开、4901 请求的目标链未连接（依据：EIP-1193 §Provider Errors）。
+- 【协议保证】错误对象是带 code 的 ProviderRpcError，按 code 分流比解析 message 更稳定（依据：EIP-1193 §Provider Errors）。
+- 【实现行为】wagmi useSwitchChain 的 mutate 接受 chainId，取值通常来自 useChains 枚举的配置内链（依据：wagmi useSwitchChain §Usage、§Parameters）。
+- 【实现行为】对不在 config.chains 中的链，切换会在配置层以未配置类错误结束（依据：wagmi useSwitchChain §Parameters；wagmi createConfig §chains）。
+- 【实现行为】已连接时切换的是 connector 的目标链，未连接时切换的是 config 的目标链（依据：wagmi useSwitchChain §Usage 的说明）。
+- 【工程经验】部分钱包会用实现特有的错误码表示目标链尚未添加；这类码需要查对应钱包文档并保留兜底分支（依据：工程经验，无规范依据）。
+- 【工程经验】切换成功后按新的 chainId 重新取数或让相关查询失效，避免旧链数据继续展示（依据：工程经验，无规范依据）。
+- 【工程经验】把失败映射为不同文案与下一步操作：可重试、提示能力限制、先连接目标链、引导添加链（依据：EIP-1193 §Provider Errors；工程经验）。
+- 【工程经验】前端只暴露配置内的链作为切换目标，减少用户触发无法处理的错误（依据：wagmi createConfig §chains；工程经验）。
+
+## 常见错误
+
+- 传入配置之外的 chainId，不做本地校验。
+- 把用户拒绝也当作系统故障重试。
+- 把「方法不支持」与「目标链未连接」当成同一类错误处理。
+- 切链成功后不处理数据刷新，旧链数据继续显示。
+- 对目标链尚未添加的情况没有引导文案，只显示失败。
+
+## 面试官追问
+
+1. 用户拒绝切链后，页面上的链信息如何保持可信？
+2. 用户手动在钱包里切到配置外的链，页面应如何表现？
+3. 切链与正在进行的签名或交易流程同时发生时，你会如何处理？
+4. 前端只允许配置内切链、还是允许引导添加更多链，取舍是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 useSwitchChain 的调用方式与至少两类失败分支。
+- 知道 chainId 取值应来自配置的链列表。
+
+### 中级回答
+
+- 能按错误码分类失败并给出对应处理。
+- 能说明切链后的查询失效与数据一致性处理。
+
+### 高级回答
+
+- 能设计覆盖配置外链、钱包能力差异与并发流程的切链状态机。
+- 能说明错误分类在监控与回归测试中的落地方式。
+
+## 参考资料
+
+- [wagmi：useSwitchChain（§Usage、§Parameters）](https://wagmi.sh/react/api/hooks/useSwitchChain)
+- [wagmi：createConfig（§chains）](https://wagmi.sh/react/api/createConfig)
+- [EIP-1193：Ethereum Provider JavaScript API（§Provider Errors）](https://eips.ethereum.org/EIPS/eip-1193)

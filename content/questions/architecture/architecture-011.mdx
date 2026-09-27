@@ -1,0 +1,93 @@
+---
+id: architecture-011
+slug: eip5792-wallet-calls
+title: EIP-5792 钱包批量调用在 wagmi 中的落地
+summary: 用批次标识与状态查询替代并发交易，并处理能力探测与不支持时的回退。
+status: review
+difficulty: advanced
+category: architecture
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-5792
+  - batch
+  - wallet-capabilities
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-5792：Wallet Call API（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-5792
+  - title: wagmi：useSendCalls（§Usage、§Return Type）
+    url: https://wagmi.sh/react/api/hooks/useSendCalls
+---
+
+## 题目
+
+产品希望把「授权 + 兑换」两步合并成一次确认，减少钱包弹窗与等待。团队的方案是并发发送两笔交易，再各自轮询结果；用户侧却出现两个弹窗互相打断，还有一种可能是第一步失败而第二步成功。请说明 EIP-5792 的批量调用能力，以及它应该如何落地。
+
+## 考察目标
+
+- EIP-5792 定义的钱包调用接口与返回值语义。
+- 批次提交与批次状态查询的分工。
+- 能力探测与不支持时的回退设计。
+
+## 30 秒回答
+
+EIP-5792 定义了一组钱包调用接口：wallet_sendCalls 请求钱包签名并广播一批调用，返回的是调用批次标识而不是交易哈希；wallet_getCallsStatus 按该标识查询批次状态；wallet_getCapabilities 返回钱包与账户在指定链上的能力；wallet_showCallsStatus 可以请钱包展示批次状态页。因此在 wagmi 中，useSendCalls 解决的是「提交批次」，确认与状态展示要交给对应的状态查询能力。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】wallet_sendCalls 请求钱包对一批调用签名并广播，返回批次标识，供后续查询使用（依据：EIP-5792 §Specification 的 wallet_sendCalls）。
+- 【协议保证】wallet_getCallsStatus 用批次标识查询状态，状态区分待处理、已确认与失败等情形（依据：EIP-5792 §Specification 的 wallet_getCallsStatus）。
+- 【协议保证】wallet_getCapabilities 返回钱包与账户在指定链上的能力，供 DApp 做渐进增强（依据：EIP-5792 §Specification 的 wallet_getCapabilities）。
+- 【协议保证】wallet_showCallsStatus 请求钱包向用户展示批次状态页（依据：EIP-5792 §Specification 的 wallet_showCallsStatus）。
+- 【实现行为】useSendCalls 的 mutate 变量包含 calls 数组，每项描述一笔调用，例如 to、value 与 data（依据：wagmi useSendCalls §Usage 的 calls 示例）。
+- 【实现行为】useSendCalls 是 mutation，用 status 与 isPending 表达提交阶段；文档另提供 useSendCallsSync，在批次被包含进区块后再返回（依据：wagmi useSendCalls §Return Type 的 status、§Synchronous Usage）。
+- 【工程经验】批次标识要当作查询句柄保存下来，供后续状态查询与对账使用，而不是拿它去查交易 receipt（工程经验，无规范依据）。
+- 【工程经验】提交之前先做能力探测，不支持时回退到逐笔交易流程，避免把失败留到用户确认之后（工程经验，无规范依据）。
+- 【工程经验】批次的失败语义与单笔交易不同，界面要能表达批次内部部分失败的情形（工程经验，无规范依据）。
+- 【工程经验】把「授权 + 业务调用」放进同一批次时，要确认目标链与钱包具备相应能力；不具备时仍按两步串行设计，并在文案里说明进度（工程经验，无规范依据）。
+
+## 常见错误
+
+- 把批次标识当成交易哈希去查 receipt（【协议保证】wallet_sendCalls 返回的是批次标识；依据：EIP-5792 §Specification）。
+- 不做能力探测直接调用，遇到不支持时才报错（【工程经验】）。
+- 用并发发起多笔交易替代批量调用，造成弹窗互相打断（【工程经验】）。
+- 把批次提交成功当成链上执行成功，缺少后续状态查询（【协议保证】批次状态由 wallet_getCallsStatus 提供；依据：EIP-5792 §Specification）。
+- 只覆盖整批成功或整批失败，忽略批次内部分失败的展示（【工程经验】）。
+
+## 面试官追问
+
+1. 目标钱包不支持 wallet_sendCalls 时，流程要如何降级？
+2. 批次提交成功后，你如何向用户证明两步都已经执行？
+3. 能力探测结果要不要缓存，什么情况下需要重新探测？
+4. 把两步操作放进一个批次，与保持两步串行，各自的架构代价是什么？
+5. 批次在链上出现部分失败时，状态展示与后续对账应该怎么做？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 useSendCalls 提交的是一批调用，返回值不是交易哈希。
+- 知道批次状态需要用单独的查询接口获取。
+
+### 中级回答
+
+- 能说明 wallet_sendCalls 与 wallet_getCallsStatus 的分工。
+- 能给出不支持批量调用时的回退路径。
+
+### 高级回答
+
+- 能设计能力探测、缓存与重新探测的完整流程。
+- 能说明批次部分失败时的状态展示与对账方案。
+
+## 参考资料
+
+- [EIP-5792：Wallet Call API（§Specification）](https://eips.ethereum.org/EIPS/eip-5792)
+- [wagmi：useSendCalls（§Usage、§Return Type）](https://wagmi.sh/react/api/hooks/useSendCalls)

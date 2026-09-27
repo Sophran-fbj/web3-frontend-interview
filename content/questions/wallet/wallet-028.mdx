@@ -1,0 +1,92 @@
+---
+id: wallet-028
+slug: walletconnect-qr-deeplink-flow
+title: WalletConnect 的扫码与深链流程
+summary: 以配对 URI 为入口，覆盖等待批准、会话建立与过期重试的状态设计。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - walletconnect
+  - qr
+  - mobile
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: WalletConnect：配对 URI（§Schema、§Parameters）
+    url: https://specs.walletconnect.com/2.0/specs/clients/core/pairing/pairing-uri
+  - title: viem：构建自定义客户端（§Parameters 的 transport）
+    url: https://viem.sh/docs/clients/custom
+---
+
+## 题目
+
+一个 DApp 用自绘二维码承载 WalletConnect 连接。上线后收到两类反馈：用户扫码批准后，页面停在「等待批准」；部分用户从钱包返回浏览器后，会话并没有建立。请说明这套扫码与跳转流程有哪些状态需要覆盖。
+
+## 考察目标
+
+- 配对 URI 在扫码与跳转流程中的作用。
+- 连接状态机的分支与用户可理解的状态。
+- 桌面与移动端测试的覆盖范围。
+
+## 30 秒回答
+
+按配对 URI 的 schema，DApp 与钱包之间传递的是一个 wc: 开头的 URI，其中包含 topic、必需参数（symKey、methods、relay-protocol）以及可选的失效时间；它的用途是配对，钱包侧据此加入配对并推进会话建立。因此扫码或跳转只是把这份 URI 交给钱包，连接结果取决于后续的会话批准。界面需要覆盖等待批准、批准后会话尚未就绪与用户放弃等状态。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】配对 URI 的结构为 wc:topic@version?parameters，topic 标识本次配对（依据：WalletConnect Pairing URI §Schema）。
+- 【协议保证】配对 URI 的必需参数是 symKey、methods 与 relay-protocol（依据：WalletConnect Pairing URI §Parameters 的 Required）。
+- 【协议保证】可选参数 expiryTimestamp 用于标注配对失效时间，规范建议生成时设为 5 分钟之后（依据：WalletConnect Pairing URI §Parameters 的 Optional）。
+- 【实现行为】viem 的 createClient 由 chain 与 transport 组合，transport 决定请求通道；把连接结果接入链交互时，客户端边界在这一层（依据：viem 构建自定义客户端 §Usage、§Parameters 的 transport）。
+- 【工程经验】把流程拆成显式状态：等待扫码、等待批准、会话已建立、用户放弃、失败可重试；每个状态都要有出口（工程经验，无规范依据）。
+- 【工程经验】用户从钱包返回浏览器时，会话可能仍在建立，界面要能继续等待并允许手动刷新（工程经验，无规范依据）。
+- 【工程经验】自绘二维码时要在过期后重新生成 URI，并把有效期展示给用户（依据：WalletConnect Pairing URI §Parameters 的 expiryTimestamp；工程经验）。
+- 【工程经验】移动端与桌面端分别测试：扫码与跳转是两条不同路径，只测一端难以发现状态遗漏（工程经验，无规范依据）。
+- 【工程经验】跳转链接需要在目标设备可用，测试覆盖真实设备或等价的浏览器环境（工程经验，无规范依据）。
+
+## 常见错误
+
+- 自绘二维码后只处理首次展示，不处理 URI 过期与重新生成（【协议保证】配对 URI 带有可选的有效期字段；依据：WalletConnect Pairing URI §Specification）。
+- 用户返回页面后界面仍停在「等待扫码」，没有进入批准后的等待状态（【工程经验】）。
+- 只在桌面浏览器测试扫码流程（【工程经验】）。
+- 把配对 URI 当成长期有效的邀请链接复用（【协议保证】expiryTimestamp 标注失效时间；依据：WalletConnect Pairing URI §Specification）。
+- 失败后没有重试入口，用户需要刷新整页才能继续（【工程经验】）。
+
+## 面试官追问
+
+1. 用户扫码后一直没有批准，界面应该继续等待还是超时？超时后做什么？
+2. 配对 URI 过期后重新生成的代价是什么？
+3. 会话建立后，如何确认连接已经可用？
+4. 桌面扫码与移动端跳转，测试矩阵怎么设计？
+5. 自绘二维码相比内置弹窗，收益与维护成本分别是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道扫码与跳转传递的是配对 URI。
+- 知道连接结果需要等待钱包批准，不是扫码即完成。
+
+### 中级回答
+
+- 能列出连接流程的主要状态与各自的出口。
+- 能说明配对 URI 有效期对重试与重新生成的影响。
+
+### 高级回答
+
+- 能给出桌面与移动端兼顾的状态机与测试矩阵。
+- 能说明自绘二维码方案在错误恢复与可访问性上的取舍。
+
+## 参考资料
+
+- [WalletConnect：配对 URI（§Schema、§Parameters）](https://specs.walletconnect.com/2.0/specs/clients/core/pairing/pairing-uri)
+- [viem：构建自定义客户端（§Parameters 的 transport）](https://viem.sh/docs/clients/custom)

@@ -1,0 +1,101 @@
+---
+id: wallet-011
+slug: chain-changed-hex-and-timing-pitfalls
+title: chainChanged 的十六进制参数与初始化时序坑
+summary: 解释 chainChanged 载荷格式与相关读取时机，并给出链切换后重建客户端与缓存的工程方案。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - eip-1193
+  - chain-changed
+  - debugging
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1193：Ethereum Provider JavaScript API（§request、§Events、§chainChanged）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: wagmi：createConfig（§Parameters 的 chains、transports）
+    url: https://wagmi.sh/react/api/createConfig
+---
+
+## 题目
+
+页面在钱包切链后仍然展示旧链的数据；另一个页面把 `chainChanged` 的参数与配置里的数字直接比较，判断条件一直没有成立。请说明 `chainChanged` 的载荷格式、链信息应该何时读取，以及切链后前端要重建哪些东西。
+
+## 考察目标
+
+- 掌握 `chainChanged` 的载荷格式与解析方式。
+- 理解事件、初始化与主动读取之间的时序关系。
+- 设计链切换后的客户端、订阅与缓存重建流程。
+
+## 30 秒回答
+
+`chainChanged` 的载荷是十六进制字符串形式的 chainId；`connect` 的载荷同样是十六进制字符串。账户与链的当前值可以随时通过 `request` 读取，初始化、刷新与重连后主动读取一次并与事件配合使用，是处理链变化的稳妥方式。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】`chainChanged` 在钱包所连链发生变化时触发，载荷是十六进制字符串形式的 chainId（依据：EIP-1193 §chainChanged）。
+
+【协议保证】`connect` 在首次连上链或从断开状态恢复时触发，载荷同样是十六进制字符串形式的 chainId（依据：EIP-1193 §connect）。
+
+【协议保证】`eth_chainId` 的返回值是十六进制字符串（依据：EIP-1193 §request 的调用示例）。
+
+【工程经验】比较前用 `parseInt(value, 16)` 或等价方式把载荷解析为数字，再进行链 ID 比较；把十六进制字符串与十进制数字直接比较时条件不成立（依据：工程经验，无规范依据）。
+
+【工程经验】页面初始化、刷新与重连之后主动调用一次 `eth_chainId`，把事件当作增量更新而不是唯一来源（依据：EIP-1193 §Events 与 §request 的分工；工程经验）。
+
+【工程经验】链变化后按链重建客户端与缓存：新的 chainId 参与数据请求的键，旧链数据不再复用（依据：工程经验，无规范依据）。
+
+【工程经验】切链回调中发起的读请求要带竞态防护，后发的请求结果才写入状态（依据：工程经验，无规范依据）。
+
+【工程经验】不要在链事件回调里假定账户已经授权：链变化与账户变化是两条独立通知（依据：EIP-1193 §Events；工程经验）。
+
+【工程经验】在钱包弹窗确认完成之前提前切换本地界面状态，容易出现界面与钱包实际状态的脱节；以事件到达或主动读取结果为准（依据：工程经验，无规范依据）。
+
+【实现行为】wagmi 在 `createConfig` 中按链组织 `chains` 与 `transports`，链相关客户端随配置创建；链集合变化时需要重建配置（依据：wagmi createConfig 页面 §Parameters）。
+
+## 常见错误
+
+- 把 `chainChanged` 的十六进制字符串与配置里的十进制数字直接比较。
+- 只在页面初始化时读取一次 `eth_chainId`，之后依赖事件而不再主动校验。
+- 切链后继续使用旧链创建的客户端与缓存键。
+- 在链事件回调中发起读请求，却没有处理旧链请求晚到的覆盖问题。
+- 假定链变化的同时账户已授权，直接进入需要账户状态的流程。
+
+## 面试官追问
+
+1. 你在哪些时机主动读取 chainId？为什么事件不能覆盖这些时机？
+2. 连续切换两次链，旧链的读请求晚到，你会如何避免旧数据写入？
+3. 多链应用的缓存键如何设计，才能避免不同链之间互相污染？
+4. `connect` 与 `chainChanged` 在重连场景下可能先后到达，界面状态如何收敛？
+5. 如果产品要求切换链时保留用户输入，你会重建哪些状态、保留哪些状态？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 `chainChanged` 的载荷是十六进制字符串。
+- 知道比较前需要解析进制与类型。
+
+### 中级回答
+
+- 能说明初始化、刷新与重连后主动读取 chainId 的必要性。
+- 能列出切链后需要重建的客户端、订阅与缓存。
+
+### 高级回答
+
+- 能设计带竞态防护的多链数据层，并说明缓存键与失效策略。
+- 能把链事件、账户事件与连接事件组合成一致的状态机，并给出边界场景的验证方法。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§request、§Events、§chainChanged）](https://eips.ethereum.org/EIPS/eip-1193)
+- [wagmi：createConfig（§Parameters 的 chains、transports）](https://wagmi.sh/react/api/createConfig)

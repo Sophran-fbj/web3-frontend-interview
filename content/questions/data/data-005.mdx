@@ -1,0 +1,95 @@
+---
+id: data-005
+slug: event-log-topics-indexed
+title: 事件日志的 topic、data 与 indexed 规则
+summary: 说明日志的结构、indexed 参数的位置与动态类型限制，以及过滤与解析事件时应当遵循的规则。
+status: review
+difficulty: intermediate
+category: data
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - logs
+  - events
+  - topics
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: Solidity 文档：合约（§Events）
+    url: https://docs.soliditylang.org/en/latest/contracts.html
+  - title: ethereum.org：JSON-RPC API（§eth_getLogs）
+    url: https://ethereum.org/en/developers/docs/apis/json-rpc/
+  - title: ethereum.org：与智能合约交互（页面级：读调用与写调用）
+    url: https://ethereum.org/en/developers/docs/smart-contracts/interacting/
+  - title: EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+一个索引脚本用 indexed string 的原值去过滤日志，结果始终为空；另一个页面手工拼接 topics 解析转账事件，把金额解析成了地址。请说明日志结构、indexed 规则与正确的解析方式。
+
+## 考察目标
+
+- 日志的 address、topics 与 data 结构。
+- indexed 参数与动态类型的限制。
+- 过滤与解析的推荐方式。
+
+## 30 秒回答
+
+日志由来源地址、topics 与 data 组成；非匿名事件的 topics[0] 是事件签名哈希，其后依次对应 indexed 参数，Solidity 事件最多三个 indexed，未 indexed 的参数编码后放在 data 中；动态类型作为 indexed 参数时只保留其哈希，无法按原值过滤。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】事件在 EVM 中产生日志记录，Solidity 定义的事件最多可以有三个 indexed 参数；非匿名事件的第一个 topic 是事件签名的哈希（依据：Solidity 文档 §Events）。
+- 【协议保证】indexed 的动态类型（string、bytes、数组）在日志中保存内容的哈希而不是原始值，按原值过滤无法命中（依据：Solidity 文档 §Events）。
+- 【协议保证】未 indexed 的参数 ABI 编码后写入 data 字段；解码需要依据事件定义进行（依据：Solidity 文档 §Events）。
+- 【协议保证】eth_getLogs 支持按地址与 topics 过滤，topics 是顺序敏感的有序数组（依据：EIP-1474 §eth_getLogs）。
+- 【工程经验】日志解析走 ABI 解码：用事件定义或解析工具把 topics 与 data 还原为字段，避免手工按位取值（依据：Solidity 文档 §Events）。
+- 【工程经验】设计事件时把需要过滤的字段放在 indexed 位置；需要过滤的动态数据（如字符串标识）改为 indexed bytes32 或移到链下索引（依据：Solidity 文档 §Events）。
+- 【工程经验】匿名事件没有签名 topic，解析时按对应合约的事件定义处理，不按常规位置套用（依据：Solidity 文档 §Events）。
+- 【工程经验】把事件定义与 ABI 纳入版本管理，合约升级后同步核对解码逻辑（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 用 indexed string 的原值构造 topic 过滤（【协议保证】动态类型只存哈希，依据：Solidity 文档 §Events）。
+- 手工拼接 topics 解析，字段错位。
+- 忽略匿名事件的 topics 偏移。
+- 把未 indexed 的参数当作 indexed 去过滤。
+- 解码时不核对事件签名哈希，跨合约同名事件混用定义。
+
+## 面试官追问
+
+1. 索引服务回填历史日志时漏掉了某个区块窗口，如何发现并补救？
+2. 可升级合约更换实现后事件定义变化，解码与新事件如何处理？
+3. 把日志解析放在前端、索引服务与数据仓库，各自适合什么规模与实时性要求？
+4. 需要按动态值过滤时，链上事件应如何设计？
+
+## 评分标准
+
+### 初级回答
+
+- 能说明 topics[0] 是事件签名哈希，之后对应 indexed 参数。
+- 知道未 indexed 参数放在 data。
+
+### 中级回答
+
+- 能说明动态类型 indexed 参数只保留哈希的限制。
+- 能描述按地址与 topics 过滤时的位置对应关系。
+
+### 高级回答
+
+- 能设计事件解码与过滤方案，并说明事件设计对可索引性的影响。
+- 能说明合约升级后事件兼容与对账的处理流程。
+
+## 参考资料
+
+- [Solidity 文档：合约（§Events）](https://docs.soliditylang.org/en/latest/contracts.html)
+- [ethereum.org：JSON-RPC API（§eth_getLogs）](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [ethereum.org：与智能合约交互（页面级：读调用与写调用）](https://ethereum.org/en/developers/docs/smart-contracts/interacting/)
+- [EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)

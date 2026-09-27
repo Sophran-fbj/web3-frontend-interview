@@ -1,0 +1,91 @@
+---
+id: architecture-013
+slug: multichain-contract-config-management
+title: 多链多环境的合约地址与 ABI 配置
+summary: 按 chainId 组织合约配置、区分环境，并让缺链配置进入明确的失败态。
+status: review
+difficulty: intermediate
+category: architecture
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - architecture
+  - contract-address
+  - multichain
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：createConfig（§Parameters 的 chains、transports、client）
+    url: https://wagmi.sh/react/api/createConfig
+  - title: ethereum.org：与智能合约交互（页面级：读写调用基础）
+    url: https://ethereum.org/en/developers/docs/smart-contracts/interacting/
+---
+
+## 题目
+
+一个 DApp 同时部署在三条链上，团队把合约地址与 ABI 写成了一份全局配置。某次发版后，测试网环境里出现了指向主网地址的交易。请说明多链多环境下的合约配置怎么组织，以及缺链配置时应该表现成什么状态。
+
+## 考察目标
+
+- 链与传输的声明式配置方式。
+- 合约地址与 ABI 的按链组织方式。
+- 缺配置时的失败态设计与校验时机。
+
+## 30 秒回答
+
+createConfig 要求声明 chains，并用 transports 按 chainId 提供每条链的传输；文档说明这份映射会用于创建链感知的 viem Client，也可以改用 client 选项按 chain 自行创建。合约调用依赖合约地址与 ABI，读取与写入走不同路径。因此合约地址与 ABI 应当按 chainId 组织成显式配置，并与主网、测试网环境区分开；当目标链没有配置时，应用应进入明确的失败态。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】createConfig 的 chains 参数声明 Config 使用的链，transports 以链 ID 为键提供每条链的传输（依据：wagmi createConfig §Parameters 的 chains、§transports）。
+- 【实现行为】文档说明 transports 映射在内部用于创建链感知的 viem Client（依据：wagmi createConfig §Parameters 的 transports 说明）。
+- 【实现行为】client 选项允许用函数按 chain 创建 viem Client，供需要更细控制的场景使用（依据：wagmi createConfig §Parameters 的 client）。
+- 【工程经验】合约交互依赖合约地址与 ABI，读取与写入走不同路径，配置结构需要同时承载这两部分（依据：ethereum.org 与智能合约交互页面；工程经验）。
+- 【工程经验】地址与 ABI 按 chainId 组织成显式配置，并区分主网与测试网，降低跨链错配的概率（工程经验，无规范依据）。
+- 【工程经验】同一地址在多条链上出现可能来自确定性部署，但实现与管理员未必相同，一条链上的信任结论不能直接迁移到另一条链（工程经验，无规范依据）。
+- 【工程经验】缺链配置时进入明确的失败态，比静默回退到默认链更容易发现与修复（工程经验，无规范依据）。
+- 【工程经验】配置最好带类型并在构建期校验：地址格式、ABI 与链 ID 的对应关系都可以放进流水线检查（工程经验，无规范依据）。
+- 【工程经验】ABI 从源码或部署产物生成，避免手抄后与链上实现不同步（工程经验，无规范依据）。
+
+## 常见错误
+
+- 使用全局单例地址配置，不区分链与环境（【工程经验】）。
+- 复制 ABI 后与链上实现不同步（【工程经验】）。
+- 缺链配置时静默回退到默认链或主网地址（【工程经验】）。
+- 把一条链上的信任结论直接迁移到同地址的另一条链（【工程经验】）。
+- 把地址与 ABI 的校验留到运行时才暴露（【工程经验】）。
+
+## 面试官追问
+
+1. 用户在未配置的链上点击「兑换」时，界面应该表现成什么？
+2. 多链同地址的部署，你如何核对实现是否一致？
+3. ABI 从哪些产物生成，如何保证与链上同步？
+4. 测试网与主网配置如何隔离，避免互相污染？
+5. 缺链配置选择硬失败还是降级，各自的代价是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 createConfig 需要声明链，并为每条链提供传输。
+- 知道合约调用需要合约地址与 ABI。
+
+### 中级回答
+
+- 能说明地址与 ABI 按 chainId 组织的结构，并区分环境。
+- 能说明缺链配置时进入明确失败态的理由。
+
+### 高级回答
+
+- 能给出类型化配置、构建期校验与部署产物同步的完整方案。
+- 能说明多链同地址场景下如何验证实现与管理员的一致性。
+
+## 参考资料
+
+- [wagmi：createConfig（§Parameters 的 chains、transports、client）](https://wagmi.sh/react/api/createConfig)
+- [ethereum.org：与智能合约交互（页面级：读写调用基础）](https://ethereum.org/en/developers/docs/smart-contracts/interacting/)

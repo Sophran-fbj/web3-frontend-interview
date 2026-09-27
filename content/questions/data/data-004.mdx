@@ -1,0 +1,118 @@
+---
+id: data-004
+slug: account-overview-batch-rpc
+title: 用批量请求拼出账户概况
+summary: 说明账户概览所需的最小数据集合、批量请求按 id 关联与逐项失败处理，以及缓存键的隔离维度。
+status: review
+difficulty: intermediate
+category: data
+questionType: coding
+ecosystems:
+  - evm
+tags:
+  - rpc
+  - batch
+  - account-data
+stacks: { viem: "2.x", wagmi: "3.x" }
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-1474：Remote procedure call specification（§eth_getBalance、§eth_getTransactionCount、§eth_getCode、§eth_call）"
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: "JSON-RPC 2.0 规范（§Batch）"
+    url: https://www.jsonrpc.org/specification
+  - title: "wagmi：useReadContracts（§Parameters、§Returns）"
+    url: https://wagmi.sh/react/api/hooks/useReadContracts
+---
+
+## 题目
+
+账户概览面板需要展示余额、交易计数与地址类型，开发用三个依次等待的请求实现，切换账户后旧数据还会短暂出现；另一个页面为了显示「活跃度」把地址的历史交易拉了一遍。请说明批量读取与缓存键的设计。
+
+## 考察目标
+
+- 账户概览所需的最小数据集合。
+- JSON-RPC 批量请求与合约批量读取的差别。
+- 缓存键与切换账户、切换链后的失效。
+
+## 30 秒回答
+
+账户概览的链上基础数据可以由余额、交易计数与代码查询组合而成，这几项独立读取可以合并为一次批量请求；批量响应可能按任意顺序返回，需要按每个响应对象的 id 与请求关联，通知类请求不产生响应；整批请求还可能整体传输失败。代币余额与授权额度属于合约读取，需要按合约调用取回。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】eth_getBalance、eth_getTransactionCount、eth_getCode 分别返回账户的余额、交易计数与代码（依据：EIP-1474 §eth_getBalance、§eth_getTransactionCount、§eth_getCode）。
+- 【协议保证】代币余额与授权额度存放在合约存储中，需要按 eth_call 读取（依据：EIP-1474 §eth_call）。
+- 【协议保证】JSON-RPC 支持批量请求：服务端可以按任意顺序返回响应数组，客户端需要使用每个响应对象的 id 与请求关联；通知类请求不产生响应（依据：JSON-RPC 2.0 规范 §Batch）。
+- 【实现行为】wagmi 的 useReadContracts 把多个合约读取聚合为尽量少的调用，并以数组返回各项结果（依据：wagmi useReadContracts §Parameters、§Returns）。
+- 【工程经验】缓存键使用「链 + 账户 + 查询维度」组合，切换账户或切链时切换键，而不是在旧键上复用数据（依据：工程经验，无规范依据）。
+- 【工程经验】批量请求按维度分组：账户状态一组、代币余额一组；单组失败时其余组照常渲染，同时要处理整个批量请求传输失败的情况（依据：工程经验，无规范依据）。
+- 【工程经验】把交易计数大于 0 当作活跃用户标签并不稳妥：被脚本创建过的地址也会有非零计数（依据：工程经验，无规范依据）。
+- 【工程经验】概览面板不拉取全部历史交易，改用索引服务或按需分页查询（依据：工程经验，无规范依据）。
+- 【工程经验】批量接口逐项判断结果：失败项展示占位与重试入口，成功项正常渲染（依据：工程经验，无规范依据）。
+
+## 示例代码
+
+以下片段只演示批量合约读取与逐项判断，省略了 chain、address 与 ABI 的来源说明。
+
+```ts
+import { useReadContracts } from "wagmi";
+
+const { data } = useReadContracts({
+  contracts: [
+    { address, abi: erc20Abi, functionName: "balanceOf", args: [account] },
+    {
+      address,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [account, spender],
+    },
+  ],
+});
+
+const balance = data?.[0]?.status === "success" ? data[0].result : undefined;
+```
+
+## 常见错误
+
+- 依次等待多个单项请求，把首屏时间拉长。
+- 把交易计数大于 0 当作活跃度信号。
+- 缓存键只含账户不含链，切链后展示旧链数据。
+- 批量结果不逐项判断，一项失败导致整块界面空白。
+- 假设批量响应与请求按下标一一对应，忽略按 id 关联与乱序返回（依据：JSON-RPC 2.0 规范 §Batch）。
+- 忽略整批请求传输失败的情况，只处理单项错误。
+- 为展示概览拉取地址的历史交易全集。
+
+## 面试官追问
+
+1. 批量请求整体超时或只返回部分结果时，界面如何降级？
+2. 如果响应顺序与请求顺序不同，你如何把结果对应回请求？
+3. 切换账户后旧请求返回并覆盖新状态，你会用什么手段避免？
+4. 批量接口与逐项接口在缓存、错误处理与限流上的取舍是什么？
+5. 概览面板按块刷新与定时轮询，如何选择？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出账户概览需要的基础调用。
+- 知道缓存键需要包含账户与链。
+
+### 中级回答
+
+- 能说明批量响应可能乱序、需要按 id 关联，并逐项处理失败。
+- 能区分链上账户数据与合约数据两类读取。
+
+### 高级回答
+
+- 能设计批量获取与缓存失效方案，覆盖切换账户、切链与部分失败。
+- 能说明批量请求的限流、重试与监控策略。
+
+## 参考资料
+
+- [EIP-1474：Remote procedure call specification（§eth_getBalance、§eth_getTransactionCount、§eth_getCode、§eth_call）](https://eips.ethereum.org/EIPS/eip-1474)
+- [JSON-RPC 2.0 规范（§Batch）](https://www.jsonrpc.org/specification)
+- [wagmi：useReadContracts（§Parameters、§Returns）](https://wagmi.sh/react/api/hooks/useReadContracts)

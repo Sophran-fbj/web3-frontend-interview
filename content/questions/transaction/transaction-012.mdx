@@ -1,0 +1,122 @@
+---
+id: transaction-012
+slug: post-confirm-stale-balance-debugging
+title: 交易确认后界面余额未更新的排查
+summary: 从查询缓存、失效时机、区块推进与节点视图差异几个层面排查「交易已确认但界面仍是旧值」的问题。
+status: review
+difficulty: intermediate
+category: transaction
+questionType: debugging
+ecosystems:
+  - evm
+tags:
+  - caching
+  - invalidation
+  - consistency
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：TanStack Query 指南（§Query Keys、§Invalidating Queries）
+    url: https://wagmi.sh/react/guides/tanstack-query
+  - title: wagmi：useBalance（§Parameters、§Return Type）
+    url: https://wagmi.sh/react/api/hooks/useBalance
+  - title: wagmi：useBlockNumber（§Parameters）
+    url: https://wagmi.sh/react/api/hooks/useBlockNumber
+  - title: EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+用户在 DApp 里完成一笔转账，钱包显示成功，链上也能查到这笔交易，但页面顶部的余额仍然是转账前的数字；刷新页面后数值才更新。请说明你会从哪里开始排查，以及修复方案。
+
+## 考察目标
+
+- 交易收据与前端查询缓存之间的关系。
+- 失效（invalidation）与重新取数的触发时机。
+- 缓存键对账户与链的隔离。
+- 节点视图差异带来的显示偏差。
+
+## 30 秒回答
+
+交易收据描述的是一笔交易在某个区块中的执行结果，它由节点按交易哈希返回；页面上的余额来自某次读请求的结果或本地缓存，两者不是同一个数据源。读请求的时间点与缓存是否仍然有效，决定界面何时显示新数值。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】交易收据由节点按交易哈希返回，其中包含该交易被打包所在区块的信息与执行结果字段；收据存在说明这笔交易在某个区块中被处理过（依据：EIP-1474 §eth_getTransactionReceipt）
+- 【协议保证】在交易尚未被打包的情况下，按哈希查询收据会得到空结果，因此「查不到收据」与「交易执行失败」是两种不同情况（依据：EIP-1474 §eth_getTransactionReceipt）
+- 【协议保证】读取类方法在指定区块参数后，返回该区块视角下的状态（依据：EIP-1474 §Block Identifier、§eth_getBalance）。
+- 【实现行为】wagmi 的读取类 Hook 由 TanStack Query 承载，每个 Hook 对应一个查询键，查询键由查询名与参数（如地址、链、区块）组合而成（依据：wagmi TanStack Query 指南 §Query Keys）
+- 【实现行为】查询数据在被判定为过期之前会直接命中缓存；失效操作会把数据标记为过期，并重新取数已渲染的查询（依据：wagmi TanStack Query 指南 §Invalidating Queries、§Fetching Queries）
+- 【工程经验】在交易收据成功之后，按查询键让余额、授权与合约读相关的查询失效，比等待下一次挂载或窗口聚焦更及时（依据：wagmi TanStack Query 指南 §Invalidating Queries）
+- 【工程经验】把区块号作为触发条件之一（例如在块号变化时失效余额查询），可以让界面在同一笔交易之后继续跟随链上状态（依据：wagmi TanStack Query 指南 §Invalidating Queries 的 useBlockNumber 示例、wagmi useBlockNumber §Parameters）
+- 【工程经验】缓存键要把账户地址与链标识纳入，否则切换账户或切链之后，界面可能命中另一上下文的数据（依据：wagmi useBalance §Parameters 的 address、chainId 与 scopeKey）
+- 【工程经验】不同节点与服务商对链头与状态的可见性可能存在时间差；对账时应以同一条链上可复核的收据与区块为准，并对多提供方的差异留出兜底（依据：工程经验，无规范依据）
+- 【工程经验】把全局高频轮询作为默认方案会放大请求量与限流风险；按查询键定向失效再配合按块触发，更容易控制成本（依据：工程经验，无规范依据）
+
+## 示例代码
+
+```ts
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useBalance, useBlockNumber } from "wagmi";
+
+// 省略了 WagmiProvider、QueryClientProvider 与错误处理的上下文。
+function BalanceWatcher({ address }: { address: `0x${string}` }) {
+  const queryClient = useQueryClient();
+  const { data: blockNumber } = useBlockNumber({ watch: true });
+  const { data: balance, queryKey } = useBalance({ address });
+
+  useEffect(() => {
+    // 区块推进后把余额查询标记为过期，已渲染的查询会重新取数。
+    void queryClient.invalidateQueries({ queryKey });
+  }, [blockNumber, queryClient, queryKey]);
+
+  return <span>{balance?.formatted ?? "—"}</span>;
+}
+```
+
+## 常见错误
+
+- 把收据成功当成「界面数据已经更新」的依据（依据：EIP-1474 §eth_getTransactionReceipt 只描述交易执行结果）
+- 收到收据后既不失效也不重新取数，只等用户刷新页面（依据：wagmi TanStack Query 指南 §Invalidating Queries）
+- 缓存键没有随账户或链变化，切账户后显示另一账户的余额（依据：wagmi useBalance §Parameters）
+- 做乐观更新却不在失败或位置变化时回滚（依据：工程经验，无规范依据）
+- 出现旧值时先怀疑节点故障，而没有先确认查询是否仍处于未过期状态（依据：wagmi TanStack Query 指南 §Fetching Queries）
+
+## 面试官追问
+
+1. 交易成功后，你会失效哪些查询，顺序如何安排？
+2. 如果刷新页面后数值仍然是旧的，你会怀疑哪些环节？
+3. 乐观更新与「等收据再更新」两种策略，分别在什么条件下更合适？
+4. 同一页面同时存在多个账户与多条链时，缓存键如何设计才能避免串数据？
+
+## 评分标准
+
+### 初级回答
+
+- 能指出收据成功与界面缓存是两件事，需要主动刷新数据。
+- 知道刷新页面后数值会更新，说明数据来自缓存或某次读取。
+
+### 中级回答
+
+- 能说明查询键、过期判定、失效与重新取数之间的关系。
+- 能按账户与链维度检查缓存键是否隔离。
+- 能给出至少一种触发失效的时机（收据成功、块号变化）。
+
+### 高级回答
+
+- 能设计「按查询键失效 + 按块触发 + 必要的乐观更新回滚」的组合方案，并说明各自的成本。
+- 能把节点视图差异、限流与错误降级一起纳入排查与监控流程。
+
+## 参考资料
+
+- [wagmi：TanStack Query 指南（§Query Keys、§Invalidating Queries）](https://wagmi.sh/react/guides/tanstack-query)
+- [wagmi：useBalance（§Parameters、§Return Type）](https://wagmi.sh/react/api/hooks/useBalance)
+- [wagmi：useBlockNumber（§Parameters）](https://wagmi.sh/react/api/hooks/useBlockNumber)
+- [EIP-1474：Remote procedure call specification（§Block Identifier、方法条目）](https://eips.ethereum.org/EIPS/eip-1474)

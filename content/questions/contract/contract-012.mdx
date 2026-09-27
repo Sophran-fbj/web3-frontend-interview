@@ -1,0 +1,92 @@
+---
+id: contract-012
+slug: token-decimals-formatting
+title: 代币 decimals 不是常量
+summary: 说明 decimals 的链上来源、bigint 与格式化工具的使用方式，以及多代币汇总与输入校验的边界。
+status: review
+difficulty: intermediate
+category: contract
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - decimals
+  - bigint
+  - formatting
+stacks: { viem: "2.x" }
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-20：Token 标准（§Specification：decimals、name、symbol、balanceOf）"
+    url: https://eips.ethereum.org/EIPS/eip-20
+  - title: "viem：parseUnits（§Parameters、§Returns）"
+    url: https://viem.sh/docs/utilities/parseUnits
+  - title: "viem：formatUnits（§Parameters、§Returns）"
+    url: https://viem.sh/docs/utilities/formatUnits
+---
+
+## 题目
+
+一个输入组件按 18 位小数处理用户输入，接入某个稳定币后金额出现数量级偏差；另一个汇总面板把多种代币的最小单位余额直接相加。请说明 decimals 的正确使用方式与金额处理原则。
+
+## 考察目标
+
+- decimals 在链上与展示层的角色。
+- parseUnits 与 formatUnits 的使用方式。
+- 多代币金额汇总与输入校验的边界。
+
+## 30 秒回答
+
+decimals 是 ERC-20 规范定义的可选方法，各代币的位数不同，展示与输入转换需要按目标代币的实际值进行；链上余额与转账金额以最小单位整数表示。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】decimals 是 ERC-20 规范定义的可选方法，用于说明代币金额的显示位数；标准同时给出可选的 name 与 symbol（依据：EIP-20 §Specification 的 decimals、name、symbol 定义）。
+- 【协议保证】代币合约中的余额与转账金额使用最小单位整数表示，小数展示由 decimals 换算得到（依据：EIP-20 §Specification 的 balanceOf 与 decimals 定义）。
+- 【实现行为】viem 的 formatUnits 把最小单位整数与位数转换为十进制字符串，parseUnits 按位数把用户输入转为最小单位整数（依据：viem formatUnits §Parameters、parseUnits §Parameters）。
+- 【工程经验】读取 decimals 的结果按「链 + 代币地址」缓存，不写死位数；代币升级或替换后重新读取（依据：EIP-20 §Specification 的 decimals 定义）。
+- 【工程经验】输入框按实际 decimals 限制小数位，并在提交前用 bigint 比较余额与输入（依据：viem parseUnits §Parameters）。
+- 【工程经验】展示格式统一走格式化函数，避免在各处手工除以幂值（依据：viem formatUnits §Parameters）。
+- 【工程经验】不同代币的余额换算到统一计价口径后再汇总；直接对最小单位整数求和，在业务上缺乏意义（依据：EIP-20 §Specification 的 decimals 定义）。
+- 【工程经验】decimals 缺失或调用失败时，界面给出明确提示并暂缓金额操作，而不是按某个默认位数继续（依据：EIP-20 §Specification 将 decimals 定义为可选方法）。
+
+## 常见错误
+
+- 用固定 18 位换算其它代币的金额（【协议保证】decimals 由各代币合约给出，依据：EIP-20 §Specification 的 decimals 定义）。
+- 把大额最小单位整数转成 Number。
+- 直接把不同代币的最小单位余额相加。
+- 输入小数位超过 decimals 时未处理，提交后被截断或报错。
+- 将 decimals 缺失当作 18 处理。
+
+## 面试官追问
+
+1. decimals 调用失败时，界面与提交逻辑应如何降级？
+2. 同一代币在不同链上的 decimals 是否可能不同？缓存键如何设计？
+3. 把金额换算集中在适配层与分散在组件中，各自的取舍是什么？
+4. 展示法币估值时需要哪些额外信息与失败处理？
+
+## 评分标准
+
+### 初级回答
+
+- 能说明 decimals 的作用与 bigint 的使用。
+- 知道 formatUnits 与 parseUnits 的分工。
+
+### 中级回答
+
+- 能说明按代币读取 decimals 与输入校验的做法。
+- 能指出多代币余额不可直接相加的原因。
+
+### 高级回答
+
+- 能设计金额适配层，覆盖 decimals 读取、缓存、格式化与异常降级。
+- 能说明跨链、跨代币汇总时的计价与精度处理方案。
+
+## 参考资料
+
+- [EIP-20：Token 标准（§Specification：decimals、name、symbol、balanceOf）](https://eips.ethereum.org/EIPS/eip-20)
+- [viem：parseUnits（§Parameters、§Returns）](https://viem.sh/docs/utilities/parseUnits)
+- [viem：formatUnits（§Parameters、§Returns）](https://viem.sh/docs/utilities/formatUnits)

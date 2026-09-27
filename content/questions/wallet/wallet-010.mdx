@@ -1,0 +1,121 @@
+---
+id: wallet-010
+slug: account-change-event-race-handling
+title: 账户切换事件处理中的竞态与代际取消
+summary: 从 accountsChanged 的语义出发，设计一套避免旧账户数据覆盖新状态的竞态处理方案。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - eip-1193
+  - race-condition
+  - state-management
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1193：Ethereum Provider JavaScript API（§Events、§Security Considerations）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: wagmi：TanStack Query 指南（§Query Keys、§Invalidating Queries）
+    url: https://wagmi.sh/react/guides/tanstack-query
+---
+
+## 题目
+
+用户在同一个页面里连续切换账户：有时界面显示的是新账户、数据却是旧账户的；有时切换发生在读请求飞行途中时，结果直接写回了界面。请说明 `accountsChanged` 的语义，并给出一套避免状态串台的方案。
+
+## 考察目标
+
+- 说清 `accountsChanged` 的触发条件与载荷语义。
+- 识别账户切换引入的竞态：在飞请求、缓存、待确认状态。
+- 设计可落地的作废与清理机制。
+
+## 30 秒回答
+
+`accountsChanged` 在 `eth_accounts` 的返回值发生变化时触发，载荷是账户地址数组，规范允许其为空数组；它描述的是账户列表发生了变化，当前状态可以再通过 `eth_accounts` 与 `eth_chainId` 读取。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】`accountsChanged` 在 `eth_accounts` 的返回值发生变化时触发，载荷是地址数组（依据：EIP-1193 §accountsChanged）。
+
+【协议保证】该事件的载荷可以为空数组，空数组属于合法形态（依据：EIP-1193 §accountsChanged）。
+
+- 【工程经验】不要把空数组直接解释为撤销授权：不同钱包在撤销、切换等场景下的表现不同，页面应以重新读取 `eth_accounts` 的结果为准（依据：工程经验，无规范依据）。
+
+【协议保证】当前账户与链状态可以通过 `request` 调用 `eth_accounts`、`eth_chainId` 读取，不必依赖事件载荷（依据：EIP-1193 §request 的调用示例）。
+
+【协议保证】规范在安全考量中提示账户信息的暴露与变化会带来隐私与一致性风险，页面侧需要处理这类变化（依据：EIP-1193 §Security Considerations 的 User Account Exposure）。
+
+【工程经验】事件到达后重新调用 `eth_accounts` 与 `eth_chainId`，并把回调参数当作触发信号而不是唯一事实（依据：工程经验，无规范依据）。
+
+【工程经验】为账户相关数据引入代际编号或 `AbortController`：账户切换时作废在飞的读请求与待签名请求，结果返回后先校验代际再写入状态（依据：工程经验，无规范依据）。
+
+【工程经验】切换账户时同时清空与该账户绑定的缓存、表单内容与待确认操作，避免旧数据被误认为新账户的数据（依据：工程经验，无规范依据）。
+
+【工程经验】组件卸载或会话结束后停止写入已销毁的状态；连续快速切换场景需要做去抖与竞态测试（依据：工程经验，无规范依据）。
+
+【工程经验】账户变化后服务端会话需要重新验证，已缓存的用户私有数据按新账户重新拉取（依据：工程经验，无规范依据）。
+
+【实现行为】wagmi 的 TanStack Query 指南说明查询键的组织与主动失效接口：把账户与链信息纳入查询键，并在切换后失效相关查询（依据：wagmi TanStack Query 指南 §Query Keys、§Invalidating Queries）。
+
+## 示例代码
+
+```ts
+// 省略了 provider 获取、错误处理与渲染逻辑，仅示意代际取消的写法
+const provider = window.ethereum;
+let generation = 0;
+
+provider?.on("accountsChanged", async () => {
+  const current = ++generation;
+  const [accounts, chainId] = await Promise.all([
+    provider.request({ method: "eth_accounts" }),
+    provider.request({ method: "eth_chainId" }),
+  ]);
+  if (current !== generation) return; // 期间发生了更新，本次结果作废
+  render(accounts, chainId);
+});
+```
+
+## 常见错误
+
+- 把 `accountsChanged` 的回调参数直接当作当前账户列表写入状态，不再重新读取。
+- 把空数组一律理解为「用户撤销授权」，忽略实现差异与中间状态。
+- 账户切换后继续使用旧账户的缓存数据或表单内容。
+- 在飞请求返回后直接写入状态，覆盖切换后的新账户数据。
+- 在旧会话上继续提交待签名请求，用户看到与当前账户不符的确认弹窗。
+
+## 面试官追问
+
+1. 用户连续切换两次账户，第一次的读请求晚于第二次返回，你会如何保证界面显示的是第二次的结果？
+2. 空数组到达时，界面应该展示什么？你怎么区分撤销授权与临时状态？
+3. 待签名请求在账户切换后如何处理？直接丢弃还是提示用户重新发起？
+4. 服务端会话与本地状态在账户变化后如何重新对齐？
+5. 如果改用统一的数据获取库（带缓存与失效机制），哪些问题会被简化，哪些仍然需要自己处理？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 `accountsChanged` 在账户列表变化时触发，载荷是地址数组。
+- 知道切换后要重新读取账户与链，不能沿用旧数据。
+
+### 中级回答
+
+- 能指出在飞请求与缓存是串台的主要来源，并给出清空与重取的方案。
+- 能说明空数组需要结合实现语义处理，而不是直接当作撤销。
+
+### 高级回答
+
+- 能设计代际编号或取消令牌机制，并说明结果写入前的校验点。
+- 能把本地状态、缓存、服务端会话与待签请求的失效时机串成一条流程，并给出测试用例设计。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§Events、§Security Considerations）](https://eips.ethereum.org/EIPS/eip-1193)
+- [wagmi：TanStack Query 指南（§Query Keys、§Invalidating Queries）](https://wagmi.sh/react/guides/tanstack-query)

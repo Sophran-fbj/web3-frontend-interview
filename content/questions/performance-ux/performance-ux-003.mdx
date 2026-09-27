@@ -1,0 +1,119 @@
+---
+id: performance-ux-003
+slug: wallet-data-refresh-strategy
+title: 钱包数据的刷新策略如何选择
+summary: 按数据时效分组，在轮询、订阅与显式失效之间取舍，并处理后台标签页与断线补扫。
+status: review
+difficulty: intermediate
+category: performance-ux
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - refresh
+  - performance
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：useBlockNumber（§Parameters 的 watch、§Parameters 的 query）
+    url: https://wagmi.sh/react/api/hooks/useBlockNumber
+  - title: wagmi：useWatchContractEvent（§Parameters 的 poll 与 pollingInterval、§Return Type）
+    url: https://wagmi.sh/react/api/hooks/useWatchContractEvent
+  - title: wagmi：TanStack Query 指南（§Invalidating Queries）
+    url: https://wagmi.sh/react/guides/tanstack-query
+---
+
+## 题目
+
+一个 DApp 的刷新策略各不相同：有的页面把每个查询都设为 1 秒轮询，有的页面只在进入时拉一次数据，交易完成后又有页面长时间不更新。请给出一套可维护的刷新策略，并说明订阅与轮询的边界。
+
+## 考察目标
+
+- 轮询、订阅与显式失效三种刷新方式的适用位置。
+- 按数据时效分组设置策略的做法。
+- 订阅清理、断线回退与后台标签页的处理边界。
+
+## 30 秒回答
+
+wagmi 的刷新能力分布在三处：查询侧的 refetchInterval 等 TanStack Query 选项决定定时重取；useBlockNumber 的 watch 参数监听块高变化，可以把这类变化当作失效的触发点；useWatchContractEvent 提供事件订阅，文档说明 poll 在 WebSocket 客户端下默认为 false、在非 WebSocket 客户端下默认为 true。TanStack Query 指南把失效定义为把查询数据标记为过期并重取已渲染的查询。因此刷新策略的落点是按数据时效分组，再为每组选择轮询、订阅或显式失效。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】useBlockNumber 的 watch 参数开启块高变化监听，也可以传入 useWatchBlockNumber 的子集参数，例如 pollingInterval（依据：wagmi useBlockNumber §Parameters 的 watch）。
+- 【实现行为】useBlockNumber 的 query 配置透传 TanStack Query 选项，包括 refetchInterval、staleTime、retry、refetchOnWindowFocus 与 refetchIntervalInBackground（依据：wagmi useBlockNumber §Parameters 的 query）。
+- 【实现行为】useWatchContractEvent 的 poll 决定是否用轮询检查新块：文档标注 WebSocket 客户端下默认为 false，非 WebSocket 客户端下默认为 true；pollingInterval 控制轮询频率（依据：wagmi useWatchContractEvent §Parameters 的 poll、§pollingInterval）。
+- 【实现行为】useWatchContractEvent 返回 void，结果通过 onLogs 与 onError 回调交付（依据：wagmi useWatchContractEvent §Return Type、§Parameters 的 onLogs、onError）。
+- 【实现行为】TanStack Query 指南把失效定义为把查询数据标记为 stale 并重取已渲染的查询，并给出块高变化时失效余额查询的示例（依据：wagmi TanStack Query 指南 §Invalidating Queries 的余额监听示例）。
+- 【工程经验】按数据时效分组：余额与价格这类需要及时性的数据用块高或事件驱动；配置与元数据这类低变化数据用较长 staleTime 加手动失效（工程经验，无规范依据）。
+- 【工程经验】避免整页高频轮询，把轮询频率集中在真正需要及时性的查询上（工程经验，无规范依据）。
+- 【工程经验】后台标签页要单独决定策略：refetchIntervalInBackground 控制是否在后台继续按间隔重取，团队需要明确默认行为是否可以接受（工程经验，无规范依据）。
+- 【工程经验】订阅要在卸载时清理，并处理断线后的回退与补扫，避免数据静默过期（工程经验，无规范依据）。
+- 【工程经验】交易成功后的刷新走显式失效，比等待下一次轮询更容易解释与测试（工程经验，无规范依据）。
+
+## 示例代码
+
+```tsx
+import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useBalance, useBlockNumber } from "wagmi";
+
+export function Balance() {
+  const queryClient = useQueryClient();
+  const { data: blockNumber } = useBlockNumber({ watch: true });
+  const { data: balance, queryKey } = useBalance();
+
+  useEffect(() => {
+    if (balance === undefined) return;
+    void queryClient.invalidateQueries({ queryKey });
+  }, [blockNumber, queryClient, queryKey]);
+
+  return <div>{balance?.formatted}</div>;
+}
+```
+
+示例省略了加载与错误状态处理，思路取自 wagmi TanStack Query 指南的余额失效示例。
+
+## 常见错误
+
+- 把每个查询都设成 1 秒轮询（【工程经验】）。
+- 只在页面首次加载时取一次数据，交易完成后不做失效（【工程经验】）。
+- 组件卸载后没有清理订阅，回调继续写入旧状态（【工程经验】）。
+- 订阅断线后没有回退到轮询或补扫（【工程经验】）。
+- 混用 WebSocket 与非 WebSocket 客户端时忽略 poll 的默认值差异（【实现行为】poll 的默认值取决于客户端类型；依据：wagmi useWatchContractEvent §poll）。
+
+## 面试官追问
+
+1. 块高驱动的失效与固定间隔轮询，分别在什么场景更合适？
+2. 如果订阅断线，用户会看到什么？你如何检测与恢复？
+3. 后台标签页的刷新如何处理，代价是什么？
+4. 高频轮询与 RPC 成本之间如何权衡？
+5. 同一份数据被多个组件使用时，由谁负责失效？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 wagmi 查询支持定时重取与手动失效。
+- 知道事件订阅可以用回调接收日志。
+
+### 中级回答
+
+- 能按数据时效分组，为不同数据选择轮询、订阅或显式失效。
+- 能说明订阅清理与后台标签页降频的必要性。
+
+### 高级回答
+
+- 能给出失效触发点、断线补扫与成本控制结合的整体方案。
+- 能说明多客户端形态下 poll 默认值差异带来的行为风险与规避方式。
+
+## 参考资料
+
+- [wagmi：useBlockNumber（§Parameters 的 watch、§Parameters 的 query）](https://wagmi.sh/react/api/hooks/useBlockNumber)
+- [wagmi：useWatchContractEvent（§Parameters 的 poll 与 pollingInterval、§Return Type）](https://wagmi.sh/react/api/hooks/useWatchContractEvent)
+- [wagmi：TanStack Query 指南（§Invalidating Queries）](https://wagmi.sh/react/guides/tanstack-query)

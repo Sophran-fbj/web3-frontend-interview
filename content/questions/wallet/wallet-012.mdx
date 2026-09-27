@@ -1,0 +1,103 @@
+---
+id: wallet-012
+slug: provider-error-code-mapping
+title: Provider 错误码到 UI 处理的映射
+summary: 把 EIP-1193 与 EIP-1474 定义的错误码映射为可执行的界面动作，并区分规范错误与实现差异。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-1193
+  - error-handling
+  - provider
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1193：Ethereum Provider JavaScript API（§Provider Errors）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: EIP-1474：Remote Procedure Call 规范（§Error codes）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+---
+
+## 题目
+
+一个 DApp 把钱包返回的各种错误统一提示为「交易失败」：用户拒绝、方法不支持、链未连接在界面上看起来一模一样，用户不知道下一步该做什么。请给出一份错误码到处理动作的映射，并说明哪些差异来自规范、哪些来自钱包实现。
+
+## 考察目标
+
+- 掌握 EIP-1193 与 EIP-1474 的错误码分类。
+- 区分「用户行为」「能力缺失」「连接状态」「参数错误」四类失败。
+- 设计错误分类与界面动作的对应关系。
+
+## 30 秒回答
+
+钱包侧错误码由 EIP-1193 定义：4001 用户拒绝，4100 未授权，4200 不支持该方法，4900 与链断开连接，4901 目标链未连接；JSON-RPC 侧错误由 EIP-1474 定义，包括 -32601 方法不存在、-32602 参数无效、-32603 内部错误。错误对象包含整数 `code`、人类可读 `message` 与可选 `data`。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】`ProviderRpcError` 包含整数 `code`、人类可读的 `message` 与可选的 `data`（依据：EIP-1193 §Provider Errors）。
+
+【协议保证】4001 表示用户拒绝了这次请求，属于用户行为而不是系统故障（依据：EIP-1193 §Provider Errors）。
+
+【协议保证】4100 表示请求的方法或账户未经用户授权，需要先走授权流程（依据：EIP-1193 §Provider Errors）。
+
+【协议保证】4200 表示钱包不支持该方法，属于能力缺失（依据：EIP-1193 §Provider Errors）。
+
+【协议保证】4900 表示与链的连接已断开，4901 表示请求的目标链未连接（依据：EIP-1193 §Provider Errors）。
+
+【协议保证】JSON-RPC 层错误包括 -32601 方法不存在、-32602 参数无效、-32603 内部错误（依据：EIP-1474 §Error codes）。
+
+【协议保证】规范以整数 `code` 区分错误类别，`message` 用于向人展示（依据：EIP-1193 §Provider Errors）。
+
+- 【工程经验】遇到不在 EIP-1193 错误列表中的错误码时，先按对应钱包文档确认含义再处理，并保留兜底分支（依据：工程经验，无规范依据）。
+
+- 【工程经验】跨钱包的判别逻辑应为未知错误码保留兜底分支，避免把单一实现的分支当作通用行为（依据：工程经验，无规范依据）。
+
+【工程经验】按类别设计界面动作：用户可以取消的动作不自动重试；能力缺失进入降级路径；连接类错误提示恢复方式；参数类错误提示修改输入（依据：工程经验，无规范依据）。
+
+【工程经验】`message` 不进入程序判别逻辑，日志对地址与参数做脱敏处理（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把各类失败统一提示为「交易失败」，用户无法判断下一步动作。
+- 对 4001 自动重试，用户在拒绝之后还会收到新的弹窗。
+- 把 4200 当作网络错误重试，循环调用同一个不受支持的方法。
+- 在 `code` 之外依赖 `message` 文案匹配错误类型。
+- 把实现特有的错误码写死为通用分支，忽略钱包之间的差异。
+
+## 面试官追问
+
+1. 用户拒绝与接口报错在埋点与日志上应该如何区分？
+2. 4100 与 4901 都涉及「未就绪」，恢复流程有什么不同？
+3. 换一个钱包后错误码对不上，你会如何设计兜底与降级？
+4. 哪些错误适合自动重试，哪些重试会伤到体验？
+5. 错误分类如何进入测试用例，避免回归时又回到统一提示？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 4001、4200、4900 的基本含义。
+- 知道错误对象带 `code` 与 `message`。
+
+### 中级回答
+
+- 能把钱包侧与 JSON-RPC 侧的错误码分类，并给出各自处理方向。
+- 能指出实现特有的错误码需要单独兜底，而不是硬编码进通用分支。
+
+### 高级回答
+
+- 能设计错误码到界面、重试策略与日志字段的完整映射，并说明脱敏与埋点口径。
+- 能说明错误分类在回归测试中的落实方式，并给出钱包差异的兼容策略。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§Provider Errors）](https://eips.ethereum.org/EIPS/eip-1193)
+- [EIP-1474：Remote Procedure Call 规范（§Error codes）](https://eips.ethereum.org/EIPS/eip-1474)

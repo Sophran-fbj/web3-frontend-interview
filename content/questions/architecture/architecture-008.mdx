@@ -1,0 +1,90 @@
+---
+id: architecture-008
+slug: wagmi-query-cache-defaults
+title: wagmi 查询缓存的 queryKey 与默认值
+summary: 说明 queryKey 的构成、失效与手动读写缓存的差异，以及默认缓存参数的运维含义。
+status: review
+difficulty: intermediate
+category: architecture
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - tanstack-query
+  - cache
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：TanStack Query 指南（§Query Keys、§Invalidating Queries、§Retrieving & Updating Query Data）
+    url: https://wagmi.sh/react/guides/tanstack-query
+  - title: wagmi：Getting Started（§Usage）
+    url: https://wagmi.sh/react/getting-started
+---
+
+## 题目
+
+一个团队手拼 queryKey 去做缓存操作，结果失效范围时大时小；还有人以为缓存会自行更新，写操作后没有做后续处理。请说明 queryKey 的作用、默认缓存参数，以及手动读写缓存的边界。
+
+## 考察目标
+
+- queryKey 的构成与使用方式。
+- 失效与手动读写缓存的差异。
+- 默认缓存参数的运维含义。
+
+## 30 秒回答
+
+wagmi 的查询 hook 会返回 queryKey，它唯一标识一次查询，内容包含链、地址与参数等信息；invalidateQueries 会把匹配的查询标记为陈旧并重取活跃查询，getQueryData/setQueryData 用于手动读写缓存且不触发失效或重取。客户端默认 gcTime 为 5 分钟、staleTime 为 0、retry 为 3 次，SSR 场景下 gcTime 为 Infinity。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】每个查询 hook 返回 queryKey，它用于标识一次查询，内容包含链、地址、参数等信息（依据：wagmi TanStack Query 指南 §Query Keys）。
+- 【实现行为】invalidateQueries 把匹配的查询标记为陈旧，并重取处于活跃状态的查询（依据：wagmi TanStack Query 指南 §Invalidating Queries）。
+- 【实现行为】getQueryData 与 setQueryData 用于手动读写缓存，这两个函数不触发失效或重取（依据：wagmi TanStack Query 指南 §Retrieving & Updating Query Data）。
+- 【实现行为】客户端查询默认 gcTime 为 5 分钟、staleTime 为 0、retry 为 3 次，SSR 场景下 gcTime 为 Infinity（依据：wagmi TanStack Query 指南 §Queries & Mutations；默认数值见 wagmi 查询 hook 文档的 §query 一节，随版本变化，升级时需重新核对）。
+- 【工程经验】使用 hook 返回的 queryKey 而不是手拼键，可以减少参数遗漏造成的失效范围失控（依据：wagmi TanStack Query 指南 §Query Keys；工程经验）。
+- 【工程经验】写操作成功后由业务主动触发失效，缓存并不跟随链上状态变化自动更新（依据：wagmi TanStack Query 指南 §Invalidating Queries；工程经验）。
+- 【工程经验】失败重试次数影响错误放大程度，对写操作后的查询与用户主动刷新可以分别设置（依据：wagmi TanStack Query 指南 §Queries & Mutations；工程经验）。
+- 【工程经验】区分陈旧与不活跃状态，避免误判重取时机与缓存回收时机（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 手拼 queryKey，参数与 hook 定义不一致。
+- 写操作后不做失效，期待缓存自行更新。
+- 只用 setQueryData 改缓存，不承担后续一致性责任。
+- 忽略默认重试次数，把失败放大成多次请求。
+- 只在当前组件触发失效，其他页面继续使用旧数据。
+
+## 面试官追问
+
+1. 手拼的 queryKey 与 hook 返回的 queryKey 不一致时，会出现哪些现象？
+2. 乐观更新与手动写缓存的边界在哪里？
+3. 默认 gcTime 与 staleTime 对内存占用与请求量分别有什么影响？
+4. 多链多账户场景下，缓存键如何组织才不易出错？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 queryKey 的用途与失效的基本行为。
+- 知道写操作后需要主动失效。
+
+### 中级回答
+
+- 能说明失效、手动写缓存与自动重取的差异。
+- 能解释默认缓存参数对请求量与内存的影响。
+
+### 高级回答
+
+- 能设计跨页面、多链多账户的缓存组织与失效策略。
+- 能说明缓存策略的监控指标与回归验证方式。
+
+## 参考资料
+
+- [wagmi：TanStack Query 指南（§Query Keys、§Invalidating Queries、§Retrieving & Updating Query Data）](https://wagmi.sh/react/guides/tanstack-query)
+- [wagmi：Getting Started（§Usage）](https://wagmi.sh/react/getting-started)

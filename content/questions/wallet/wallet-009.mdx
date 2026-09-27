@@ -1,0 +1,101 @@
+---
+id: wallet-009
+slug: provider-events-semantics
+title: Provider 五个事件的触发条件与载荷
+summary: 逐个说明 EIP-1193 五个事件的触发条件与载荷形态，并解释事件与状态读取的分工。
+status: review
+difficulty: beginner
+category: wallet
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - eip-1193
+  - events
+  - wallet
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1193：Ethereum Provider JavaScript API（§Events）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: wagmi：useConnectionEffect（§Parameters）
+    url: https://wagmi.sh/react/api/hooks/useConnectionEffect
+---
+
+## 题目
+
+一个行情页面在账户变化后没有刷新数据，另一个页面在挂载时读取一次状态之后就不再更新。请说明 EIP-1193 的五个事件分别在什么条件下触发、载荷是什么，以及事件与状态读取之间是什么关系。
+
+## 考察目标
+
+- 说清五个事件的触发条件与载荷形态。
+- 区分「变化通知」与「当前状态读取」两类能力。
+- 理解事件订阅的接口形态（`on` 与 `removeListener`）。
+
+## 30 秒回答
+
+EIP-1193 定义五个事件：`connect` 在首次连上链或从断开状态恢复时触发，载荷是 `{ chainId: 十六进制字符串 }`；`disconnect` 在与各链的连接均已断开时触发，载荷是 `ProviderRpcError`，其 `code` 遵循 CloseEvent 状态码；`chainChanged` 的载荷是十六进制字符串形式的 chainId；`accountsChanged` 在 `eth_accounts` 的返回值发生变化时触发，载荷是地址数组；`message` 是兜底通知通道，订阅类推送以 `{ type: 'eth_subscription', data }` 的形式出现。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】`connect` 在两类条件下触发：钱包首次连上某条链，或从断开状态恢复为可提交请求；载荷为 `{ chainId }`，其中 chainId 是十六进制字符串（依据：EIP-1193 §connect）。
+
+【协议保证】`disconnect` 在钱包无法继续向所连各链提交请求时触发；载荷是 `ProviderRpcError`，其 `code` 遵循 CloseEvent 的状态码约定（依据：EIP-1193 §disconnect）。
+
+【协议保证】`chainChanged` 在钱包所连链发生变化时触发；载荷是十六进制字符串形式的 chainId（依据：EIP-1193 §chainChanged）。
+
+【协议保证】`accountsChanged` 在 `eth_accounts` 的返回值发生变化时触发；载荷是账户地址数组（依据：EIP-1193 §accountsChanged）。
+
+【协议保证】`message` 是钱包向页面传递通知的兜底通道，可承载各类消息；`eth_subscribe` 相关推送以 `{ type: 'eth_subscription', data }` 的形状出现（依据：EIP-1193 §message）。
+
+【协议保证】事件描述的是「发生了变化」，当前账户、链与连接的完整状态通过 `request` 调用读取；两条通道分工互补（依据：EIP-1193 §Events、§request）。
+
+【协议保证】订阅接口由 `on` 与 `removeListener` 成对提供，事件的载荷形态在规范中逐项定义（依据：EIP-1193 §Events）。
+
+【协议保证】`accountsChanged` 的载荷可以为空数组，属于合法形态（依据：EIP-1193 §accountsChanged）。
+
+【协议保证】`message` 的载荷结构由 `type` 字段区分，消费者按 `type` 判读其中内容（依据：EIP-1193 §message）。
+
+【实现行为】wagmi 的 `useConnectionEffect` 提供 `onConnect`、`onDisconnect`、`onAccountsChanged`、`onChainChanged` 回调，把这几类事件封装为组件内可用的订阅形式（依据：wagmi useConnectionEffect 页面 §Parameters）。
+
+## 常见错误
+
+- 挂载时读取一次状态后不再订阅事件，界面停止跟随钱包变化。
+- 只订阅事件而不在初始化与恢复连接时主动读取一次状态，首帧展示陈旧数据。
+- 直接把 `accountsChanged` 的数组参数当作全部账户状态，忽略主动查询。
+- 组件卸载时用新创建的箭头函数调用 `removeListener`，监听器没有按预期移除。
+- 把 `chainChanged` 的十六进制字符串参数与十进制数字直接比较。
+
+## 面试官追问
+
+1. 为什么事件不能替代一次主动的状态读取？请给出一个具体的数据错位场景。
+2. `disconnect` 的载荷为什么是错误对象而不是空载荷？这对错误处理有什么影响？
+3. 页面处于后台标签页时事件可能延迟或合并，你的界面如何处理？
+4. 如果要用 `message` 承载自定义通知，你会如何设计载荷判读逻辑？
+5. 订阅与状态读取的职责如何划分，才能同时避免重复请求与状态陈旧？
+
+## 评分标准
+
+### 初级回答
+
+- 能列出五个事件，并说出账户与链变化分别对应哪个事件。
+- 知道 `accountsChanged` 的载荷是地址数组，`chainChanged` 的载荷是十六进制字符串。
+
+### 中级回答
+
+- 能说明 `connect` 与 `disconnect` 的触发条件及其载荷形态。
+- 能指出事件是变化通知、状态读取靠 `request`，并给出先订阅再读一次的时序设计。
+
+### 高级回答
+
+- 能解释 `disconnect` 载荷中 `code` 遵循 CloseEvent 状态码的含义，并设计对应的重连策略。
+- 能把事件、订阅与状态读取整合为一致的组件状态模型，说明清理时机与重复订阅的防护方式。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§Events）](https://eips.ethereum.org/EIPS/eip-1193)
+- [wagmi：useConnectionEffect（§Parameters）](https://wagmi.sh/react/api/hooks/useConnectionEffect)

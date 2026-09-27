@@ -1,0 +1,100 @@
+---
+id: web3-basics-004
+slug: wallet-vs-account
+title: 钱包与账户：为什么钱包不是账户
+summary: 说明账户与钱包的概念差异、两者的多对多关系、助记词与派生路径对账户集合的影响，以及前端连接的对象到底是什么。
+status: review
+difficulty: beginner
+category: web3-basics
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wallet
+  - accounts
+  - key-management
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：Accounts（§A note on wallets、§Externally-owned accounts and key pairs）
+    url: https://ethereum.org/en/developers/docs/accounts/
+  - title: wagmi：Connect Wallet 指南（§Build Your Own 的 Display Connection）
+    url: https://wagmi.sh/react/guides/connect-wallet
+  - title: BIP-32：Hierarchical Deterministic Wallets
+    url: https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki
+  - title: BIP-44：Multi-Account Hierarchy for Deterministic Wallets
+    url: https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki
+  - title: EIP-155：Simple replay attack protection（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-155
+---
+
+## 题目
+
+产品需求里写着「每个用户绑定一个钱包地址」。请从账户与钱包的关系出发，说明这个设计会带来哪些问题，以及前端在连接、多账户与只读场景下应该怎么处理。
+
+## 考察目标
+
+- 账户与钱包的概念差异。
+- 账户与钱包之间的多对多关系（产品与密钥管理层面的总结）。
+- 助记词、派生路径与账户索引对账户集合的影响。
+- 前端连接对象的实际含义。
+
+## 30 秒回答
+
+账户是链上实体，具有地址与状态字段；钱包是管理密钥、完成签名并展示资产的工具。一个钱包可以管理多个账户，同一个账户也可以被多个钱包导入与使用，这属于钱包产品层面的常见行为。同一助记词在相同派生算法、派生路径、账户索引与网络约定下会得到相同账户；不同钱包可能采用不同的派生路径或索引约定，导入同一助记词后展示的账户集合可能不同。前端连接的对象是钱包提供的接口。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【工程经验】账户是链上实体，其状态由账户字段描述；钱包是保管与使用密钥的工具，这是产品与密钥管理层面的概念划分（依据：工程经验，无规范依据）。
+- 【工程经验】一个钱包可以管理多个账户，同一个账户也可以被多个钱包导入使用；这是钱包产品的常见行为，具体支持情况取决于实现（依据：工程经验，无规范依据）。
+- 【工程经验】同一助记词在相同派生算法、派生路径、账户索引与网络约定下会得到相同账户；不同钱包可能采用不同的派生路径或索引约定，导入同一助记词后展示的账户集合可能不同（依据：BIP-32、BIP-44）。
+- 【协议保证】EOA 的交易由对应私钥签名授权，节点可从签名恢复发起者（依据：EIP-155 §Specification；EIP-7702 §Specification 的 ecrecover 流程）。
+- 【工程经验】前端连接的是钱包提供的接口，连接结果表现为地址与链标识等信息，而不是在链上注册了某个账号（依据：wagmi Connect Wallet 指南 §Build Your Own 的 Display Connection）
+- 【工程经验】把地址作为唯一用户标识，在多账户与多钱包场景下会把同一用户的资产与进度拆散（依据：工程经验，无规范依据）
+- 【工程经验】只读地址与可签名账户应区分对待：展示类功能可以只依赖地址，签名与授权功能需要账户处于可签名状态（依据：工程经验，无规范依据）
+- 【工程经验】服务端会话与本地缓存宜把地址与链标识一起纳入键，减少同一用户在不同账户之间串数据的情况（依据：工程经验，无规范依据）
+
+## 常见错误
+
+- 把「连接钱包」理解为在链上注册了一个账户（依据：ethereum.org Accounts §A note on wallets）
+- 用地址作为唯一用户标识（依据：工程经验，无规范依据）
+- 认为同一份助记词在不同钱包里会得到不同的账户：在相同派生算法、派生路径、账户索引与网络约定下会得到相同账户；不同钱包的派生路径或索引约定可能不同，导入后展示的账户集合可能不同（依据：BIP-32、BIP-44）。
+- 把只读地址当成可以签名与授权的账户（依据：工程经验，无规范依据）
+- 连接失败与没有可选账户两种情况共用同一段提示文案（依据：工程经验，无规范依据）
+
+## 面试官追问
+
+1. 同一个地址被两个钱包管理时，前端如何避免状态串台？
+2. 用户换了钱包但地址不变，服务端会话要不要重新验证？
+3. 支持「仅观察」模式的产品在权限与提示上要注意什么？
+4. 连接钱包与切换账户在产品层面应该是两个动作吗？
+5. 同一助记词在两个钱包中展示的账户列表不同，你会如何排查？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出账户与钱包的定义差异。
+- 知道两者是多对多关系。
+
+### 中级回答
+
+- 能解释前端连接的对象是钱包接口。
+- 能指出把地址当作唯一用户身份的局限。
+
+### 高级回答
+
+- 能设计多账户、多钱包与只读场景下的状态键、权限与会话策略。
+- 能说明账户切换时缓存、表单与服务端会话的清理范围。
+
+## 参考资料
+
+- [ethereum.org：Accounts（§A note on wallets、§Externally-owned accounts and key pairs）](https://ethereum.org/en/developers/docs/accounts/)
+- [wagmi：Connect Wallet 指南（§Build Your Own 的 Display Connection）](https://wagmi.sh/react/guides/connect-wallet)
+- [BIP-32：Hierarchical Deterministic Wallets](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)
+- [BIP-44：Multi-Account Hierarchy for Deterministic Wallets](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki)
+- [EIP-155：Simple replay attack protection（§Specification）](https://eips.ethereum.org/EIPS/eip-155)

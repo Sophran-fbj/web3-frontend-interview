@@ -1,0 +1,89 @@
+---
+id: contract-017
+slug: proxy-upgradeable-contract-frontend
+title: 可升级合约对前端配置的影响
+summary: 说明代理模式的地址关系、EIP-1967 的存储槽约定，以及升级带来的 ABI 与安全结论变化。
+status: review
+difficulty: advanced
+category: contract
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - proxy
+  - upgradeable
+  - abi
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: ethereum.org：Upgrading smart contracts（页面级）
+    url: https://ethereum.org/en/developers/docs/smart-contracts/upgrading/
+  - title: EIP-1967：Standard Proxy Storage Slots（§Specification）
+    url: https://eips.ethereum.org/EIPS/eip-1967
+---
+
+## 题目
+
+一个协议通过代理合约对外提供服务，入口地址长期不变，实现逻辑会定期升级。前端同学把实现合约地址写进了业务配置，升级后部分调用开始失败；另一位同学把「这个地址已经审计过」当成长期结论。请从代理模式出发，说明前端配置与调用需要注意什么。
+
+## 考察目标
+
+- 代理与实现的地址关系，以及前端应该配置哪个地址。
+- EIP-1967 存储槽约定的作用与使用方式。
+- 升级带来的 ABI、语义与安全结论变化。
+
+## 30 秒回答
+
+代理合约保存状态并对外保持地址不变，逻辑代码位于实现合约，通过委托调用执行；前端应配置并调用代理地址，使用与实现版本对应的 ABI，并在升级后重新核对 ABI 与函数语义。EIP-1967 约定了实现地址等信息的存储槽，工具链与区块浏览器据此识别代理。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】EIP-1967 约定了实现合约地址对应的存储槽（bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1)），以及 admin 与 beacon 对应的槽位，便于外部工具识别代理（依据：EIP-1967 §Specification）。
+- 【协议保证】代理模式基于委托调用：代码在实现合约中，执行上下文与状态保存在代理地址（依据：EIP-1967 §Specification 对代理存储槽用途的说明）。
+- 【工程经验】前端配置的合约地址应为代理地址；把实现合约地址写进业务配置会绕过代理的状态与管理约束（依据：ethereum.org Upgrading smart contracts 页面）。
+- 【工程经验】升级后实现可能新增、移除或改变函数语义，前端 ABI 与参数编码需要与升级后的实现核对（依据：ethereum.org Upgrading smart contracts 页面）。
+- 【工程经验】「地址已审计」的结论需要绑定到具体实现版本；实现被替换后，安全结论需要重新评估（依据：ethereum.org Upgrading smart contracts 页面）。
+- 【工程经验】升级、初始化这类管理员入口不应出现在常规业务流程中，前端对它们的调用需要独立的权限与确认设计（依据：ethereum.org Upgrading smart contracts 页面；工程经验）。
+- 【实现行为】确认当前实现地址时，可以读取 EIP-1967 约定槽的内容，或使用支持代理识别的区块浏览器与工具（依据：EIP-1967 §Specification）。
+- 【工程经验】发现工具展示的合约名或方法列表与预期不一致时，先确认当前指向的实现地址，再排查 ABI 是否陈旧（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 把实现合约地址写进前端配置，绕过代理的状态与升级机制。
+- 认为代理地址不变就代表行为不变，长期沿用旧的 ABI 与安全结论。
+- 升级后只更换 ABI 文件，没有核对函数语义与参数顺序的变化。
+- 在常规业务页面暴露升级或初始化入口。
+- 只依赖区块浏览器展示的合约名，忽略那可能是对代理的识别结果。
+
+## 面试官追问
+
+1. 升级后页面出现参数编码错误，你会按地址、ABI、实现版本的顺序如何排查？
+2. 区块浏览器把代理识别为实现合约时，用户看到的「已验证源码」来自哪一份，你会如何解释？
+3. 前端是否应该提供「切换实现版本」的能力，这个取舍是什么？
+4. 多链部署时，代理地址与实现地址应如何组织进前端配置？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出前端应调用代理地址、逻辑代码在实现合约中。
+- 知道地址不变不代表行为不变。
+
+### 中级回答
+
+- 能解释 EIP-1967 存储槽的用途，并说明如何确认当前实现地址。
+- 能把升级影响拆解为 ABI、语义与安全结论三层来说明。
+
+### 高级回答
+
+- 能设计跨链、跨版本的合约配置与升级核对流程，覆盖 ABI 同步、实现版本记录与回滚预案。
+- 能说明管理员入口在前端的暴露边界，并给出权限与确认设计。
+
+## 参考资料
+
+- [ethereum.org：Upgrading smart contracts（页面级）](https://ethereum.org/en/developers/docs/smart-contracts/upgrading/)
+- [EIP-1967：Standard Proxy Storage Slots（§Specification）](https://eips.ethereum.org/EIPS/eip-1967)

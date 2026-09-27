@@ -1,0 +1,93 @@
+---
+id: contract-019
+slug: payable-value-handling
+title: payable 与交易 value 的正确处理
+summary: 说明 payable 与 state mutability 的关系、value 的单位与换算方式，以及纯转账与合约调用的路径选择。
+status: review
+difficulty: beginner
+category: contract
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - payable
+  - value
+  - abi
+stacks:
+  viem: "2.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: Solidity 文档：Contracts（§State Mutability、§Fallback Function）
+    url: https://docs.soliditylang.org/en/latest/contracts.html
+  - title: viem：parseUnits（§Parameters、§Returns）
+    url: https://viem.sh/docs/utilities/parseUnits
+  - title: ethereum.org：Interacting with smart contracts（页面级）
+    url: https://ethereum.org/en/developers/docs/smart-contracts/interacting/
+---
+
+## 题目
+
+一个「质押 ETH」的按钮在两种场景下出错：给一个不接收 ETH 的函数传了 value，交易立即失败；另一次操作是纯 ETH 转账，却走了合约调用路径，用户在确认弹窗里看不到转账金额。请从 payable 与 value 的处理出发说明正确做法。
+
+## 考察目标
+
+- payable 与 nonpayable 的差异。
+- value 的单位与前端换算方式。
+- 纯 ETH 转账与 payable 合约调用的路径选择。
+
+## 30 秒回答
+
+声明为 payable 的函数与接收入口可以接收随调用发送的 value；nonpayable 函数收到非零 value 的调用会失败。value 以最小单位整数传入，前端需要把用户输入的以太数量换算后再提交。纯 ETH 转账与合约 payable 调用是两条路径：前者提交 to 与 value，后者在调用函数时附带 value。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】state mutability 修饰符中，payable 表示函数可以接收随调用发送的 value；nonpayable 函数被携带非零 value 的调用触发时，该调用失败（依据：Solidity 文档 §State Mutability）。
+- 【协议保证】接收 ETH 的入口（receive 与 fallback）需要声明为 payable，否则携带 value 的转账会失败（依据：Solidity 文档 §State Mutability、§Fallback Function）。
+- 【实现行为】viem 的 parseUnits 接收数值字符串与精度参数（页面中的参数名为 exponent），返回最小单位的 bigint（依据：viem parseUnits §Parameters、§Returns）。
+- 【工程经验】把用户输入的以太数量换算为最小单位整数后再填入 value，避免浮点与精度问题（依据：viem parseUnits §Parameters；工程经验）。
+- 【工程经验】把合约函数调用与纯 ETH 转账分成两条路径：前者沿 ABI 编码并附带 value，后者只提交 to 与 value（依据：ethereum.org Interacting with smart contracts 页面；工程经验）。
+- 【工程经验】展示层把转账金额与 gas 费用分开呈现，便于用户核对实际转出的数量（依据：工程经验，无规范依据）。
+- 【工程经验】发起前按 ABI 的 stateMutability 做本地校验，对 nonpayable 方法误传 value 的情况给出明确提示（依据：工程经验，无规范依据）。
+- 【工程经验】把 value 相关的失败与 gas 估算失败、用户拒绝分开归类，便于给出不同文案（依据：工程经验，无规范依据）。
+
+## 常见错误
+
+- 给 nonpayable 函数传入非零 value，或在未携带 value 的调用里期待合约收到 ETH。
+- 把用户输入的以太数量直接当作最小单位整数提交，造成金额偏差。
+- 把 value 与 gas 费用的展示放在同一行，让用户难以核对实际转账数量。
+- 纯 ETH 转账与合约调用共用一套交互，忽略两者确认信息不同。
+- 忽略部分钱包会在签名前拦截明显无效的 value，误以为链上侧会给出明确错误。
+
+## 面试官追问
+
+1. 用户在钱包弹窗里看到 value 为 0，而页面显示要质押 1 ETH，你会从哪里排查？
+2. 合约升级后某个函数从 payable 改为 nonpayable，前端配置与提示需要如何联动？
+3. stateMutability 校验放在前端还是交给钱包与节点报错，取舍是什么？
+4. 与 gas 费用相比，value 在签名确认流程中应该占据什么位置？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 payable 函数可接收 value、nonpayable 函数收到非零 value 会失败。
+- 知道 value 用最小单位整数表示。
+
+### 中级回答
+
+- 能说明纯 ETH 转账与 payable 调用的路径差异，并给出参数组织方式。
+- 能解释金额换算与展示分离的必要性。
+
+### 高级回答
+
+- 能设计签名前校验流程，覆盖 stateMutability、金额换算与展示一致性。
+- 能说明 value 校验失败与 gas 估算失败在错误分类中的处理差异。
+
+## 参考资料
+
+- [Solidity 文档：Contracts（§State Mutability、§Fallback Function）](https://docs.soliditylang.org/en/latest/contracts.html)
+- [viem：parseUnits（§Parameters、§Returns）](https://viem.sh/docs/utilities/parseUnits)
+- [ethereum.org：Interacting with smart contracts（页面级）](https://ethereum.org/en/developers/docs/smart-contracts/interacting/)

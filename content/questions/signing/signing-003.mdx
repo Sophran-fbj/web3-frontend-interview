@@ -1,0 +1,93 @@
+---
+id: signing-003
+slug: eip2612-permit-flow
+title: EIP-2612 permit 的签名授权流程
+summary: 说明 permit 的签名结构、EIP-712 域在防重放中的作用，以及 nonce、deadline 与失败恢复的处理方式。
+status: review
+difficulty: advanced
+category: signing
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - eip-2612
+  - permit
+  - eip-712
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: "EIP-2612：permit 扩展（§Specification、§Rationale、§Security Considerations）"
+    url: https://eips.ethereum.org/EIPS/eip-2612
+  - title: "EIP-712：类型化结构化数据哈希与签名（§Specification：typed data 与 domain）"
+    url: https://eips.ethereum.org/EIPS/eip-712
+  - title: "EIP-3009：transferWithAuthorization（§Specification）"
+    url: https://eips.ethereum.org/EIPS/eip-3009
+---
+
+## 题目
+
+一个 DApp 想让用户免去单独的 approve 交易，改为签名后由后端提交；上线后发现部分代币的签名结构与实现不一致，另一些用户签名后额度没有变化。请说明 permit 的流程与常见失效原因。
+
+## 考察目标
+
+- EIP-2612 permit 的签名结构与提交方式。
+- EIP-712 域在防重放中的作用。
+- permit 的可选性与失效条件。
+
+## 30 秒回答
+
+EIP-2612 允许用户对包含 owner、spender、value、deadline、nonce 并锚定 EIP-712 域的结构签名，任意地址都可以把该签名提交到代币合约以写入授权额度，用户因此省去一笔 approve 交易；域应对合约与链保持唯一，四字段结构只是常见选择；该扩展属于可选实现，签名的有效性受 nonce 与 deadline 约束。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】permit 的签名内容包含 owner、spender、value、deadline 与 nonce，并锚定到符合 EIP-712 的 DOMAIN_SEPARATOR；DOMAIN_SEPARATOR 应对合约与链保持唯一，常见的四字段（name、version、chainId、verifyingContract）是规范给出的常见选择，而不是唯一允许的结构（依据：EIP-2612 §Specification）。
+- 【协议保证】签名可以由任意地址提交上链，提交者不需要是该签名的签署者（依据：EIP-2612 §Specification）。
+- 【协议保证】nonce 由合约按账户维护，每次成功的 permit 都会消耗一个 nonce；使用过的 nonce 对应的签名无法再次生效（依据：EIP-2612 §Specification）。
+- 【协议保证】deadline 过期后签名不再被接受，提交会失败（依据：EIP-2612 §Specification）。
+- 【协议保证】EIP-2612 属于可选扩展，各代币合约是否实现以及版本差异需要以目标 ABI 为准（依据：EIP-2612 §Security Considerations）。
+- 【协议保证】EIP-3009 授权的是转账本身，transferWithAuthorization 与 receiveWithAuthorization 携带 nonce 与有效期，与授权额度的 permit 是不同机制（依据：EIP-3009 §Specification）。
+- 【工程经验】签名前读取链上 nonce，把签名得到的 v、r、s 与参数一并交给提交方；提交方负责广播与结果确认（依据：EIP-2612 §Specification 的 nonces）。
+- 【工程经验】deadline 取业务窗口内的短有效期，并在界面说明过期后需要重新签名（依据：工程经验，无规范依据）。
+- 【工程经验】permit 与业务调用在同一笔交易内组合（先 permit 再执行）时，把两类失败分别映射为可读提示（依据：EIP-2612 §Specification）。
+
+## 常见错误
+
+- 假定目标代币都支持 permit（【协议保证】permit 是可选扩展，依据：EIP-2612 §Security Considerations）。
+- deadline 设置过长，签名长期有效。
+- 域中缺少 chainId 或 verifyingContract 时，签名的适用范围会扩大；EIP-2612 要求域对合约与链保持唯一，并提示缓存域分隔符带来的跨链重放风险（【协议保证】依据：EIP-2612 §Specification、§Security Considerations）。
+- 认为普通 approve 会改变 permit 的 nonce：普通 ERC-20 approve 不递增 ERC-2612 的 nonces[owner]，只有成功执行 permit 才会消耗 Permit nonce；旧签名可能因 deadline 过期、被另一笔 permit 消耗同一 nonce 或域不匹配而失效（【协议保证】依据：EIP-2612 §Specification、§Security Considerations）。
+- 把 EIP-3009 的转账授权当作额度授权处理。
+
+## 面试官追问
+
+1. 用户签名后由后端提交，提交失败时如何告知用户并恢复流程？
+2. 如何降低签名被他人抢先提交带来的体验问题？
+3. 由前端直接提交 permit 与交给后端 relayer，架构上各自的取舍是什么？
+4. permit 与业务调用组合成一笔交易时，失败回滚的范围如何影响用户预期？
+
+## 评分标准
+
+### 初级回答
+
+- 能说明 permit 的签名参数与提交方式。
+- 知道 nonce 与 deadline 的作用。
+
+### 中级回答
+
+- 能说明 EIP-712 域对防重放的意义。
+- 能区分 permit 与 EIP-3009 的授权对象。
+
+### 高级回答
+
+- 能设计签名、提交与失败恢复的完整流程，并覆盖 nonce 冲突与过期。
+- 能说明组合交易与分步交易在失败语义上的差异。
+
+## 参考资料
+
+- [EIP-2612：permit 扩展（§Specification、§Rationale、§Security Considerations）](https://eips.ethereum.org/EIPS/eip-2612)
+- [EIP-712：类型化结构化数据哈希与签名（§Specification：typed data 与 domain）](https://eips.ethereum.org/EIPS/eip-712)
+- [EIP-3009：transferWithAuthorization（§Specification）](https://eips.ethereum.org/EIPS/eip-3009)

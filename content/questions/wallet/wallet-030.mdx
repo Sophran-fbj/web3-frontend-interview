@@ -1,0 +1,119 @@
+---
+id: wallet-030
+slug: wallet-prompt-queue-concurrency
+title: 并发钱包请求的串行化设计
+summary: 用 Promise 语义与错误码分流处理重复请求，用队列保证同一时间只有一个待处理请求。
+status: review
+difficulty: advanced
+category: wallet
+questionType: scenario
+ecosystems:
+  - evm
+tags:
+  - wallet-ux
+  - concurrency
+  - queue
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1193：Ethereum Provider JavaScript API（§request、§Provider Errors）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: EIP-1474：Remote Procedure Call Specification（§Error codes）
+    url: https://eips.ethereum.org/EIPS/eip-1474
+  - title: wagmi：useConnect（§Return Type 的 status）
+    url: https://wagmi.sh/react/api/hooks/useConnect
+  - title: wagmi：useWriteContract（§Return Type 的 status）
+    url: https://wagmi.sh/react/api/hooks/useWriteContract
+---
+
+## 题目
+
+一个页面在交易确认弹窗还未关闭时又触发了签名请求，用户看到两个互相打断的弹窗；另一个页面在用户连点时，第二次请求直接失败。请说明并发钱包请求应该怎样设计，以及 -32002 这类响应应该如何处理。
+
+## 考察目标
+
+- request 的 Promise 语义与错误分流。
+- 并发请求的产品与技术边界。
+- 队列、取消与超时语义的设计。
+
+## 30 秒回答
+
+按 EIP-1193，request 成功时 resolve 该方法的结果，失败时以带 code 的错误对象 reject；EIP-1474 的错误码表中 -32002 对应 Resource unavailable。也就是说，并发或重复请求的失败可以通过错误码分流，但具体在什么条件下由钱包返回 -32002，属于钱包实现差异。因此并发请求的设计需要把错误码分流与钱包行为差异一起考虑。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【协议保证】request 返回 Promise：成功时 resolve 该方法规范定义的结果，失败时 reject 包含 code 与 message 的错误对象（依据：EIP-1193 §request）。
+- 【协议保证】EIP-1474 定义 JSON-RPC 的错误码范围，其中 -32002 对应 Resource unavailable（依据：EIP-1474 §Error codes）。
+- 【协议保证】EIP-1193 为 Provider 错误约定了一组 code，并说明 message 面向人类阅读，因此分流应以 code 为依据（依据：EIP-1193 §Provider Errors）。
+- 【工程经验】钱包可能把「已有同类型请求等待处理」映射为 -32002 或实现特有的错误；触发条件与返回形态因钱包而异，处理时保留兜底（依据：工程经验，无规范依据）。
+- 【实现行为】useConnect 是 mutation，status 取值 idle、pending、error、success，retry 默认为 0（依据：wagmi useConnect §Return Type 的 status、§mutation 的 retry）。
+- 【实现行为】useWriteContract 同样是 mutation，status 与 error 用来表达待处理与失败状态（依据：wagmi useWriteContract §Return Type 的 status）。
+- 【工程经验】维护请求队列（互斥锁）：同一时间只允许一个待用户处理的请求，其余请求排队，避免弹窗互相打断（工程经验，无规范依据）。
+- 【工程经验】按钮级 pending 与全局队列都要有：前者防连点，后者防多个组件各自弹签名（工程经验，无规范依据）。
+- 【工程经验】为排队请求定义取消与超时语义，被取消时要通知业务层，避免用户被积压的旧请求困住（工程经验，无规范依据）。
+- 【工程经验】把 -32002 当作「重试前先检查状态」的信号：确认钱包里是否还有未完成的请求，再决定提示或重新排队，而不是当作网络错误立即重试（工程经验，无规范依据）。
+- 【工程经验】批量操作优先评估钱包侧的批量调用能力，而不是并发发起多笔请求（工程经验，无规范依据）。
+
+## 示例代码
+
+```ts
+// 串行化钱包请求的最小示例：同一时间只允许一个待用户处理的请求。
+let tail: Promise<unknown> = Promise.resolve();
+
+export function enqueueWalletRequest<T>(task: () => Promise<T>): Promise<T> {
+  const run = tail.then(
+    () => task(),
+    () => task(),
+  );
+  // 吞掉前一个请求的失败，保证队列继续推进。
+  tail = run.catch(() => undefined);
+  return run;
+}
+```
+
+示例省略了超时、取消与状态提示。
+
+## 常见错误
+
+- 多个组件各自弹签名请求，弹窗互相打断（【工程经验】）。
+- 把 -32002 当网络错误自动重试，造成重复弹窗（【协议保证】该码在 EIP-1474 中对应 Resource unavailable；依据：EIP-1474 §Error codes）。
+- 队列没有上限，用户被积压的旧请求困住（【工程经验】）。
+- 排队中的请求被取消后没有通知业务层（【工程经验】）。
+- 用 message 判断「重复请求」，而不是用 code（【协议保证】EIP-1193 说明 message 面向人类阅读；依据：EIP-1193 §Provider Errors）。
+
+## 面试官追问
+
+1. 用户在钱包里还有未完成的请求时，界面应该怎么提示？
+2. -32002、网络错误与用户拒绝的处理路径有何不同？
+3. 队列上限如何设定？排队中的请求怎样取消？
+4. 多个页面组件都需要签名时，队列放在哪一层？
+5. 用批量调用替代并发请求，需要评估哪些前提？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 request 失败时返回带 code 的错误对象。
+- 知道 -32002 与资源暂时不可用相关。
+
+### 中级回答
+
+- 能说明并发请求触发失败的原因，并给出队列化的处理方式。
+- 能按 code 区分用户拒绝、重复请求与网络错误。
+
+### 高级回答
+
+- 能设计包含取消、超时与错误分流的请求队列，并说明边界条件。
+- 能结合批量调用能力评估并发方案的替代路径。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§request、§Provider Errors）](https://eips.ethereum.org/EIPS/eip-1193)
+- [EIP-1474：Remote Procedure Call Specification（§Error codes）](https://eips.ethereum.org/EIPS/eip-1474)
+- [wagmi：useConnect（§Return Type 的 status）](https://wagmi.sh/react/api/hooks/useConnect)
+- [wagmi：useWriteContract（§Return Type 的 status）](https://wagmi.sh/react/api/hooks/useWriteContract)

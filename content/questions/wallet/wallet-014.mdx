@@ -1,0 +1,101 @@
+---
+id: wallet-014
+slug: legacy-send-vs-request-migration
+title: 从 send/sendAsync 迁移到 request
+summary: 对照 EIP-1193 附录中的历史接口与事件名，给出从旧 Provider API 迁移到 request/on/removeListener 的替换清单。
+status: review
+difficulty: beginner
+category: wallet
+questionType: comparison
+ecosystems:
+  - evm
+tags:
+  - eip-1193
+  - migration
+  - provider
+stacks: {}
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: EIP-1193：Ethereum Provider JavaScript API（§request、§Events、§Appendix III Legacy Provider API）
+    url: https://eips.ethereum.org/EIPS/eip-1193
+  - title: wagmi：injected connector（§Parameters 的 target、shimDisconnect）
+    url: https://wagmi.sh/react/api/connectors/injected
+---
+
+## 题目
+
+维护一个老项目时，代码里混用了 `sendAsync`、`send` 与 `request`，并监听了 `close`、`networkChanged`、`notification` 等事件。请说明这些接口之间的关系，并给出迁移到 EIP-1193 新接口的方案。
+
+## 考察目标
+
+- 说清历史接口与事件名对应的新形态。
+- 理解回调式接口与 Promise 接口在返回值处理上的差异。
+- 能够识别老教程里的旧写法并制定替换清单。
+
+## 30 秒回答
+
+EIP-1193 把 `sendAsync`、`send` 等历史接口归入附录中的 Legacy Provider API：`sendAsync` 是回调式、接近 JSON-RPC 响应对象的接口，`send` 的行为在不同钱包之间并不统一，两者都已被 `request` 取代；历史事件 `close`、`networkChanged`、`notification` 分别由 `disconnect`、`chainChanged`、`message` 取代。新接口面是 `request`、`on` 与 `removeListener`。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+【协议保证】`sendAsync` 采用回调式调用，回调收到的结果接近 JSON-RPC 响应对象（依据：EIP-1193 §Appendix III Legacy Provider API）。
+
+【协议保证】`send` 的行为在不同钱包之间并不统一，历史上存在同步返回与回调返回等差异（依据：EIP-1193 §Appendix III Legacy Provider API）。
+
+【协议保证】`sendAsync` 与 `send` 都属于历史接口，规范建议新代码使用 `request` 替代（依据：EIP-1193 §Appendix III Legacy Provider API、§request）。
+
+【协议保证】历史事件 `close` 由 `disconnect` 取代（依据：EIP-1193 §Appendix III Legacy Provider API）。
+
+【协议保证】历史事件 `networkChanged` 由 `chainChanged` 取代（依据：EIP-1193 §Appendix III Legacy Provider API）。
+
+【协议保证】历史事件 `notification` 由 `message` 取代（依据：EIP-1193 §Appendix III Legacy Provider API）。
+
+【协议保证】`request` 成功时 resolve 方法的结果值，而不是包含 `jsonrpc`、`id`、`result` 的响应外壳；这与回调式接口的取值方式不同（依据：EIP-1193 §request、§Appendix III Legacy Provider API）。
+
+【协议保证】新的事件订阅接口是 `on` 与 `removeListener`，与历史事件名不混用（依据：EIP-1193 §Events）。
+
+【协议保证】`request` 的参数结构为 `{ method, params }`，方法名与参数由对应 RPC 规范定义（依据：EIP-1193 §request）。
+
+【实现行为】wagmi 的 injected connector 提供 `target`、`shimDisconnect` 等参数，用于适配不同注入环境下的连接与断开行为（依据：wagmi injected connector 页面 §Parameters）。
+
+## 常见错误
+
+- 在新代码里为兼容同时保留 `send` 与 `request` 两条分支，行为差异带来难以复现的缺陷。
+- 沿用老教程的 `sendAsync` 写法，再把回调结果当作 `request` 的 resolve 值使用。
+- 继续监听 `networkChanged` 等历史事件名，链变化通知不再触发。
+- 把 `send` 的返回值直接当作方法结果，忽略它在不同钱包中的形态差异。
+- 迁移时只改方法名，没有同步调整返回值解析与错误处理。
+
+## 面试官追问
+
+1. `sendAsync` 与 `request` 在错误处理上的差异是什么？迁移时错误分支要怎么改？
+2. 如果依赖的第三方组件仍在调用旧接口，你会如何隔离这部分兼容代码？
+3. 历史事件名替换之后，订阅逻辑还要注意哪些清理问题？
+4. 你如何在一个老项目里排查还有哪些地方在使用旧接口？
+5. 迁移完成后，如何验证链变化与账户变化通知仍然有效？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 `request` 是当前接口，`send`、`sendAsync` 属于历史接口。
+- 知道 `close`、`networkChanged`、`notification` 分别对应 `disconnect`、`chainChanged`、`message`。
+
+### 中级回答
+
+- 能解释回调式接口与 Promise 接口在返回值与错误处理上的差异。
+- 能给出替换清单，并说明迁移时事件订阅与清理的配套修改。
+
+### 高级回答
+
+- 能为老项目设计渐进迁移方案：兼容层、旧接口收敛位置与回归验证点。
+- 能说明第三方组件仍使用旧接口时的隔离与监控方式，并给出风险取舍。
+
+## 参考资料
+
+- [EIP-1193：Ethereum Provider JavaScript API（§request、§Events、§Appendix III Legacy Provider API）](https://eips.ethereum.org/EIPS/eip-1193)
+- [wagmi：injected connector（§Parameters 的 target、shimDisconnect）](https://wagmi.sh/react/api/connectors/injected)

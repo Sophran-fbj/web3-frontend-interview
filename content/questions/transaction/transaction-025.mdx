@@ -1,0 +1,90 @@
+---
+id: transaction-025
+slug: sync-write-hooks
+title: Sync 版写交易 hook 的取舍
+summary: 说明 Sync 变体的等待语义、适合的流程，以及 pending 时间变长带来的状态处理成本。
+status: review
+difficulty: advanced
+category: transaction
+questionType: concept
+ecosystems:
+  - evm
+tags:
+  - wagmi
+  - sync-hooks
+  - transaction
+stacks:
+  wagmi: "3.x"
+sourceTypes:
+  - official-docs
+updatedAt: 2026-09-27
+reviewers: []
+changeLog: []
+references:
+  - title: wagmi：useWriteContract（§Synchronous Usage）
+    url: https://wagmi.sh/react/api/hooks/useWriteContract
+  - title: wagmi：useSendCalls（§Usage、§Synchronous Usage）
+    url: https://wagmi.sh/react/api/hooks/useSendCalls
+---
+
+## 题目
+
+一个「授权后立刻质押」的流程用普通写交易 hook 时经常因为第二步先于第一步完成而失败，于是有人提议把两笔操作都换成 Sync 版本。请说明 Sync 变体与普通版的区别与适用边界。
+
+## 考察目标
+
+- Sync 变体的等待语义。
+- 串行依赖流程的组织方式。
+- 长 pending 带来的状态与交互成本。
+
+## 30 秒回答
+
+wagmi 为写操作提供 Sync 变体（如 useWriteContractSync、useSendCallsSync），它们会等到交易或调用批次被打包后再返回结果，适合「前一步完成才能继续」的串行流程；普通版返回哈希后由调用方自行等待回执，适合分阶段展示。Sync 变体的 mutation pending 时间更长，重复点击与离开页面的状态处理成本更高。实现差异与工程取舍见深入回答。
+
+## 深入回答
+
+- 【实现行为】useWriteContractSync 会等到交易被包含进区块后再返回，而不是只返回哈希（依据：wagmi useWriteContract §Synchronous Usage）。
+- 【实现行为】useSendCalls 的 Sync 变体等待的是调用批次的结果，语义与单笔交易等待不同（依据：wagmi useSendCalls §Synchronous Usage）。
+- 【实现行为】普通版与 Sync 版共享相同的参数体系，差异在返回时机与 mutation 状态持续时间（依据：wagmi useWriteContract §Synchronous Usage；工程经验）。
+- 【工程经验】存在严格前后依赖的流程（如授权完成后再执行下一步）适合 Sync 变体，减少业务侧自行编排等待逻辑（依据：wagmi useWriteContract §Synchronous Usage；工程经验）。
+- 【工程经验】非串行流程默认使用普通版配合回执等待，把等待过程拆成可展示的阶段（依据：工程经验，无规范依据）。
+- 【工程经验】Sync 变体的 pending 时间更长，需要在按钮、离开页面与重复点击上做防重与状态恢复（依据：工程经验，无规范依据）。
+- 【工程经验】Sync 返回后仍然需要按回执或批次状态展示最终结果，避免把返回当作无需解释的完成信号（依据：工程经验，无规范依据）。
+- 【工程经验】批量操作优先评估钱包批量调用能力，而不是并发发起多笔写交易（依据：wagmi useSendCalls §Usage；工程经验）。
+
+## 常见错误
+
+- 把写操作都换成 Sync 版本，导致长时间 pending 与交互卡顿。
+- 把 Sync 的返回当作广播即可用的哈希，忽略其等待语义。
+- 重复点击没有防重，产生多笔重复交易。
+- 串行流程只靠固定延时等待前一步完成。
+- 用户离开页面后没有处理 mutation 状态与结果展示。
+
+## 面试官追问
+
+1. 用户在 Sync 等待期间关闭页面，回来后你如何恢复流程状态？
+2. 串行依赖的第二步失败时，第一步已上链的中间状态如何向用户呈现？
+3. Sync 与普通版混合使用的代码如何组织，避免两套等待逻辑？
+4. 批量调用与逐笔串行在成本和用户体验上的取舍是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 能说出 Sync 变体会等到结果可用后再返回。
+- 知道普通版返回哈希、需要额外等待回执。
+
+### 中级回答
+
+- 能判断哪些流程适合 Sync、哪些适合分阶段展示。
+- 能说明长 pending 带来的交互与状态处理成本。
+
+### 高级回答
+
+- 能设计串行流程的状态机，覆盖失败、中断与恢复。
+- 能说明批量调用与逐笔交易的组合策略及成本评估。
+
+## 参考资料
+
+- [wagmi：useWriteContract（§Synchronous Usage）](https://wagmi.sh/react/api/hooks/useWriteContract)
+- [wagmi：useSendCalls（§Usage、§Synchronous Usage）](https://wagmi.sh/react/api/hooks/useSendCalls)
