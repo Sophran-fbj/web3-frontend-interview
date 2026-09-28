@@ -1,0 +1,94 @@
+---
+id: erc721-operator-approval-review
+slug: erc721-operator-approval-review
+title: 挂单一件 NFT，为什么授权会影响整个系列？
+summary: 审查 ERC-721 全量 operator 授权的目标、范围、持续性与撤销竞态。
+status: review
+difficulty: intermediate
+category: security
+questionType: code-review
+ecosystems: [evm]
+tags: [erc721, operator, approval, phishing]
+stacks:
+  erc-721: final
+  openzeppelin-contracts: "5.4.0"
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 修正 NFT 授权调用目标，补充未来持仓与撤销竞争。
+references:
+  - title: ERC-721 Non-Fungible Token Standard
+    url: https://eips.ethereum.org/EIPS/eip-721
+  - title: OpenZeppelin Contracts 5.4.0 ERC721
+    url: https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/token/ERC721/ERC721.sol
+---
+
+## 题目
+
+页面写“授权此 NFT”，实际在 NFT 合约上调用 `setApprovalForAll(marketOperator, true)`。用户卖出这件 NFT 后认为权限已经消失，又收到同系列的新 NFT。请审查调用目标、权限范围和撤销流程。
+
+## 考察目标
+
+- 区分 NFT 合约目标与 operator 参数。
+- 比较单 token 授权与系列全量授权。
+- 识别撤销与恶意转移竞争的边界。
+
+## 30 秒回答
+
+setApprovalForAll 调用目标是 NFT 合约，operator 是被授权的地址，可为合约或 EOA。权限覆盖 owner 在此合约下的全部 NFT，包括后续持有的资产；卖出单件通常不清除 owner/operator 权限。单 token 的 approve 则随该 token 转移清空。页面应写清系列范围、operator 和链，提供撤销，并说明撤销确认前资产仍可能被转移。
+
+## 深入回答
+
+### 审查真实调用
+
+核对 chainId、NFT 合约、operator、approved 和实际账户。operator 的名称不能代替完整地址，源码公开也不证明可信。标准授权允许同一 owner 有多个 operator，因此撤销一个市场不等于清除了其他授权。
+
+### 权限为什么会持续
+
+逐 token 授权绑定 tokenId，转移时重置。OpenZeppelin 5.4.0 的全量权限保存在 owner/operator 映射中，转移单件不改它；后续 owner 收到同系列 NFT 时，operator 仍具备相应权限。系列授权不等于授权 owner 所有链、所有 NFT 合约，风险提示应准确而非笼统。
+
+### 授权与撤销界面
+
+读取 `isApprovedForAll(owner, operator)`，确已授权时不重复请求。若市场支持单 token 授权，可按用途提供更小权限；若协议依赖全量授权，诚实说明需求。市场挂单签名的过期/取消与 NFT operator 撤销是两套机制，不要混在同一个“取消”按钮里。
+
+撤销通过同一 NFT 合约 `setApprovalForAll(operator, false)`，需要签名、gas 和链上确认。恶意 operator 可能在撤销前转移，不能保证撤销追回已失资产。必要时核对其他授权与剩余资产，按情况安全转移。回执后重读，处理重组、其他设备变更、owner/chain 切换和用户拒绝。
+
+## 常见错误
+
+- 将 setApprovalForAll 调用发到市场合约。
+- 文案写单件，调用却授予全系列权限。
+- 认为卖出一件或取消订单会自动撤销 operator。
+- 只显示市场名称，隐藏 operator 地址与链。
+- 将授权发出或撤销发出视为已经确认。
+- 宣称撤销能追回已经转走的资产。
+
+## 面试官追问
+
+1. 用户没持有任何 NFT 时，operator 授权还有意义吗？
+2. 挂单取消和 operator 撤销分别阻断哪条链路？
+3. 撤销交易一直 pending，应怎样解释风险？
+4. 多设备授权变更如何避免页面长期显示旧状态？
+
+## 评分标准
+
+### 初级回答
+
+- 能指出系列授权与单件文案不符。
+- 知道 NFT 合约是目标、operator 是参数。
+
+### 中级回答
+
+- 解释两类授权的持续性和后续持仓风险。
+- 能设计读取、确认及撤销后的刷新流程。
+
+### 高级回答
+
+- 区分订单权限、operator 权限与多 operator 状态。
+- 覆盖撤销竞争、重组及市场粒度取舍。
+
+## 参考资料
+
+- [ERC-721 Non-Fungible Token Standard](https://eips.ethereum.org/EIPS/eip-721)
+- [OpenZeppelin Contracts 5.4.0 ERC721](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/token/ERC721/ERC721.sol)

@@ -1,0 +1,103 @@
+---
+id: l2-transaction-fee-composition
+slug: l2-fee-composition
+title: OP 和 Arbitrum 的预估费用，为什么不能用同一公式？
+summary: 区分 gas 单位与费用金额，以及 OP 的额外收费和 Arbitrum 父链成本折算。
+status: review
+difficulty: intermediate
+category: performance-ux
+questionType: comparison
+ecosystems: [evm]
+tags: [l2, gas, op-stack, arbitrum, fee-estimation]
+stacks:
+  op-stack: Isthmus 后费用组成，具体参数按目标链升级核对
+  arbitrum: Nitro rollup 费用模型
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 修正 estimateGas 为 gas 单位，区分两条链的费用估算与实际结算。
+references:
+  - title: Optimism Transaction Fees
+    url: https://docs.optimism.io/op-stack/transactions/fees
+  - title: Arbitrum Gas and Fees
+    url: https://docs.arbitrum.io/how-arbitrum-works/deep-dives/gas-and-fees
+  - title: EIP-1559 Fee Market
+    url: https://eips.ethereum.org/EIPS/eip-1559
+---
+
+## 题目
+
+同一类操作在 OP Mainnet 与 Arbitrum One 上，页面都用 estimateGas 乘 gas price 展示总费用，却和实际扣费对不上。应该怎样修正估算和展示？
+
+## 考察目标
+
+- gas 数量与原生币金额的单位区别。
+- 不同 rollup 的数据成本收费模型。
+- 估算时效、余额检查与收据核算。
+
+## 30 秒回答
+
+eth_estimateGas 返回 gas 单位，不是 wei 金额。OP 的总费用包括 L2 执行费、L1 数据费以及适用升级后的 operator fee，不能只算执行 gas。Arbitrum Nitro 把父链数据成本折算进子链 gas，estimateGas 已包含对应部分，再另加一次会重复计算。按目标链和升级使用其估算接口或 SDK，标明估算时间，提交前刷新，并用该链收据字段核算实际费用。
+
+## 深入回答
+
+### OP 的额外费用
+
+执行费一般按实际 gasUsed 乘 effectiveGasPrice 计算。L1 数据费依交易编码和压缩估算、L1 base fee 与 blob 价格等状态决定；不同升级改变公式。Isthmus 引入 operator fee，后续升级和不同 OP Stack 链的参数还可能不同，不能把某个历史公式推广到所有链。
+
+估算时使用目标链支持的 GasPriceOracle 或官方 SDK，按要求提供实际待发交易数据。签名、编码、交易类型和参数变化会影响结果，不用一段随意 calldata 代替完整输入。标准费用参数不能独立给 OP 的 L1 数据费设置用户上限；maxFeePerGas 是执行 gas 的价格上限，不是所有费用的总上限。
+
+### Arbitrum 的 gas 折算
+
+Nitro 估计交易对父链的数据成本，将其按子链价格换算成额外 gas。eth_estimateGas 的结果包含执行及这一部分，仍然是 gas 数量，可作为交易 gas limit 的估算基础。
+
+NodeInterface 的 gasEstimateComponents 等链特定接口可帮助拆分执行与父链分量。把额外分量从 gas 单位换成 wei 后才能展示金额；父链价格变化可能使 estimateGas 本身变化，即使 EVM 业务执行相近。不要拿 L1 原始 base fee 直接乘整个 L2 gas。
+
+### 统一的是展示单位，不是计算公式
+
+每条链的适配层返回以 wei 表示的预计执行费、数据费、其他费和估算时间，不能把 gas 数与 wei 相加。没有可靠分量时展示总额及说明，不伪造精确拆分。跨链比较还需统一操作语义、时间窗口和兑换价格。
+
+交易 gas limit 可以包含余量，maxFeePerGas 也是上限；两者相乘适合某些余额预检查，但通常不是预计实际执行费。同时检查转账 value 和其他收费，避免用户原生币刚好够执行费却不够总需求。
+
+到账前费用和状态可能变化，重新估算需核对账户、链、to、data、value，拒绝晚到的旧请求。估算回滚不等于费用高，要区分业务 revert、余额不足和 RPC 失败。收据 gasUsed 与 effectiveGasPrice 只覆盖该链定义的相应口径，OP 需加额外字段，Arbitrum 注意不要重复收费；字段缺失时保留“无法完整拆分”的状态。
+
+## 常见错误
+
+- 把 estimateGas 当作 wei 总额。
+- 认为所有 L2 的 estimateGas 都包含或都不包含数据费。
+- OP 只算执行费，Arbitrum 又重复加一遍父链成本。
+- 把 maxFeePerGas 当 OP 全部收费的总上限。
+- 将 gas limit 余量当实际消耗。
+- 忽略升级、旧估算和链特定收据字段。
+
+## 面试官追问
+
+1. 为什么 Arbitrum 的 estimateGas 会随父链价格变化？
+2. OP maxFeePerGas 很低，能否保证总费用低于某个金额？
+3. 收据缺少额外收费字段时，如何避免展示假精确数据？
+4. 钱包确认期间费用变了，怎样提示而不重复发起交易？
+
+## 评分标准
+
+### 初级回答
+
+- 区分 gas 数量、单价和费用金额。
+- 知道 L2 有执行和数据成本。
+
+### 中级回答
+
+- 正确区分 OP 额外收费与 Arbitrum gas 折算。
+- 能设计估算刷新、余额检查与费用拆分。
+
+### 高级回答
+
+- 按升级与链配置适配公式，避免重复计算。
+- 处理估算竞态、字段缺失及实际扣费核算。
+
+## 参考资料
+
+- [Optimism Transaction Fees](https://docs.optimism.io/op-stack/transactions/fees)
+- [Arbitrum Gas and Fees](https://docs.arbitrum.io/how-arbitrum-works/deep-dives/gas-and-fees)
+- [EIP-1559 Fee Market](https://eips.ethereum.org/EIPS/eip-1559)

@@ -1,0 +1,108 @@
+---
+id: passkey-smart-account-frontend
+slug: passkey-smart-account-login
+title: Passkey 换域名或换设备后，智能账户怎样继续使用？
+summary: 区分 RP ID、origin、凭据同步与链上 owner，并设计完整断言校验和安全恢复。
+status: review
+difficulty: advanced
+category: wallet
+questionType: scenario
+ecosystems: [evm]
+tags: [passkey, webauthn, account-abstraction, p256]
+stacks:
+  webauthn: Level 2 校验流程
+  viem: 2.56.9
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 修正注册与使用的 RP 不一致，补充完整断言与跨设备恢复边界。
+references:
+  - title: W3C WebAuthn Level 2
+    url: https://www.w3.org/TR/webauthn-2/
+  - title: OpenZeppelin WebAuthn Smart Accounts
+    url: https://docs.openzeppelin.com/contracts/5.x/learn/webauthn-smart-accounts
+  - title: viem toWebAuthnAccount
+    url: https://viem.sh/account-abstraction/accounts/webauthn/toWebAuthnAccount
+  - title: ERC-4337 Account Abstraction
+    url: https://eips.ethereum.org/EIPS/eip-4337
+---
+
+## 题目
+
+用户在 preview.example.com 注册 Passkey，到 app.example.com 后无法签名。另一些用户更换设备后仍可使用，有人却丢失了访问能力。如何解释、排查和设计迁移恢复？
+
+## 考察目标
+
+- RP ID 与 origin 的限制和注册配置。
+- WebAuthn 断言、链上签名验证和登录会话的区别。
+- 凭据同步、owner 变更与恢复的安全边界。
+
+## 30 秒回答
+
+凭据绑定注册时的 RP ID，不是任意域名都能使用。默认绑定 preview 子域的凭据，不能仅把签名参数改成 app 子域来迁移；若注册和使用都采用合法共同父域，且校验层允许对应 origin，两个子域才可能共享作用域。换设备能否使用取决于凭据是否同步或支持跨设备认证。智能账户还要验证完整 WebAuthn 断言，丢失凭据时需通过事先配置的其他 owner 或恢复机制更换密钥。
+
+## 深入回答
+
+### 域策略应在注册前决定
+
+RP ID 通常是当前域名或合法父域，不能是任意无关域或公共后缀。origin 包含协议、主机和端口，与 RP ID 不是同一个值。注册、后续认证和服务端或账户校验策略都需一致；生产环境使用安全上下文。
+
+例如，preview.example.com 注册时明确使用 example.com，app.example.com 请求同一 RP ID，并将两个 origin 纳入合法校验策略，才可能共享凭据。测试环境因此也进入同一安全边界，必须控制它的脚本、权限和供应链；隔离测试与生产凭据通常更稳妥。
+
+原先默认使用 preview.example.com 的凭据不能靠修改参数变成 example.com 的凭据。应在旧凭据仍可访问时注册新凭据、按账户规则添加新 owner，再确认新 owner 可签名并移除旧 owner。无旧凭据或其他恢复权限时，前端不能自行恢复控制权。
+
+### 不只验证 P-256 数学签名
+
+WebAuthn 可协商不同公钥算法，不能说所有 Passkey 都必然使用 P-256。选用 viem 的 WebAuthn P-256 owner 路径时，确认注册算法和目标智能账户实现兼容。ECDSA 的 ecrecover 不能直接验证 secp256r1。
+
+P-256 预编译或合约实现只解决一部分密码学能力。完整流程还要按各层职责检查 clientDataJSON 的 type、challenge、origin，authenticatorData 的 rpIdHash、用户存在和所需用户验证标志，以及签名公钥。链上实现未必能检查全部浏览器上下文，必须明确哪些检查由账户、钱包或登录服务执行；仅验证 r/s 不等于完成 WebAuthn 认证。
+
+挑战绑定本次操作及其重放保护。ERC-4337 的 userOpHash 绑定 EntryPoint 和 chainId；owner 的 WebAuthn 签名再按账户约定包装。网站登录则使用短期、单次、与会话绑定的 challenge，不能直接把创建凭据或签名成功当作已建立登录会话。
+
+### 换设备与恢复
+
+同步 Passkey、设备绑定凭据和跨设备认证的能力不同。新设备没有本地凭据，不一定表示链上 owner 已失效；先确认 RP ID、credential ID、账户映射、平台同步与可用认证方式。`NotAllowedError` 可能包含取消、超时或找不到合适凭据，不能凭一个错误准确判断用户丢失了密钥。
+
+保留 credential ID、公钥和账户映射有助于发起认证，但这些元数据不是私钥备份。恢复可采用第二凭据、其他 owner 或带延迟和告警的恢复模块，提前验证其可用性。服务端“找回账号”不能绕过链上账户权限，新增恢复方也会增加新的信任。
+
+## 常见错误
+
+- 注册时默认 RP ID，签名时硬编码另一个子域。
+- 只改 RP ID 就宣称旧凭据迁移成功。
+- 把 P-256 签名通过当作完整 WebAuthn 验证。
+- 假设所有平台都会同步凭据，且恢复一定可行。
+- 把 credential ID 当作恢复密钥。
+- 将全部 NotAllowedError 都显示为“用户取消”。
+
+## 面试官追问
+
+1. 为什么共享父域 RP 会扩大预览环境的安全边界？
+2. 用户凭据可用但链上签名失败，应检查哪些包装和算法？
+3. 只有 credential ID 和公钥，能否恢复账户控制权？
+4. 添加第二个 owner 的过程中，怎样防止用户提前删除唯一可用凭据？
+
+## 评分标准
+
+### 初级回答
+
+- 知道凭据有 RP 作用域，设备变化不保证凭据可用。
+- 知道智能账户需要支持所选签名算法。
+
+### 中级回答
+
+- 区分 RP ID、origin、注册和认证配置。
+- 说明完整断言与恢复权限，并正确处理含糊错误。
+
+### 高级回答
+
+- 设计旧 owner 到新 owner 的可验证迁移与回退。
+- 说明登录会话、UserOperation 和恢复机制各自的重放与信任边界。
+
+## 参考资料
+
+- [W3C WebAuthn Level 2](https://www.w3.org/TR/webauthn-2/)
+- [OpenZeppelin WebAuthn Smart Accounts](https://docs.openzeppelin.com/contracts/5.x/learn/webauthn-smart-accounts)
+- [viem toWebAuthnAccount](https://viem.sh/account-abstraction/accounts/webauthn/toWebAuthnAccount)
+- [ERC-4337 Account Abstraction](https://eips.ethereum.org/EIPS/eip-4337)

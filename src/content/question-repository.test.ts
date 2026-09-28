@@ -13,7 +13,7 @@ describe("question repository", () => {
     const ids = questions.map(({ frontmatter }) => frontmatter.id);
     const slugs = questions.map(({ frontmatter }) => frontmatter.slug);
 
-    expect(questions).toHaveLength(177);
+    expect(questions).toHaveLength(193);
     expect(new Set(ids)).toHaveLength(ids.length);
     expect(new Set(slugs)).toHaveLength(slugs.length);
   });
@@ -39,7 +39,7 @@ describe("question repository", () => {
       vi.unstubAllEnvs();
     }
 
-    expect(questions).toHaveLength(177);
+    expect(questions).toHaveLength(193);
   });
 
   it.each([

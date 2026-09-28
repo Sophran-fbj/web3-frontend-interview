@@ -1,0 +1,130 @@
+---
+id: rpc-data-verification-getproof
+slug: rpc-data-verification-getproof
+title: 不信任 RPC 返回的余额，怎样用证明核对？
+summary: 说明账户和存储证明的验证路径、可信状态根来源，以及证明与最终性的区别。
+status: review
+difficulty: advanced
+category: data
+questionType: system-design
+ecosystems: [evm]
+tags: [getproof, state-root, light-client, rpc-trust]
+stacks:
+  ethereum: EIP-1186 / Merkle Patricia Trie
+  viem: "2.56.9"
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 补账户及存储证明步骤，明确可信区块头和 canonical 参数边界。
+references:
+  - title: EIP-1186 eth_getProof
+    url: https://eips.ethereum.org/EIPS/eip-1186
+  - title: Ethereum Merkle Patricia Trie
+    url: https://ethereum.org/en/developers/docs/data-structures-and-encoding/patricia-merkle-trie/
+  - title: Helios README
+    url: https://github.com/a16z/helios
+  - title: viem getProof
+    url: https://viem.sh/docs/actions/public/getProof
+---
+
+## 题目
+
+对账页面展示某地址在指定区块的余额，团队想用 eth_getProof 防止 RPC 返回错误数据。请给出账户证明的验证步骤，说明 stateRoot 如何成为可信输入，并解释 ERC-20 余额与共识最终性还需要什么。
+
+## 考察目标
+
+- 理解证明验证的是某个确定状态根下的数据。
+- 分清可信区块头、账户证明与存储证明。
+- 评估前端轻客户端的成本和能力边界。
+
+## 30 秒回答
+
+从独立可信路径获得区块头及 stateRoot，再验证地址哈希对应的账户 trie 路径，解码账户叶子并核对 balance 等字段。合约存储用已验证账户的 storageRoot 继续验证。只取 proof 不等于验证；同一家 RPC 给出的根和证明可能一起伪造。证明只说明数据属于这个根，根是否规范、已最终确认仍依赖共识验证。
+
+## 深入回答
+
+### 原生余额的验证路径
+
+账户 trie 的 key 为地址的 Keccak256，按 Merkle Patricia Trie 的分支、扩展和叶子编码验证 accountProof 与可信 stateRoot 的关系。账户叶子以 RLP 编码 nonce、balance、storageRoot、codeHash；解码后核对返回字段，不能直接信任 RPC 对象的 balance。空账户需要验证不存在路径，而不是把空 proof 随意解释为余额零。
+
+### ERC-20 不是账户原生余额
+
+先验证 token 合约账户，取得其 storageRoot；按已核实的存储布局推导 owner 的余额槽，再验证 storageProof 的槽 key 和 RLP 值。代理、动态布局或运行时计算的 balanceOf 会改变所需验证路径。对复杂调用可用支持该能力的轻客户端验证执行所需状态，不把任意存储槽等价为 balanceOf 返回值。
+
+### 根从哪里来
+
+可信输入可来自自建同步节点、独立确认的区块头或基于可信检查点的轻客户端。如果独立获得的只是区块哈希，还需验证取回区块头的编码哈希与它相同，再采用头中的 stateRoot。仅用同一个可疑 RPC 的 getBlock 和 getProof 互相检查，不能建立独立信任。
+
+Helios 的 Ethereum 模式依赖支持 eth_getProof 的执行 RPC，通过共识轻客户端及检查点建立信任。检查点过旧或恶意、共识端点不可用都是需要处理的失败，不把“浏览器有轻客户端”说成零信任前提。
+
+### 缓存与产品成本
+
+proof 绑定区块哈希/状态根，缓存也按它绑定。`requireCanonical` 是向节点提出要求，不是本地证明共识；重组后重新选择 canonical/finalized 根。区分已验证、未验证缓存、验证失败和暂时不可用。按业务选择结算级读数验证、普通列表缓存或可选高安全模式，衡量 proof 体积、同步等待和移动端计算成本。
+
+## 示例代码
+
+此函数只获取指定区块的 proof，返回的数据尚未验证。调用方另行使用成熟 trie verifier 和独立可信区块头；不在面试示例中手写安全关键的 trie 实现。
+
+```ts
+import { createPublicClient, http, type Address, type Hash } from "viem";
+import { mainnet } from "viem/chains";
+
+export async function readAccountProof(
+  rpcUrl: string,
+  address: Address,
+  blockHash: Hash,
+) {
+  const client = createPublicClient({
+    chain: mainnet,
+    transport: http(rpcUrl),
+  });
+  return client.getProof({
+    address,
+    storageKeys: [],
+    blockHash,
+    requireCanonical: true,
+  });
+}
+```
+
+## 常见错误
+
+- 把 getProof 的返回值直接标为“已验证”。
+- 验证 proof 后仍采用未核对的 RPC balance 字段。
+- 用可疑 RPC 自报的根替自己背书。
+- 把 native balance 的账户证明当 ERC-20 balanceOf 的证明。
+- 认为 requireCanonical 或状态根验证等于最终确认。
+- 忽略不存在证明、历史保留与重组缓存失效。
+
+## 面试官追问
+
+1. 返回 proof 合法但区块头伪造，如何识别？
+2. ERC-20 使用代理或反射余额，验证为什么变复杂？
+3. 哪些读数适合等待 finalized，哪些只需标记确认程度？
+4. 首次同步检查点来自谁，过旧时怎样处理？
+
+## 评分标准
+
+### 初级回答
+
+- 知道证明依赖可信 stateRoot。
+- 能区分取得证明与验证证明。
+
+### 中级回答
+
+- 描述账户叶子、RLP、原生余额与存储证明路径。
+- 能说明区块头哈希核对、缓存绑定与重组影响。
+
+### 高级回答
+
+- 解释轻客户端共识、检查点及复杂执行验证的边界。
+- 设计验证层级、失败状态和移动端成本取舍。
+
+## 参考资料
+
+- [EIP-1186 eth_getProof](https://eips.ethereum.org/EIPS/eip-1186)
+- [Ethereum Merkle Patricia Trie](https://ethereum.org/en/developers/docs/data-structures-and-encoding/patricia-merkle-trie/)
+- [Helios README](https://github.com/a16z/helios)
+- [viem getProof](https://viem.sh/docs/actions/public/getProof)

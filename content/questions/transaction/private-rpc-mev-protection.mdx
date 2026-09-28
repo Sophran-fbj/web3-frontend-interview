@@ -1,0 +1,109 @@
+---
+id: private-rpc-mev-protection
+slug: private-rpc-mev-protection
+title: 私有 RPC 能防住什么，交易卡住后怎样安全处理？
+summary: 区分三明治风险、私有广播与读链，并处理 pending、取消、替换和公开回退。
+status: review
+difficulty: advanced
+category: transaction
+questionType: scenario
+ecosystems: [evm]
+tags: [mev, flashbots, private-rpc, nonce, transaction]
+stacks:
+  flashbots-protect: Ethereum Mainnet，2026-09-29 文档口径
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 合并两批 MEV 题，修正三明治方向并补全广播、nonce 和取消边界。
+references:
+  - title: Flashbots Protect Overview
+    url: https://docs.flashbots.net/flashbots-protect/overview
+  - title: Flashbots Protect Nonce Management
+    url: https://docs.flashbots.net/flashbots-protect/nonce-management
+  - title: Flashbots Protect Cancellations
+    url: https://docs.flashbots.net/flashbots-protect/cancellations
+  - title: Flashbots Protect Settings
+    url: https://docs.flashbots.net/flashbots-protect/settings-guide
+---
+
+## 题目
+
+用户兑换时遭遇三明治攻击，团队想改用 Flashbots Protect。前端应该改哪里？私有交易长时间没有回执时，能否自动通过普通 RPC 再发一次？
+
+## 考察目标
+
+- 三明治攻击与隐私广播的作用。
+- 钱包写入通道和公共读取的不同状态视角。
+- pending、nonce、取消和公开回退的边界。
+
+## 30 秒回答
+
+典型三明治中，攻击者先沿用户兑换方向交易推高其成交成本，再在用户后反向交易平仓。私有广播减少公开 mempool 暴露，但仍依赖接收方、共享策略和包含机会，不保证成交或绝对隐私。浏览器钱包实际发送交易的端点才决定广播路径，换页面读 RPC 不够。卡住时核对私有状态、nonce 和回执，取消按服务规则处理；公开重发会丢失隐私，应让用户明确选择。
+
+## 深入回答
+
+### 保护范围
+
+滑点限制和 deadline 仍是兑换约束，私有 RPC 不能替代。过宽滑点会让攻击者有更大空间；极窄滑点也可能因正常价格变化回滚。私有提交把交易交给特定服务及其 builder 路径，服务可能根据隐私设置共享提示或完整交易，需查看具体配置，不能泛称绝不泄露。
+
+Flashbots Protect 面向其支持的网络和交易路径，不自动覆盖全部链、钱包和智能账户 UserOperation。报价过时、执行失败、余额不足与 MEV 风险是不同问题，不能一概归因于节点。
+
+### 谁实际发送
+
+通过浏览器钱包发送时，DApp 一般不能仅替换 publicClient 的 RPC 就改变钱包端点。需要钱包支持并选择对应网络 RPC，或采用钱包认可的私有提交能力。DApp 不应为了获得 raw transaction 索取用户私钥。
+
+读请求可以使用 Protect 或其他支持的节点；普通公共节点适合查已上链回执，但看不到服务私有池中的全部 pending 交易。服务收到交易或返回 hash 都不等于已包含；查不到回执也不意味着交易从未提交。
+
+公共节点的 pending nonce 可能未计入私有提交。按服务文档使用适当的 nonce 查询方式，结合账户、本地待处理记录及服务状态，不用公开 pending 值盲目覆盖私有队列。更换 RPC 或钱包后尤其要确认此前是否仍有同 nonce 的有效交易。
+
+### 取消、替换与回退
+
+取消规则是服务特定能力。Protect 文档提供向同一端点提交同 sender、同 nonce、to 为自己且 data 为空的取消交易，用签名确认账户控制权；该取消请求自身不作为收费链上交易包含。这个行为不能推广到普通公开 RPC 的自转账取消。
+
+停止私有服务继续转发，不等于追回已传播到其他渠道或已经包含的交易；检查取消结果与原交易回执，再给用户结论。发送公开同 nonce 替换也可能和原交易竞争，并不能保证哪笔先包含。
+
+前端可显示等待、检查状态、刷新报价、请求取消及切换公开提交的选项。公开回退前明确提示交易将暴露给公开 mempool，再取得用户选择并重新确认业务参数。不要后台自动把敏感交易发往公共节点。若用户同时在其他应用发交易，nonce 管理不能只依赖本页面记录。
+
+回执出现后核对 status 与所需确认数，处理替换、失败和重组，只有业务结果确认后显示成交。
+
+## 常见错误
+
+- 把三明治前后两笔都说成与用户同方向。
+- 只改读取 RPC，却声称钱包已私有广播。
+- 宣称私有 RPC 保证成交、零 MEV 或绝对隐私。
+- 公开节点看不到交易就重新分配同 nonce。
+- 将 Protect 的免费取消当作所有节点通用行为。
+- 私有提交失败后偷偷公开重发。
+
+## 面试官追问
+
+1. 公共 pending nonce 没变化，为什么仍可能有待处理私有交易？
+2. 取消请求成功但原交易已有回执，界面怎样处理？
+3. 设置共享更多 builder，会怎样影响包含率和信任范围？
+4. 智能账户的 UserOperation 为什么不能直接套用 EOA raw transaction 流程？
+
+## 评分标准
+
+### 初级回答
+
+- 能解释三明治顺序和私有广播的目的。
+- 知道交易 hash 不等于成交。
+
+### 中级回答
+
+- 区分钱包广播端点、读取节点和私有 pending 状态。
+- 设计 nonce 检查、取消与明确的公开回退选择。
+
+### 高级回答
+
+- 说明 builder 共享、取消竞态和其他应用并发交易的边界。
+- 覆盖账户类型、替换、重组及真实业务结果确认。
+
+## 参考资料
+
+- [Flashbots Protect Overview](https://docs.flashbots.net/flashbots-protect/overview)
+- [Flashbots Protect Nonce Management](https://docs.flashbots.net/flashbots-protect/nonce-management)
+- [Flashbots Protect Cancellations](https://docs.flashbots.net/flashbots-protect/cancellations)
+- [Flashbots Protect Settings](https://docs.flashbots.net/flashbots-protect/settings-guide)

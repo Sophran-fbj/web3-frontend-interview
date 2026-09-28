@@ -1,0 +1,102 @@
+---
+id: hardware-wallet-blind-signing
+slug: hardware-wallet-blind-signing
+title: 硬件钱包只能显示原始数据时，DApp 能改善什么？
+summary: 解释设备清晰签名、ERC-7730 描述和兼容性，并处理确认等待与不确定的签名结果。
+status: review
+difficulty: intermediate
+category: wallet
+questionType: scenario
+ecosystems: [evm]
+tags: [hardware-wallet, ledger, clear-signing, erc7730]
+stacks:
+  erc7730: Draft，2026-09-29 查阅
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 限定 ERC-7730 与设备兼容性，补充超时不能保证取消及安全回退。
+references:
+  - title: Ledger Clear Signing Overview
+    url: https://developers.ledger.com/docs/clear-signing/overview
+  - title: ERC-7730 Structured Data Clear Signing Format
+    url: https://eips.ethereum.org/EIPS/eip-7730
+  - title: EIP-712 Typed Structured Data
+    url: https://eips.ethereum.org/EIPS/eip-712
+---
+
+## 题目
+
+硬件钱包设备只显示 calldata 或摘要，用户无法核对授权内容；还有用户点击签名后页面一直等待。DApp 能做哪些适配，哪些问题不能仅靠页面解决？
+
+## 考察目标
+
+- 设备屏幕、网页描述与实际签名数据的关系。
+- 结构化数据和清晰签名描述的适配边界。
+- 等待、拒绝和不确定结果的交互处理。
+
+## 30 秒回答
+
+硬件钱包把私钥留在设备里，但安全确认还依赖设备能否解码实际请求。网页上的友好描述不能替代设备核对。消息应按业务协议提交完整 EIP-712 数据，兼容的钱包可利用 ERC-7730 描述显示语义；该规范目前仍为 Draft，支持取决于钱包、设备应用和固件。等待时说明设备操作，区分拒绝与通信失败；页面超时不代表钱包已取消请求。
+
+## 深入回答
+
+### 为什么会盲签
+
+设备不认识某个调用或消息格式时，可能仅展示摘要、原始数据，或者要求启用盲签。私钥未泄漏不能防止用户授权恶意 spender 或签出危险订单。浏览器页面、扩展和交易模拟都可能被篡改或不完整，设备也不能由“成功签名”自动推导业务安全。
+
+交易 calldata 与 EIP-712 消息是不同请求。协议要求 typed data 时，传入完整的 domain、types 和 message；不要先哈希再改用 personal_sign，这不仅丢失显示信息，也改变验签语义。提交完整结构提高可解释性，但不能保证所有固件完整显示每个字段。
+
+### 清晰签名适配
+
+ERC-7730 描述把已编码的合约函数或结构化消息映射为可读字段，不改变签名数据，也不要求为描述本身修改合约。需要准确绑定网络、地址、函数和字段，审核单位、金额、接收方及代理升级后的变化；错误描述同样会误导用户。
+
+Ledger 的方案通过描述与兼容钱包协作渲染设备界面。是否可用还取决于描述发布、钱包接入、设备应用与固件版本；不能承诺注册了描述就对每个硬件钱包生效。按真实钱包与设备组合测试授权、兑换、订单和异常参数。对不支持的路径说明限制，提供退出或其他已验证路径，不把“打开盲签”作为默认解决办法。
+
+### 等待与错误
+
+通常 DApp 面向浏览器钱包或 WalletConnect 的 Provider，具体设备连接由钱包负责。页面提示“请在钱包及设备上确认”，避免重复弹请求；可显示长时间等待提示和重试入口，但要说明结果仍可能回来。
+
+`Promise.race` 超时只停止页面等待，并不保证底层签名或发交易请求被取消。用请求标识忽略过期 UI 更新；若原请求可能已广播，先核对交易哈希、账户 nonce 和链上状态，再决定是否重发。设备拒绝、通信中断、格式不支持和 RPC 失败应依据钱包实际错误分类，不臆测设备状态。
+
+设备显示与页面不一致时停止操作，核对链、合约、spender、金额和域。代理、路由器等可能造成合理差异，也可能表示篡改；解释并确认实际意图后才能继续。
+
+## 常见错误
+
+- 认为私钥留在设备里就能防止危险授权。
+- 把网页模拟结果当成设备已验证的内容。
+- 将 typed data 摘要改用普通消息签名。
+- 声称 ERC-7730 已是所有钱包共同支持的最终标准。
+- 超时后立刻重发，忽略原请求仍可能完成。
+- 不核对差异，直接教用户开启盲签。
+
+## 面试官追问
+
+1. 为已有代理合约补描述后，升级实现要检查什么？
+2. 页面已超时，钱包又返回交易哈希，怎样恢复状态？
+3. EIP-712 为什么不能任意替换成 personal_sign？
+4. 描述文件的可信度和合约代码的可信度有什么区别？
+
+## 评分标准
+
+### 初级回答
+
+- 知道硬件签名与可读确认是不同能力。
+- 能引导用户在钱包和设备上确认。
+
+### 中级回答
+
+- 区分 calldata、typed data 与清晰签名描述。
+- 覆盖兼容性、拒绝、通信失败和等待状态。
+
+### 高级回答
+
+- 设计描述审核、升级检查和真实设备矩阵。
+- 处理超时后晚到结果及重复广播，说明显示层的信任边界。
+
+## 参考资料
+
+- [Ledger Clear Signing Overview](https://developers.ledger.com/docs/clear-signing/overview)
+- [ERC-7730 Structured Data Clear Signing Format](https://eips.ethereum.org/EIPS/eip-7730)
+- [EIP-712 Typed Structured Data](https://eips.ethereum.org/EIPS/eip-712)

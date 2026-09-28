@@ -1,0 +1,103 @@
+---
+id: permit2-approval-model
+slug: permit2-approval-model
+title: Permit2 的授权、签名和撤销，分别影响哪一层？
+summary: 区分原生额度、可复用权限、一次性签名及 nonce 失效，避免撤销后旧签名重新生效。
+status: review
+difficulty: advanced
+category: contract
+questionType: comparison
+ecosystems: [evm]
+tags: [permit2, allowance, nonce, revocation]
+stacks:
+  permit2: AllowanceTransfer / SignatureTransfer
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 补充未使用签名撤销、nonce 失效与原生 allowance 的边界。
+references:
+  - title: Uniswap Permit2 AllowanceTransfer 源码
+    url: https://github.com/Uniswap/permit2/blob/main/src/AllowanceTransfer.sol
+  - title: Uniswap Permit2 SignatureTransfer 源码
+    url: https://github.com/Uniswap/permit2/blob/main/src/SignatureTransfer.sol
+  - title: Uniswap Permit2 签名转移与安全考虑
+    url: https://docs.uniswap.org/contracts/permit2/reference/signature-transfer
+  - title: ERC-2612 Permit Extension
+    url: https://eips.ethereum.org/EIPS/eip-2612
+---
+
+## 题目
+
+用户第一次使用聚合器需要先 approve Permit2，再签名。用户随后点击“撤销”，页面把内部 allowance 设为零，却发现之前签出的 permit 仍能重新设置额度。请解释 Permit2 的两种模型，以及如何分别撤销已生效权限和未使用签名。
+
+## 考察目标
+
+- 分清 token allowance 与 Permit2 内部权限。
+- 理解两种 nonce 模型和权限生命周期。
+- 设计不会让用户误解的撤销与签名确认流程。
+
+## 30 秒回答
+
+Permit2 是独立合约，先获得 token 的原生 allowance，才能替用户转移。AllowanceTransfer 保存按 owner/token/spender 的带过期额度，SignatureTransfer 使用一次性签名和无序 nonce。清额度不等于作废旧签名；还要按模型使 nonce 失效，必要时撤销 token 对 Permit2 的原生额度。签名与授权两步都要展示对象、金额和期限。
+
+## 深入回答
+
+### 两层授权不是同一个状态
+
+token 合约保存 owner 到 Permit2 的 allowance。AllowanceTransfer 在内部再保存 token/spender 对应的 amount、expiration 和 nonce；签名 permit 只有被提交执行后才改变链上权限。SignatureTransfer 不保存相同的长期 spender allowance，签名消费一次 nonce 后完成受限转移，但仍依赖 token 的原生授权与余额。非标准 token 的转账行为仍需验证兼容性。
+
+与 ERC-2612 不同，Permit2 不要求 token 自身实现 permit。首次 approve 可以给有限额度，较大额度减少重复操作但增加原生授权暴露面；“免 gas 签名”不能被解释为无风险。
+
+### 撤销分三件事
+
+AllowanceTransfer 的 approve 到零或 lockdown 可以清当前额度，但不自动取消仍持有当前 nonce 的未过期 permit。使用 `invalidateNonces(token, spender, newNonce)` 前移相应 nonce，需要遵守合约的递增及跳跃约束；与其他并发签名协调，避免误失效新签名。
+
+SignatureTransfer 用 `invalidateUnorderedNonces(wordPos, mask)` 作废位图中的指定 nonce，位位置按 nonce 拆分，不能把它当全局顺序计数器。若还要阻断 Permit2 对 token 的调用，在 token 上执行 approve 到零。以后恢复原生授权时，未失效且未过期的签名仍可能可用，因此只撤销 token allowance 也不等于永久销毁全部签名。
+
+### 签名所绑定的意图
+
+AllowanceTransfer 的 expiration 与签名提交 deadline 是不同时间边界。SignatureTransfer 的实际收款方、请求金额与业务操作需要路由验证；不能因为签名合法就允许任意调用方把资产转给自己。按协议使用 caller 校验、受控路由或 witness 绑定额外意图，不假设所有参数都天然被基础签名覆盖。
+
+页面分别展示 token 授权、内部 spender 权限和未使用签名状态。撤销交易要等回执再重读，用户拒绝、RPC 失败与抢先消费签名的竞态分开提示；切链或换 owner 后放弃旧读数。
+
+## 常见错误
+
+- 认为签过 permit 就已完成首次 token approve。
+- 清 allowance 后声称此前签名全部失效。
+- 用一个全局递增 nonce 管理两种模块。
+- 混淆 expiration 与签名 deadline。
+- 忽略路由 caller、接收方及业务意图校验。
+- 把原生无限额度描述为只有一次签名的风险。
+
+## 面试官追问
+
+1. lockdown 之后旧 permit 被提交，为什么可能重新出现额度？
+2. 怎样计算一次性 nonce 对应的 wordPos 与 mask？
+3. 撤销交易和攻击者消费签名竞争时，有什么补救边界？
+4. 原生 permit 与 Permit2 对用户授权管理的差异是什么？
+
+## 评分标准
+
+### 初级回答
+
+- 知道存在 token 原生授权和 Permit2 权限两层。
+- 能区分可复用额度与一次性签名转移。
+
+### 中级回答
+
+- 解释两种 nonce、两个期限以及对应撤销方法。
+- 能设计确认后重读的授权管理界面。
+
+### 高级回答
+
+- 覆盖尚未使用签名、并发失效和重新授权后的风险。
+- 识别签名意图与实际路由参数之间的安全边界。
+
+## 参考资料
+
+- [Uniswap Permit2 AllowanceTransfer 源码](https://github.com/Uniswap/permit2/blob/main/src/AllowanceTransfer.sol)
+- [Uniswap Permit2 SignatureTransfer 源码](https://github.com/Uniswap/permit2/blob/main/src/SignatureTransfer.sol)
+- [Uniswap Permit2 签名转移与安全考虑](https://docs.uniswap.org/contracts/permit2/reference/signature-transfer)
+- [ERC-2612 Permit Extension](https://eips.ethereum.org/EIPS/eip-2612)

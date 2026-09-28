@@ -1,0 +1,161 @@
+---
+id: chainlink-latest-round-data
+slug: chainlink-latest-round-data
+title: Chainlink 报价的小数点和更新时间，前端怎么处理？
+summary: 正确解码多返回值，按 feed 精度处理价格，并识别无效读数和过期数据。
+status: review
+difficulty: intermediate
+category: data
+questionType: debugging
+ecosystems: [evm]
+tags: [chainlink, decimals, bigint, price-feed]
+stacks:
+  chainlink: AggregatorV3Interface
+  viem: "2.56.9"
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 修正 ABI 与元组解构，补精度、时间和异常读数处理。
+references:
+  - title: Chainlink Data Feeds API Reference
+    url: https://docs.chain.link/data-feeds/api-reference
+  - title: Chainlink Selecting Quality Data Feeds
+    url: https://docs.chain.link/data-feeds/selecting-data-feeds
+  - title: viem readContract
+    url: https://viem.sh/docs/contract/readContract
+---
+
+## 题目
+
+行情页出现三种问题：换 feed 后小数点漂移、价格突然变成零、几小时前的旧价格仍标为最新。请说明应读取哪些字段，给出不会丢失整数精度的展示和时效判断流程。
+
+## 考察目标
+
+- 理解 AggregatorV3Interface 的返回结构。
+- 正确处理 int256、decimals 与日期单位。
+- 区分数据无效、陈旧和查询失败。
+
+## 30 秒回答
+
+从对应链的 feed 代理读取 decimals 和 latestRoundData。viem 的多返回值是元组，其中 answer 是带符号大整数，updatedAt 是秒级时间。保留 bigint，用 formatUnits 格式化，按业务阈值检查更新时间和价格范围。读取失败、未初始化、未来时间及过期价格分别处理，不能拿零或旧缓存冒充最新价。
+
+## 深入回答
+
+### 地址、字段和精度
+
+使用部署清单中的链与代理地址，不能只用 token symbol 猜 feed。代理可以切换聚合器，长期绑定旧聚合器会漏掉更新。返回值依次为 roundId、answer、startedAt、updatedAt、answeredInRound；输出参数有名字，也不意味着 viem 返回顶层对象。`answeredInRound` 在当前文档中已废弃，不以它替代新鲜度检查。
+
+decimals 属于 feed，不一定等于 token decimals，也不能写死为 8 或 18。answer 为 int256，以 bigint/字符串保存；formatUnits 得到十进制字符串，展示层再按明确舍入规则截取位数。roundId 同样不应转换成 Number；持久化 bigint 前转换为字符串。
+
+### 时效与异常分流
+
+本题限定正值价格 feed，非正数视为不可用；其他指标类 feed 可能有不同有效范围，应单独定义。updatedAt 为零、晚于选用区块时间或调用回滚，都不当作正常报价。偏差和 heartbeat 驱动的更新不是逐块报价，价格长期不动也不等于市场静止。
+
+参考公布的更新条件和业务风险设置 stale 阈值，而非全站写死一个秒数。用同一区块的读数和区块时间评估，界面可以显示数据时间及延迟。浏览器本地时间仅作提示，真正的结算与链上风控另行校验。RPC 失败时可显示带明确时间的缓存，但不能把“未刷新”标签省略。
+
+### 历史数据是另一种查询
+
+代理 roundId 可包含 phase 信息，不能假设所有轮次连续，也不能把一次 revert 一概判为历史结束。历史涨跌幅应使用经核对的历史数据方案，统一 feed、单位、时间窗口和代理升级口径。
+
+## 示例代码
+
+以下只覆盖正值价格 feed 的展示读取；调用方传入主网代理地址及按业务确定的阈值。RPC/合约错误向调用方抛出，以便区别于 stale 状态。
+
+```ts
+import {
+  createPublicClient,
+  formatUnits,
+  http,
+  parseAbi,
+  type Address,
+} from "viem";
+import { mainnet } from "viem/chains";
+
+const abi = parseAbi([
+  "function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)",
+  "function decimals() view returns (uint8)",
+]);
+
+export async function readPrice(
+  rpcUrl: string,
+  feed: Address,
+  maxAgeSeconds: bigint,
+) {
+  if (maxAgeSeconds <= 0n) throw new Error("需配置有效的价格时效阈值");
+  const client = createPublicClient({
+    chain: mainnet,
+    transport: http(rpcUrl),
+  });
+  const blockNumber = await client.getBlockNumber();
+  const [round, decimals, block] = await Promise.all([
+    client.readContract({
+      address: feed,
+      abi,
+      functionName: "latestRoundData",
+      blockNumber,
+    }),
+    client.readContract({
+      address: feed,
+      abi,
+      functionName: "decimals",
+      blockNumber,
+    }),
+    client.getBlock({ blockNumber }),
+  ]);
+  const [roundId, answer, , updatedAt] = round;
+  if (answer <= 0n || updatedAt === 0n || updatedAt > block.timestamp) {
+    return { kind: "invalid" as const };
+  }
+  return {
+    kind:
+      block.timestamp - updatedAt > maxAgeSeconds
+        ? ("stale" as const)
+        : ("fresh" as const),
+    price: formatUnits(answer, decimals),
+    roundId,
+    updatedAt,
+    blockNumber,
+  };
+}
+```
+
+## 常见错误
+
+- 把函数字符串数组直接交给 readContract，没有 parseAbi。
+- 用对象方式解构 latestRoundData 的顶层元组。
+- 把 answer 转 Number，或使用 token decimals 格式化 feed。
+- 把秒级时间与毫秒级 Date.now 直接相减。
+- 查询失败时用零代替价格，或让旧缓存继续显示“最新”。
+- 假设 roundId 连续，遇到一次历史回滚就停止扫描。
+
+## 面试官追问
+
+1. 价格很久没有变化，如何判断 stale 阈值是否合理？
+2. 为什么按同一区块读取时间与价格？
+3. UI 显示价格有效，合约却拒绝操作，可能有哪些口径差异？
+4. feed 换聚合器后，历史图表需要怎样保持一致？
+
+## 评分标准
+
+### 初级回答
+
+- 能从 answer 与 decimals 得到正确显示单位。
+- 知道报价有更新时间，不能只检查价格数值。
+
+### 中级回答
+
+- 正确使用 ABI、元组与 bigint。
+- 区分 invalid、stale、RPC 失败和带时间的缓存。
+
+### 高级回答
+
+- 设计同区块快照、按 feed 配置阈值及故障观测。
+- 解释历史 phase、链上风控和前端显示的不同责任。
+
+## 参考资料
+
+- [Chainlink Data Feeds API Reference](https://docs.chain.link/data-feeds/api-reference)
+- [Chainlink Selecting Quality Data Feeds](https://docs.chain.link/data-feeds/selecting-data-feeds)
+- [viem readContract](https://viem.sh/docs/contract/readContract)

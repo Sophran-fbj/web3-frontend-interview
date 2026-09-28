@@ -1,0 +1,127 @@
+---
+id: ens-primary-name-verification
+slug: ens-primary-name-verification
+title: 展示 ENS 主名称前，怎样确认它属于这个地址？
+summary: 将双向校验、名称规范化、多链 coinType 与缓存回退组织成一致的解析流程。
+status: review
+difficulty: intermediate
+category: data
+questionType: scenario
+ecosystems: [evm]
+tags: [ens, primary-name, normalization, multichain]
+stacks:
+  ens: ENSIP-15 / ENSIP-19
+  viem: "2.56.9"
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 合并主名题，修正规范化描述及多链解析与缓存边界。
+references:
+  - title: ENS Primary Names
+    url: https://docs.ens.domains/web/reverse/
+  - title: ENS Name Processing
+    url: https://docs.ens.domains/resolution/names/
+  - title: ENSIP-19 Multichain Primary Names
+    url: https://docs.ens.domains/ensip/19/
+  - title: viem getEnsName
+    url: https://viem.sh/docs/ens/actions/getEnsName
+---
+
+## 题目
+
+交易列表把陌生地址显示成别人的 ENS 名称；另一个用户在 Base 设置了主名称，页面却仍显示旧名。请说明怎样解析、校验和缓存主名称，并区分地址展示与用户输入名字发起转账两种流程。
+
+## 考察目标
+
+- 理解反向声明与有效主名称的区别。
+- 正确处理规范化、链特定地址与主名。
+- 在解析失败、转手和延迟时安全回退。
+
+## 30 秒回答
+
+反向记录可以填写任意名字，展示前要规范化并正向解析，确认当前链的对应地址与原地址一致。不通过则显示地址。ENS 解析从以太坊主网开始，但按 coinType 选择目标链记录；成熟库可代做双向检查。等价输入规范化后得到相同名称，不能把大小写差异当作不同身份。缓存按查询方向及链绑定，名称只作显示，不作账户主键。
+
+## 深入回答
+
+### 主名称为什么需要两个方向
+
+持有人能设置反向记录，却不能由此取得该名字的正向控制权。有效主名需要地址到名字、名字回地址一致，且使用同一个 coinType 的口径。不能用 Base 的反解结果再用主网 ETH 地址字段复核。链特定主名和 default reverse/default EVM address 的回退依 ENSIP-19 与 resolver 能力执行，不随意拿主网地址填补缺失记录。
+
+### 规范化不等于简单转小写
+
+使用 ENSIP-15；如 `NaMe.EtH` 会规范化为 `name.eth`，之后 namehash 应相同。它也处理 Unicode、emoji 和无效字符，不能用 trim/lowercase 替代。无法规范化或正反向不一致时，地址展示回退原始地址；名字输入则显示具体解析失败，不能直接作为地址发送。
+
+### 库与网络的分工
+
+当前 viem 的 getEnsName 通过 Universal Resolver 处理主名称校验。应用可解释双向算法，但不必每次再重复同样的正解 RPC。L2 主名称仍从 L1 的解析入口开始；所需 coinType 和 resolver/CCIP-Read 支持要按库版本确认。官方 L2 实现可能有传播延迟，不能用一条“设置成功”交易回执承诺所有查询立即生效。
+
+### 缓存和安全展示
+
+正向缓存键包含规范化名称、coinType 和解析配置，反向缓存键包含地址、coinType 和解析配置。采用 TTL，变更事件只是加速失效手段；请求失败与“无可显示主名”是不同状态。链或账户变化时不采用旧请求结果。保留可复制地址，避免相似名字误导；主名转手或记录变化后再次验证，订单/进度仍按稳定地址标识关联。
+
+## 示例代码
+
+本例将目标链 coinType 传给主网解析客户端；返回 null 表示没有可显示的有效主名，不证明任何名字从未注册。失败由调用方呈现重试状态。
+
+```ts
+import { createPublicClient, http, toCoinType, type Address } from "viem";
+import { mainnet } from "viem/chains";
+
+export async function displayName(
+  rpcUrl: string,
+  address: Address,
+  targetChainId: number,
+) {
+  const client = createPublicClient({
+    chain: mainnet,
+    transport: http(rpcUrl),
+  });
+  const name = await client.getEnsName({
+    address,
+    coinType: toCoinType(targetChainId),
+  });
+  return { address, label: name ?? address };
+}
+```
+
+## 常见错误
+
+- 读取原始反向字符串后直接显示，不做校验。
+- 认为规范化之后大小写等价名称仍指向不同节点。
+- 把 L2 主名与主网 ETH 地址混合校验。
+- 用名字当账户主键，或长期缓存不复核。
+- 解析失败时静默使用先前地址发起转账。
+- 只识别 `.eth`，忽略 ENS 支持的其他名称。
+
+## 面试官追问
+
+1. 攻击者如何把自己地址的反向记录设置为别人的名字？
+2. default EVM address 与任意套用主网地址有什么不同？
+3. 名称刚转手，正反向缓存分别如何失效？
+4. CCIP-Read 超时时，地址列表与转账输入应怎样分别回退？
+
+## 评分标准
+
+### 初级回答
+
+- 区分正向与反向记录。
+- 知道校验不通过应展示地址。
+
+### 中级回答
+
+- 解释规范化、coinType 和库内部校验。
+- 设计按查询方向区分的缓存与失效处理。
+
+### 高级回答
+
+- 覆盖 default 记录、传播延迟、转手与异步竞态。
+- 将名称展示与资金转账的失败策略、身份主键分开。
+
+## 参考资料
+
+- [ENS Primary Names](https://docs.ens.domains/web/reverse/)
+- [ENS Name Processing](https://docs.ens.domains/resolution/names/)
+- [ENSIP-19 Multichain Primary Names](https://docs.ens.domains/ensip/19/)
+- [viem getEnsName](https://viem.sh/docs/ens/actions/getEnsName)

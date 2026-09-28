@@ -1,0 +1,125 @@
+---
+id: smart-account-signature-verification
+slug: smart-account-signature-verification
+title: 尚未部署的智能账户签名，服务端怎么验证？
+summary: 用 ERC-6492 识别反事实签名，在一次模拟执行里完成部署和 ERC-1271 校验。
+status: review
+difficulty: advanced
+category: signing
+questionType: debugging
+ecosystems: [evm]
+tags: [erc1271, erc6492, smart-account, signature]
+stacks:
+  erc-1271: final
+  erc-6492: final
+  viem: "2.56.9"
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 合并反事实验签题，修正后缀长度与模拟部署流程。
+references:
+  - title: ERC-6492 Signature Validation for Predeploy Contracts
+    url: https://eips.ethereum.org/EIPS/eip-6492
+  - title: ERC-1271 Standard Signature Validation Method for Contracts
+    url: https://eips.ethereum.org/EIPS/eip-1271
+  - title: ERC-4361 Sign-In with Ethereum
+    url: https://eips.ethereum.org/EIPS/eip-4361
+  - title: viem verifyMessage
+    url: https://viem.sh/docs/actions/public/verifyMessage
+---
+
+## 题目
+
+普通钱包能登录，但智能账户提示签名无效。其中一些地址尚无代码，另一些已经部署。服务端仅恢复 EOA 地址，或者先发一个 eth_call 部署、再发另一个 eth_call 验签。请指出这两种方案的问题，给出支持反事实账户的验证流程。
+
+## 考察目标
+
+- 识别包装签名优先于地址代码检查。
+- 区分模拟部署、真实交易与调用内部副作用。
+- 建立消息、链和会话的服务端信任边界。
+
+## 30 秒回答
+
+先识别 ERC-6492 后缀并解包，按规范在同一次模拟执行中处理必要的 factory 调用，再以 ERC-1271 校验合约签名；普通 EOA 使用对应消息格式恢复地址。不能要求反事实用户先发部署交易，也不能把模拟部署拆成两个 eth_call。验签结果之外，登录服务还要校验自己的 challenge、域、链、nonce 和有效期。
+
+## 深入回答
+
+### 检测与验证顺序
+
+ERC-6492 的固定后缀是 32 字节，即十六进制 `6492` 重复 16 次。包装中包含 factory、factoryCalldata 与原始签名，检测到包装后不能把它直接交给 ecrecover。账户已部署时也需要正确解包；是否执行 factory 或准备动作按规范分支决定，不能无条件重复部署。
+
+ERC-1271 接受消息哈希与任意长度签名，有效时返回 `0x1626ba7e`。哈希方式与协议对应：普通消息和 typed data 不可混用。不要写死规范没有承诺的低 gas 上限；同时服务需要总请求超时和资源控制，防止不可信验证耗尽服务容量。
+
+### 为什么必须是同一次模拟
+
+eth_call 不把部署状态持久化，第二次独立调用看不到第一次模拟产生的代码。应使用成熟的 universal validator，让 factory 与验签处于同一次执行。参考实现提供带副作用及回滚封装的不同入口；内部 revert 策略与重入安全有关，不是 eth_call 获得“不写链”性质的前提。真正发送部署交易是另一个用户授权操作，登录校验不应偷偷执行它。
+
+### 服务端如何判断结果
+
+链从服务端允许的 challenge/消息上下文确定，不信任客户端自报“我是合约账户”。有代码也不代表实现 ERC-1271，EIP-7702 等账户形态需要所选验证工具明确支持。把无效签名、验证合约回滚、部署模拟失败与 RPC 不可用分开；基础设施失败不能静默降级为接受客户端恢复结果。
+
+合约验签可能依赖链上状态，长期缓存通过结论会遗漏 owner 或授权变化。会话按地址与链绑定，必要时因权限变化失效；nonce 一次性消费，消息原文与签名重新核验，不能只校验一个客户端提交的哈希。
+
+## 示例代码
+
+下面使用 viem 公共客户端的消息验证入口处理相应账户签名。它只负责签名有效性；SIWE 字段解析、服务端 nonce 消费和会话建立由登录服务另行执行。RPC URL 和允许链由服务端配置。
+
+```ts
+import { createPublicClient, http, type Address, type Hex } from "viem";
+import { mainnet } from "viem/chains";
+
+export async function verifyLoginSignature(
+  rpcUrl: string,
+  address: Address,
+  message: string,
+  signature: Hex,
+) {
+  const client = createPublicClient({
+    chain: mainnet,
+    transport: http(rpcUrl),
+  });
+  return client.verifyMessage({ address, message, signature });
+}
+```
+
+## 常见错误
+
+- 看到没有代码就把反事实签名当 EOA 签名恢复。
+- 把 2 字节片段重复 32 次，得到错误的 64 字节后缀。
+- 在两个独立 eth_call 中分别部署与验签。
+- 要求 6492 用户先支付 gas 部署才能登录。
+- 相信前端指定的账户类型、链或哈希，省略 challenge 检查。
+- 将所有失败都显示成“签名错误”，或长期缓存合约验签结论。
+
+## 面试官追问
+
+1. 已部署地址提交 6492 包装签名，为什么还要检测包装？
+2. factory 调用失败时，如何给用户可重试的提示？
+3. owner 集合变化后，旧会话应怎样处理？
+4. universal validator 的内部 CALL 和回滚分别解决什么问题？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 ecrecover 不能覆盖所有智能账户。
+- 知道 1271 校验返回魔数。
+
+### 中级回答
+
+- 描述 6492 的包装与处理顺序。
+- 解释模拟不持久化及单次 eth_call 的必要性。
+
+### 高级回答
+
+- 覆盖已部署包装、账户形态差异、资源限制和失败分类。
+- 把验签与 challenge、链、会话失效及重放防护接起来。
+
+## 参考资料
+
+- [ERC-6492 Signature Validation for Predeploy Contracts](https://eips.ethereum.org/EIPS/eip-6492)
+- [ERC-1271 Standard Signature Validation Method for Contracts](https://eips.ethereum.org/EIPS/eip-1271)
+- [ERC-4361 Sign-In with Ethereum](https://eips.ethereum.org/EIPS/eip-4361)
+- [viem verifyMessage](https://viem.sh/docs/actions/public/verifyMessage)

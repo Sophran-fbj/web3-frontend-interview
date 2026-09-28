@@ -1,0 +1,114 @@
+---
+id: erc165-interface-detection
+slug: erc165-capability-detection
+title: 调用 NFT 可选接口前，怎样判断合约是否支持？
+summary: 按 ERC-165 完整探测接口声明，区分不支持、探测失败和实际行为不符。
+status: review
+difficulty: intermediate
+category: contract
+questionType: concept
+ecosystems: [evm]
+tags: [erc165, erc721, capability-detection, optional-interface]
+stacks:
+  erc165: Final
+  viem: 2.56.9
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 补全自身和无效标识探测，明确 gas 限制与错误分类。
+references:
+  - title: ERC-165 Standard Interface Detection
+    url: https://eips.ethereum.org/EIPS/eip-165
+  - title: ERC-721 Non-Fungible Token Standard
+    url: https://eips.ethereum.org/EIPS/eip-721
+  - title: OpenZeppelin ERC165Checker
+    url: https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/utils/introspection/ERC165Checker.sol
+---
+
+## 题目
+
+NFT 列表希望优先使用 Enumerable 扩展。只检查地址有代码，或者只查询 Enumerable 的 supportsInterface，够不够？探测失败怎样降级？
+
+## 考察目标
+
+- 接口标识与标准探测流程。
+- 可选扩展和实际实现的区别。
+- 错误处理与代理升级后的缓存失效。
+
+## 30 秒回答
+
+有代码不代表有枚举能力。先确认 supportsInterface 对 ERC-165 自身返回 true、对 0xffffffff 返回 false，再查询 ERC-721 和 Enumerable。标准检测对每次目标调用使用 30,000 gas 的 STATICCALL。通过只代表声明支持，后续调用仍可能回滚或不符合预期。RPC 失败不能直接标成不支持；代理升级后也应重新探测。
+
+## 深入回答
+
+### 标识和完整探测
+
+接口 ID 是该接口函数选择器的异或，事件不参与；使用标准给出的 ID，避免把单个函数 selector 当整个接口。ERC-165 为 0x01ffc9a7，ERC-721 为 0x80ac58cd，Metadata 为 0x5b5e139f，Enumerable 为 0x780e9d63。
+
+对自身标识返回 false、对无效标识 0xffffffff 返回 true、调用失败或返回不可解码值，都不能认为通过标准检测。Enumerable 和 Metadata 是 ERC-721 的可选扩展，不能假设每个 NFT 都支持。ERC-721 接收回调的魔术值也不能当所有接收方必然实现 ERC-165 的保证。
+
+以下 Solidity 辅助合约使用 OpenZeppelin Contracts 5.4.0，编译器需满足 pragma，并配置该依赖。它适合通过 eth_call 查询，不需要付费发送交易；生产使用时需部署辅助合约或使用支持的调用模拟方式。
+
+```solidity
+pragma solidity ^0.8.20;
+
+import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
+
+contract NftCapabilities {
+    function supportsEnumerable(address target) external view returns (bool) {
+        return ERC165Checker.supportsInterface(target, 0x80ac58cd)
+            && ERC165Checker.supportsInterface(target, 0x780e9d63);
+    }
+}
+```
+
+ERC165Checker 完成自身和无效标识检查，并限制内部目标 STATICCALL 的 gas。把前端外层 eth_call 的 gas 直接设成 30,000，并不等同于这套流程，外层交易还存在固有和辅助执行开销。若用普通 readContract 逐次查询，可完成逻辑预检，但应明确它不是严格的 gas 受限标准检测。
+
+### 声明不是安全证明
+
+合约可以撒谎、返回错误数据，或枚举函数对某些 token 回滚。检测后仍处理分页、巨大 totalSupply、数据不一致和超时，限制请求规模。链头变化可能使多个读请求看到不同状态，必要时固定区块。
+
+调用成功返回 false 属于可预期的不支持；辅助调用回滚或 RPC 网络异常属于探测失败，应保留错误并允许重试。旧合约没有 ERC-165 时，可按已知实现适配或转用索引器，不凭一次失败断言它不是 NFT。
+
+缓存至少区分链和地址，并设置复查策略。代理的能力来自当前实现，升级后可能变化；并非所有代理都能通过同一种实现槽识别，不能把一个永久地址缓存当能力永远不变。
+
+## 常见错误
+
+- 把非空代码当作支持枚举。
+- 跳过 0xffffffff 复核，被“所有接口都 true”的合约误导。
+- 把外层 eth_call 的 gas 限制当目标 STATICCALL 限制。
+- 把 RPC 超时写成“不支持 ERC-721”。
+- 检测成功后不处理实际调用失败。
+- 代理升级后继续沿用永久缓存。
+
+## 面试官追问
+
+1. 总是返回 true 的合约会在哪一步被排除？
+2. 为什么有的合法 NFT 不支持 Enumerable？
+3. 索引器和链上枚举结果不一致时如何展示？
+4. 如何区分探测失败与有效的 false？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 supportsInterface 和接口 ID 的作用。
+- 知道枚举是可选扩展。
+
+### 中级回答
+
+- 说明自身、无效标识和目标标识的完整检查。
+- 给出不支持与读取失败的不同处理路径。
+
+### 高级回答
+
+- 解释 gas 受限 STATICCALL 与外层 RPC 调用的区别。
+- 覆盖代理升级、恶意声明和大规模枚举的缓存与降级方案。
+
+## 参考资料
+
+- [ERC-165 Standard Interface Detection](https://eips.ethereum.org/EIPS/eip-165)
+- [ERC-721 Non-Fungible Token Standard](https://eips.ethereum.org/EIPS/eip-721)
+- [OpenZeppelin ERC165Checker](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/utils/introspection/ERC165Checker.sol)

@@ -1,0 +1,122 @@
+---
+id: merkle-airdrop-claim-frontend
+slug: merkle-airdrop-claim-frontend
+title: Merkle 白名单领取失败，前端应该核对哪些数据？
+summary: 对齐 root、叶子编码、证明与领取状态，并解释 index 绑定和本地预检的边界。
+status: review
+difficulty: intermediate
+category: business-scenario
+questionType: debugging
+ecosystems: [evm]
+tags: [merkle-tree, airdrop, whitelist, claim]
+stacks:
+  openzeppelin-merkle-tree: 1.0.8 StandardMerkleTree
+  viem: 2.56.9
+  openzeppelin-contracts: 5.4.0 MerkleProof
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 补充 root 版本、领取 index 绑定和预检后状态变化，限定标准树叶子编码。
+references:
+  - title: OpenZeppelin Merkle Tree
+    url: https://github.com/OpenZeppelin/merkle-tree
+  - title: OpenZeppelin MerkleProof 5.4.0
+    url: https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/utils/cryptography/MerkleProof.sol
+---
+
+## 题目
+
+后端用 OpenZeppelin StandardMerkleTree 生成白名单，但用户领取时出现 Invalid proof，有人本地验证成功后链上仍回滚。你会怎样排查？
+
+## 考察目标
+
+- 生成端、分发端与合约的编码一致性。
+- root 版本、账户和证明的匹配。
+- 领取状态与证明验证的不同职责。
+
+## 30 秒回答
+
+先核对链、合约、当前 root 和名单版本，再对齐叶子类型、参数顺序、编码及哈希算法。StandardMerkleTree 的标准叶子使用 ABI 编码后双 Keccak，但不是所有协议都如此。本地 verify 只说明证明与这份 root 匹配，交易还可能因已领取、暂停、金额或发送者条件失败。若使用 index 位图防重复，index 必须绑定进叶子或由同等强度的规则保证，不能任由调用者换 index 重放。
+
+## 深入回答
+
+### 按数据链路排查
+
+记录 chainId、合约地址、root、名单版本、account、amount、index 和 proof。核对前端是否用了测试网 root、旧接口缓存或其他账户的证明。并非失败几乎都来自叶子编码；错误 root、错误 proof、参数或合约状态也很常见。
+
+StandardMerkleTree 默认按标准叶子哈希排序，使用 ABI 编码和双哈希；内部节点对采用可交换的排序哈希，与 OpenZeppelin MerkleProof 默认规则配套。其他树可能单哈希、packed 编码、不同顺序或不同哈希函数，必须遵从实际生成脚本与合约。
+
+下面仅适用于叶子类型恰好为 `(uint256 index, address account, uint256 amount)` 的标准树。名单金额和 index 在 JSON 中使用十进制字符串，进入计算后转为 bigint；不要先经 Number。
+
+```ts
+import {
+  encodeAbiParameters,
+  keccak256,
+  parseAbiParameters,
+  type Address,
+} from "viem";
+
+export function claimLeaf(index: bigint, account: Address, amount: bigint) {
+  return keccak256(
+    keccak256(
+      encodeAbiParameters(parseAbiParameters("uint256, address, uint256"), [
+        index,
+        account,
+        amount,
+      ]),
+    ),
+  );
+}
+```
+
+对应 Solidity 叶子是 `keccak256(bytes.concat(keccak256(abi.encode(index, account, amount))))`。index 是业务领取编号，不必等于库内部排序后的叶子位置；获取 proof 时用库的实际 entry 索引，不能混淆二者。双哈希使实际叶子哈希前像成为 32 字节，避免未哈希的 64 字节叶子被当作两个内部节点拼接的歧义。
+
+### 证明不自带防重放
+
+验证成功只证明数据在树内，不会自动记录已领取。合约需要记录地址、业务领取 ID 或位图等状态，并正确执行检查与状态更新。若位图按 caller 提供的 index 标记，叶子却只绑定 account 和 amount，攻击者可能换一个 index 重用同一 proof；应在叶子绑定 index 或采用合约明确的安全关联规则。
+
+收款地址、msg.sender、金额和 mint 数量限制依合约定义，不能从库示例推断所有 claim 都有同一个签名。允许第三方代领时，要确认收款方不能被任意替换。root 更新后的旧证明通常不再适用，但旧领取状态是否延续也取决于协议设计。
+
+### 前端预检和交易状态
+
+本地验证当前 root 与 proof 后，再读取已领取、暂停、余额和所需费用，模拟实际 claim 参数。提交前检查链与账户；等待期间 root 和已领取状态仍可能变化。用户拒绝保留可重试状态，RPC 失败显示未知而非无资格；交易替换或重组后重新查询领取状态，不把出现交易哈希等同已领取。
+
+## 常见错误
+
+- 把 StandardMerkleTree 的编码规则套给所有协议。
+- 使用过期 root，或混用业务 index 与库 entry 索引。
+- 金额先转 Number 再转 bigint。
+- 位图使用 index，但叶子和合约都没绑定它。
+- 本地 proof 通过后不模拟实际领取调用。
+- 用重复交易回滚判断资格，而不读取领取状态。
+
+## 面试官追问
+
+1. 为什么证明有效不代表这次领取一定成功？
+2. 叶子不含 index，位图又按 index 记录，可能怎样被重放？
+3. 名单更换 root 后，之前领取的用户应如何处理？
+4. 怎样用生成脚本和合约测试保证前端编码一致？
+
+## 评分标准
+
+### 初级回答
+
+- 理解叶子、证明路径和 root 的关系。
+- 能核对账户和金额。
+
+### 中级回答
+
+- 对齐 ABI、哈希和名单版本，处理已领取与模拟失败。
+- 使用 bigint，区分本地验证和链上业务条件。
+
+### 高级回答
+
+- 识别 index 未绑定导致的重放风险。
+- 设计跨生成端、合约与前端的测试向量及 root 更新流程。
+
+## 参考资料
+
+- [OpenZeppelin Merkle Tree](https://github.com/OpenZeppelin/merkle-tree)
+- [OpenZeppelin MerkleProof 5.4.0](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.4.0/contracts/utils/cryptography/MerkleProof.sol)

@@ -1,0 +1,98 @@
+---
+id: oracle-staleness-sequencer-uptime
+slug: oracle-staleness-sequencer-uptime
+title: L2 排序器恢复后，为什么不能立即信任旧价格？
+summary: 结合价格新鲜度、排序器状态和恢复宽限期，区分界面提示与合约风控。
+status: review
+difficulty: intermediate
+category: data
+questionType: debugging
+ecosystems: [evm]
+tags: [chainlink, sequencer, staleness, circuit-breaker]
+stacks:
+  chainlink: AggregatorV3Interface / L2 Sequencer Uptime Feeds
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 聚焦 L2 风控，补未初始化、异常时间和链上阻断边界。
+references:
+  - title: Chainlink L2 Sequencer Uptime Feeds
+    url: https://docs.chain.link/data-feeds/l2-sequencer-feeds
+  - title: Chainlink Selecting Quality Data Feeds
+    url: https://docs.chain.link/data-feeds/selecting-data-feeds
+  - title: Chainlink Data Feeds API Reference
+    url: https://docs.chain.link/data-feeds/api-reference
+---
+
+## 题目
+
+L2 排序器停机后恢复，借贷页面仍显示正常价格，却有用户在恢复瞬间集中被清算。请说明价格 feed 与 uptime feed 应分别检查什么，何时恢复入口，以及合约和前端分别承担什么责任。
+
+## 考察目标
+
+- 区分价格更新时间与排序器状态变化时间。
+- 理解恢复宽限期的用途与配置。
+- 处理缺失读数、停机、陈旧及风控口径不一致。
+
+## 30 秒回答
+
+价格 feed 检查 answer 与 updatedAt；uptime feed 检查 answer 的 0/1 状态及 startedAt。排序器停机时暂停依赖该价格的操作，恢复后按业务宽限期等待，再独立检查价格是否足够新。没有可用 feed 或读数异常时不能按“正常”放行。前端负责解释与预检，真正阻断危险操作由合约检查，不能只靠禁用按钮。
+
+## 深入回答
+
+### 两种时间属于不同数据
+
+价格的 updatedAt 用于判断该轮报价何时更新；uptime 的 startedAt 是当前排序器状态开始的时间。uptime answer 为 0 表示 up，为 1 表示 down。恢复到 up 后仍需等待恢复宽限期，给用户时间调整仓位，避免只有少数参与者能在恢复瞬间行动。
+
+价格最新不代表排序器正常，排序器正常也不证明价格新鲜，两项独立检查。按网络部署清单选正确 uptime feed；Arbitrum 等实现的未初始化时间边界要明确处理。startedAt 为零或晚于当前区块时间、未知状态值及 RPC 查询失败，都进入不可用或待核实状态。
+
+### 阈值与风控位置
+
+宽限期与 stale 阈值是两种参数，不应合并为一个倒计时。Chainlink 示例的时间配置不是所有业务的默认标准；根据用户反应时间、价格更新机制、杠杆风险与协议治理确定，并从同一配置来源提供前后端口径。前端提示、模拟与数据时间标签减少失败交易；绕过 UI 的用户仍会直接调用合约，所以链上需执行对应检查。
+
+### 失败与恢复
+
+页面分开显示排序器停机、恢复宽限期、价格过期、数据不可用。可以展示明确标注时间的历史价格供用户观察，但不把它作为可交易报价。用户换链后清除旧网络状态；网络拥堵、下线及代理配置变化可能导致更新停滞或调用回滚，应监控而不是将零价或缓存当成正常数据。
+
+只对明确支持的正值价格 feed 采用正数规则，特殊指标/有界 feed、交易时段和其他链的 outage 机制需要另行适配。执行层是否允许提交、排队或强制包含交易，依具体 L2 协议决定，不能从 uptime 状态推出统一交易排序保证。
+
+## 常见错误
+
+- 只检查价格大于零，不检查时间。
+- 用价格 startedAt 代替 uptime 状态变化时间。
+- 排序器一恢复就开放高风险交易。
+- 未初始化、未知状态或查询失败时按正常放行。
+- 将前端禁用按钮当作不可绕过的风控。
+- 对所有 L2 套用同一个 feed 地址和固定宽限期。
+
+## 面试官追问
+
+1. 已超过恢复宽限期，但价格仍旧，界面应显示什么？
+2. uptime feed 返回零时间，如何处理和排查？
+3. 两个依赖 feed 中一个不可用，哪些操作还能继续？
+4. 如何验证合约参数与页面倒计时使用同一口径？
+
+## 评分标准
+
+### 初级回答
+
+- 知道 uptime 状态与价格新鲜度要分别检查。
+- 知道恢复后存在等待窗口。
+
+### 中级回答
+
+- 正确说明两种 feed 的字段与异常分支。
+- 能设计停止、等待、恢复和重试的页面状态。
+
+### 高级回答
+
+- 区分 UI 提示、模拟与链上风控，并维护阈值一致性。
+- 覆盖多 feed、网络切换、下线与不同 L2 的适用边界。
+
+## 参考资料
+
+- [Chainlink L2 Sequencer Uptime Feeds](https://docs.chain.link/data-feeds/l2-sequencer-feeds)
+- [Chainlink Selecting Quality Data Feeds](https://docs.chain.link/data-feeds/selecting-data-feeds)
+- [Chainlink Data Feeds API Reference](https://docs.chain.link/data-feeds/api-reference)

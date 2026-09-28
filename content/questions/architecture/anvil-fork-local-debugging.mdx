@@ -1,0 +1,105 @@
+---
+id: anvil-fork-local-debugging
+slug: anvil-fork-local-debugging
+title: 怎样用 Anvil 分叉环境复现主网前端问题？
+summary: 固定分叉状态、保持原合约地址，并区分本地冒充账户、钱包签名和线上资产。
+status: review
+difficulty: intermediate
+category: architecture
+questionType: debugging
+ecosystems: [evm]
+tags: [anvil, foundry, fork, local-testing]
+stacks:
+  anvil: Foundry CLI，运行时记录 anvil --version
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 明确本地链 ID、原合约地址、固定区块和冒充账户的边界。
+references:
+  - title: Foundry Anvil CLI
+    url: https://getfoundry.sh/anvil/reference
+  - title: viem Test Client
+    url: https://viem.sh/docs/clients/test
+---
+
+## 题目
+
+主网某个大额余额触发页面错误，直接转入资产复现有风险。如何用 Anvil 分叉调试，并让同事重现同一个问题？
+
+## 考察目标
+
+- 分叉区块、合约地址与本地链配置的关系。
+- 冒充账户和真实钱包签名的区别。
+- 可复现用例与分叉环境的适用边界。
+
+## 30 秒回答
+
+固定源链和区块，Anvil 从上游 RPC 按需读取该状态，前端连本地 RPC。分叉合约通常仍使用原地址，本地链 ID 则按启动配置显式设置。通过冒充账户、设置余额和挖块复现条件，记录工具版本与操作步骤。所有资产变化只存在本地；钱包确认、链下服务和真实出块环境要另外验证。
+
+## 深入回答
+
+### 固定状态和配置
+
+先确认源链、区块号和对应区块哈希，选择已稳定的区块，避免临近链头的重组。上游 RPC 必须能够提供该高度的历史状态；启动成功不代表后续读取的所有存储都可用。
+
+下面是 PowerShell 启动示例。先把环境变量 `FORK_RPC_URL` 设置为可用的以太坊归档 RPC；区块号是用例参数，可替换为问题发生时的高度。
+
+```powershell
+anvil --fork-url "$env:FORK_RPC_URL" --fork-block-number 24000000 --chain-id 31337 --host 127.0.0.1
+```
+
+前端读写均切到 `http://127.0.0.1:8545`，钱包添加本地网络，链 ID 为 31337。分叉过来的 token、代理和协议仍位于源链地址，不要整体替换成测试网地址。源链历史交易并没有因此重新发送到本地链。
+
+本地链 ID 改变后，包含 chainId 的 EIP-712 域、permit 或 UserOperation 签名也会改变。某些协议还硬编码链 ID 或使用链专属预部署地址，因此分叉成功不保证所有业务可用。为复现签名问题而保留源链 ID 时，更要隔离配置，避免钱包误连真实主网。
+
+### 重现步骤
+
+用 viem Test Client 的 Anvil 模式调用 `impersonateAccount`、`setBalance`、`mine`、`snapshot` 和 `revert` 等测试动作。冒充只绕过本地节点的发送者签名要求，不会替你生成有效的 EIP-712 签名，也不会让浏览器钱包凭空拥有该地址的私钥。
+
+先保存基准快照，每个用例恢复基准后再修改状态。大户持有 token 不代表其有足够原生币付 gas；补原生币与补 token 是不同操作。若直接修改存储，需要核对布局和代理位置，否则可能制造线上不存在的状态。
+
+复现记录应包括源链、区块号及哈希、Anvil 版本、合约地址、测试账户、初始配置和操作顺序。缓存可以减少上游请求，但不能替代固定区块与版本。RPC 限流或缺历史数据应作为环境失败报告，不混同业务回滚。
+
+### 验证边界
+
+分叉适合真实合约状态和前端联调；它不完整复制预言机更新、索引器、跨链消息、真实 MEV、排序器和钱包设备行为。涉及这些依赖时，配合 mock、测试网或独立集成验证。测试 RPC 只监听本机，不把可冒充和改余额的节点当公共演示环境。
+
+## 常见错误
+
+- 每次从 latest 分叉，导致用例随区块变化。
+- 读操作仍走主网，写操作走本地，误以为本地交易没生效。
+- 把原合约地址换成测试网地址。
+- 认为冒充账户能绕过合约内的签名校验。
+- 把本地转账或余额展示当作真实主网资产。
+- 忽略源链 ID 与本地签名域之间的差异。
+
+## 面试官追问
+
+1. 上游节点能返回区块，但读取历史存储失败，如何排查？
+2. 为什么本地 permit 签名会和主网不同？
+3. 分叉成功但依赖索引器的页面为空，怎样组织测试？
+4. 如何保证同一个 CI 用例不受其他用例状态影响？
+
+## 评分标准
+
+### 初级回答
+
+- 能固定区块并让前端连接本地 RPC。
+- 知道本地资产不会改变主网资产。
+
+### 中级回答
+
+- 保留原合约地址，正确配置链 ID 和签名域。
+- 能组织冒充、补余额、快照和重置流程。
+
+### 高级回答
+
+- 记录版本与区块哈希，识别历史状态和链下依赖限制。
+- 能解释钱包签名、链专属实现及真实排序环境的验证盲区。
+
+## 参考资料
+
+- [Foundry Anvil CLI](https://getfoundry.sh/anvil/reference)
+- [viem Test Client](https://viem.sh/docs/clients/test)

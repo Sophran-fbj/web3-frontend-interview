@@ -1,0 +1,102 @@
+---
+id: ipfs-ens-static-deployment
+slug: ipfs-ens-static-deployment
+title: DApp 部署到 IPFS 并绑定 ENS，需要做哪些取舍？
+summary: 区分静态产物、内容寻址、记录更新、内容留存和网关信任，避免夸大去中心化程度。
+status: review
+difficulty: intermediate
+category: architecture
+questionType: system-design
+ecosystems: [evm]
+tags: [ipfs, ens, deployment, contenthash]
+stacks:
+  ensip7: contenthash
+sourceTypes: [official-docs]
+updatedAt: 2026-09-29
+reviewers: []
+changeLog:
+  - date: 2026-09-29
+    summary: 修正 CID、环境变量与 unpin 的表述，补充网关路由和信任边界。
+references:
+  - title: IPFS 静态站点生成器
+    url: https://docs.ipfs.tech/how-to/websites-on-ipfs/static-site-generators/
+  - title: ENSIP-7 contenthash
+    url: https://docs.ens.domains/ensip/7
+  - title: IPFS DNSLink 网关
+    url: https://docs.ipfs.tech/how-to/websites-on-ipfs/dnslink-gateway/
+---
+
+## 题目
+
+团队想把 DApp 从传统托管迁到 IPFS，通过 ENS 名提供入口。哪些功能必须调整？怎样发布、回滚和保证用户能访问？
+
+## 考察目标
+
+- 静态托管与运行时服务的边界。
+- CID、ENS contenthash 与 DNSLink 的职责。
+- 网关、存储和更新权限的风险。
+
+## 30 秒回答
+
+IPFS 承载静态文件，应用要先导出静态产物；SSR、服务端接口和秘密配置仍需要其他服务。CID 由内容和导入参数决定，相同内容不一定每次都产生新 CID。发布时验证产物、pin 新内容，再更新 ENS contenthash；回滚改回旧 CID。访问通常仍依赖网关、RPC 和内容提供者，不能把 IPFS 部署描述成完全消除中心化依赖。
+
+## 深入回答
+
+### 应用与路由
+
+Next.js 等框架需要输出纯静态文件，检查动态路由是否预生成、图片处理是否依赖服务端，以及 API 路由是否需要迁出。构建时环境变量可以参与生成；打进页面和 bundle 的值就是公开信息，不能放秘密。运行时私有环境变量和按请求执行的服务端逻辑不能由静态 IPFS 文件提供。
+
+测试直接打开深层页面、刷新、资源路径和钱包连接。路径网关把站点放在 `/ipfs/<CID>/` 下，根绝对路径可能跳出该前缀；子域网关把不同 CID 放在独立 origin，有利于站点隔离，但需考虑 DNS、HTTPS 和浏览器兼容。`trailingSlash` 可帮助目录式 `index.html` 路由，不能自动修好所有资源路径。
+
+### 发布和留存
+
+CID 受文件内容、目录结构、CID 版本和分块等导入参数影响。固定构建与导入过程，使产物可复现；不要声称每次构建必然改变 CID。
+
+ENS contenthash 按 ENSIP-7 的协议编码写入解析器，不能把裸 CID 或普通 URL 当 bytes 随意写入。DNSLink 是通过 DNS TXT 记录指向内容的另一种入口，不是 ENS 记录的别名。使用成熟编码工具，并核对当前解析器、控制权限、网络和交易回执。
+
+先验证新 CID 的页面、资源及多个访问路径，再更新入口；确认记录生效后继续保留旧 CID 供回滚。取消自己的 pin 只停止自身的留存承诺，其他节点可能仍保存内容，既不保证旧内容全网删除，也不保证旧内容一直可取回。需要长期可用性时配置独立副本并定期检查，而不只检查某个热缓存网关。
+
+### 仍然存在的信任
+
+普通 HTTP 网关返回网页时，浏览器一般没有自行验证完整 IPFS 内容，用户仍信任网关响应。具有内容验证能力的客户端能缩小这部分信任，但不能证明网页业务逻辑安全。DNSLink 网关也有域名和服务端信任。
+
+DApp 的 RPC、索引器、资产价格接口及 ENS 记录更新权限仍需管理。更换 CID 或网关 origin 还可能影响本地存储、钱包会话和 Passkey 域策略。迁移可先作为镜像部署，观察可用性后再改变默认入口。
+
+## 常见错误
+
+- 把依赖 SSR 和 API 的项目直接当纯静态站点上传。
+- 声称 IPFS 不支持任何环境变量，或把构建变量当秘密。
+- 认为每次构建必定新 CID，或者 unpin 会全网删除。
+- 只测试首页，不测试路径网关下的深层路由和资源。
+- 把 contenthash 与 DNSLink 当成同一种记录。
+- 把普通网关响应当成浏览器已完成内容校验。
+
+## 面试官追问
+
+1. ENS 已更新，某个网关仍显示旧页面，如何定位缓存层？
+2. 怎么证明旧 CID 仍可取回，而非仅命中一个缓存？
+3. 更换网关后收藏或登录失效，哪些 origin 绑定需要检查？
+4. 发布流水线需要哪些权限，怎样降低入口被篡改的风险？
+
+## 评分标准
+
+### 初级回答
+
+- 知道静态产物和 CID 的作用。
+- 能说明 ENS 指向内容及更新入口的基本流程。
+
+### 中级回答
+
+- 处理路由、公开配置、pin 与回滚。
+- 区分 ENS 记录和 DNSLink，识别网关依赖。
+
+### 高级回答
+
+- 设计可复现发布、多副本检查和权限隔离。
+- 说明内容校验、origin 变化和链下服务的信任边界。
+
+## 参考资料
+
+- [IPFS 静态站点生成器](https://docs.ipfs.tech/how-to/websites-on-ipfs/static-site-generators/)
+- [ENSIP-7 contenthash](https://docs.ens.domains/ensip/7)
+- [IPFS DNSLink 网关](https://docs.ipfs.tech/how-to/websites-on-ipfs/dnslink-gateway/)
