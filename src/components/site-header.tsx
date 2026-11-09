@@ -19,6 +19,9 @@ export function SiteHeader() {
           <Link href="/review" className="study-link whitespace-nowrap">
             复习
           </Link>
+          <Link href="/study-sets" className="study-link whitespace-nowrap">
+            题单
+          </Link>
           <Link
             href="/bookmarks"
             className="text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
