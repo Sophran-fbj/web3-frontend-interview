@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+
 import {
   type LearningStatus,
   useProgressStore,
@@ -13,6 +15,7 @@ const statusOptions: Array<{ value: LearningStatus; label: string }> = [
 ];
 
 export function LearningStatusControl({ questionId }: { questionId: string }) {
+  const titleId = useId();
   const hasHydrated = useProgressStore((state) => state.hasHydrated);
   const status = useProgressStore(
     (state) => state.progress[questionId]?.status ?? "unseen",
@@ -31,11 +34,11 @@ export function LearningStatusControl({ questionId }: { questionId: string }) {
 
   return (
     <section
-      aria-labelledby="learning-status-title"
+      aria-labelledby={titleId}
       className="mt-6 border-t border-[var(--line)] pt-5"
     >
       <h2
-        id="learning-status-title"
+        id={titleId}
         className="text-sm font-medium text-[var(--text-strong)]"
       >
         我的掌握状态
@@ -46,7 +49,7 @@ export function LearningStatusControl({ questionId }: { questionId: string }) {
       <div
         className="mt-3 grid grid-cols-2 gap-2"
         role="group"
-        aria-labelledby="learning-status-title"
+        aria-labelledby={titleId}
       >
         {statusOptions.map((option) => {
           const selected = status === option.value;

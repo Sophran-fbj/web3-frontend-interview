@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+@layer components {
+  .study-link {
+    @apply text-sm text-[var(--text-muted)] hover:text-[var(--accent-bright)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)];
+  }
+
+  .study-button {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text-strong)] hover:border-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .study-button[aria-pressed="true"],
+  .study-button-primary {
+    @apply border-[var(--accent)] bg-[var(--accent)] text-[var(--on-accent)];
+  }
+
+  .study-input {
+    @apply min-h-11 w-full rounded-lg border border-[var(--line-strong)] bg-[var(--canvas-raised)] px-3 py-2 text-sm text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)];
+  }
+
+  .study-label {
+    @apply grid gap-2 text-sm font-medium text-[var(--text-strong)];
+  }
+}
+
 :root,
 html[data-theme="graphite"] {
   color-scheme: dark;
