@@ -230,6 +230,14 @@ function StudySetEditor({
             继续练习
           </Link>
         )}
+        {available.length > 0 && (
+          <Link
+            href={`/interview?${new URLSearchParams({ set: studySet.id })}`}
+            className="study-button"
+          >
+            按题单模拟面试
+          </Link>
+        )}
       </div>
       {available.length < studySet.questionIds.length && (
         <p className="mt-3 text-sm">
