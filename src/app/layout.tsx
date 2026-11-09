@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 
 import { SiteHeader } from "@/components/site-header";
+import { LearningAccountProvider } from "@/components/learning-account-provider";
+import { readAuthConfiguration } from "@/lib/auth-config";
 import { getSiteUrl } from "@/lib/site-url";
 
 import "./globals.css";
@@ -65,8 +67,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           跳到主要内容
         </a>
-        <SiteHeader />
-        {children}
+        <LearningAccountProvider enabled={readAuthConfiguration().available}>
+          <SiteHeader />
+          {children}
+        </LearningAccountProvider>
         <footer className="border-t border-[var(--line)] px-5 py-6 text-center text-sm text-[var(--text-faint)] sm:px-8">
           <Link
             href="/contribute"

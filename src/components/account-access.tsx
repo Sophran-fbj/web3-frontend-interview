@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { authClient } from "@/lib/auth-client";
+import { AccountSyncPanel } from "@/components/account-sync-panel";
 
 export function AccountAccess({ oauthError }: { oauthError: boolean }) {
   const {
@@ -107,6 +108,7 @@ export function AccountAccess({ oauthError }: { oauthError: boolean }) {
           {error}
         </p>
       )}
+      {data?.user && !sessionError && <AccountSyncPanel key={data.user.id} />}
       <Link href="/questions" className="study-link mt-6 inline-block">
         返回题库
       </Link>

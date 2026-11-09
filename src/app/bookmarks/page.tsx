@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { BookmarkList } from "@/components/bookmark-list";
+import { LearningStorageNotice } from "@/components/learning-storage-notice";
 import { getVisibleQuestions } from "@/content/question-repository";
 
 export const metadata: Metadata = {
@@ -32,7 +33,7 @@ export default async function BookmarksPage() {
         我的收藏
       </h1>
       <p className="mt-4 text-sm text-[var(--text-muted)]">
-        收藏只保存在当前浏览器。
+        <LearningStorageNotice />
       </p>
       <BookmarkList questions={questions} />
     </main>

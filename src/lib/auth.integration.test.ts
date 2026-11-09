@@ -133,4 +133,38 @@ describe("GitHub authentication with a migrated PostgreSQL engine", () => {
     );
     expect(response.status).toBe(403);
   });
+
+  it("persists login throttling in the database", async () => {
+    for (let index = 0; index < 10; index++) {
+      const response = await auth.handler(
+        new Request(`${baseURL}/api/auth/sign-in/social`, {
+          method: "POST",
+          headers: {
+            Origin: baseURL,
+            "Content-Type": "application/json",
+            "X-Forwarded-For": "127.0.0.3",
+          },
+          body: JSON.stringify({ provider: "github", callbackURL: "/account" }),
+        }),
+      );
+      expect(response.status).toBe(200);
+    }
+    const throttled = await auth.handler(
+      new Request(`${baseURL}/api/auth/sign-in/social`, {
+        method: "POST",
+        headers: {
+          Origin: baseURL,
+          "Content-Type": "application/json",
+          "X-Forwarded-For": "127.0.0.3",
+        },
+        body: JSON.stringify({ provider: "github", callbackURL: "/account" }),
+      }),
+    );
+    expect(throttled.status).toBe(429);
+    expect(
+      (await database.db.query.rateLimit.findMany()).some(
+        (row) => row.count >= 10,
+      ),
+    ).toBe(true);
+  });
 });

@@ -6,6 +6,7 @@ import {
   type InterviewQuestionContent,
 } from "@/components/interview-app";
 import { QuestionBody } from "@/components/question-body";
+import { LearningStorageNotice } from "@/components/learning-storage-notice";
 import { getVisibleQuestions } from "@/content/question-repository";
 import { splitQuestionSections } from "@/content/question-sections";
 import { toQuestionSummary } from "@/content/question-summary";
@@ -57,7 +58,10 @@ export default async function InterviewPage({
         模拟面试
       </h1>
       <p className="mt-4 text-sm leading-7">
-        逐题限时作答，结束后对照参考答案自评。草稿和练习记录只保存在当前浏览器。
+        逐题限时作答，结束后对照参考答案自评。草稿随输入保存，可从练习记录继续。
+      </p>
+      <p className="mt-3 text-xs leading-6">
+        <LearningStorageNotice />
       </p>
       <InterviewApp
         questions={questions.map(toQuestionSummary)}

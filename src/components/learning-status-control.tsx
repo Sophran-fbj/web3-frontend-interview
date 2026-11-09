@@ -1,6 +1,7 @@
 "use client";
 
 import { useId } from "react";
+import { LearningStorageNotice } from "@/components/learning-storage-notice";
 
 import {
   type LearningStatus,
@@ -44,7 +45,7 @@ export function LearningStatusControl({ questionId }: { questionId: string }) {
         我的掌握状态
       </h2>
       <p className="mt-1 text-xs leading-5 text-[var(--text-faint)]">
-        只保存在当前浏览器
+        <LearningStorageNotice />
       </p>
       <div
         className="mt-3 grid grid-cols-2 gap-2"
