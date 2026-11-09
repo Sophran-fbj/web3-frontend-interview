@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "content:validate": "tsx scripts/validate-content.ts",
+    "auth:check": "tsx scripts/check-auth-config.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -38,6 +39,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

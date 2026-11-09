@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ThemeSwitcher } from "@/components/theme-switcher";
+import { readAuthConfiguration } from "@/lib/auth-config";
 
 export function SiteHeader() {
   return (
@@ -38,6 +39,11 @@ export function SiteHeader() {
             参与共建
           </Link>
           <ThemeSwitcher />
+          {readAuthConfiguration().available && (
+            <Link href="/account" className="study-link whitespace-nowrap">
+              账号与同步
+            </Link>
+          )}
         </nav>
       </div>
     </header>

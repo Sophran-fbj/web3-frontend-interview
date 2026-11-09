@@ -16,6 +16,12 @@ export function getDb() {
     );
   }
 
-  pool ??= new Pool({ connectionString });
+  pool ??= new Pool({
+    connectionString,
+    max: 5,
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 5000,
+    allowExitOnIdle: true,
+  });
   return drizzle({ client: pool, schema });
 }
