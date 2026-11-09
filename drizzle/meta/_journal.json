@@ -15,6 +15,13 @@
       "when": 1794262939358,
       "tag": "0001_uneven_nuke",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794263284083,
+      "tag": "0002_dazzling_daimon_hellstrom",
+      "breakpoints": true
     }
   ]
 }
