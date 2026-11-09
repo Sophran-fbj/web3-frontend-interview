@@ -9,19 +9,6 @@ export const difficultyLabels: Record<
   advanced: "高级",
 };
 
-export const categoryLabels: Record<QuestionFrontmatter["category"], string> = {
-  "web3-basics": "Web3 基础",
-  wallet: "钱包与连接",
-  signing: "签名",
-  transaction: "交易系统",
-  contract: "合约交互",
-  data: "链上数据",
-  security: "安全",
-  "performance-ux": "性能与体验",
-  architecture: "架构",
-  "business-scenario": "业务场景",
-};
-
 export const questionTypeLabels: Record<
   QuestionFrontmatter["questionType"],
   string

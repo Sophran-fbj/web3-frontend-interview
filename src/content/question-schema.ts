@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { categoryOrder } from "@/content/question-config";
+
 const dateStringSchema = z
   .union([
     z.string(),
@@ -39,18 +41,7 @@ export const questionFrontmatterSchema = z
     summary: z.string().min(12),
     status: questionStatusSchema,
     difficulty: z.enum(["beginner", "intermediate", "advanced"]),
-    category: z.enum([
-      "web3-basics",
-      "wallet",
-      "signing",
-      "transaction",
-      "contract",
-      "data",
-      "security",
-      "performance-ux",
-      "architecture",
-      "business-scenario",
-    ]),
+    category: z.enum(categoryOrder),
     questionType: z.enum([
       "concept",
       "comparison",

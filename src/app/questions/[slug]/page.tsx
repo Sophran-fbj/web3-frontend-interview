@@ -6,8 +6,8 @@ import { AnswerDisclosure } from "@/components/answer-disclosure";
 import { BookmarkButton } from "@/components/bookmark-button";
 import { LearningStatusControl } from "@/components/learning-status-control";
 import { QuestionBody } from "@/components/question-body";
+import { categoryLabels } from "@/content/question-config";
 import {
-  categoryLabels,
   difficultyLabels,
   questionTypeLabels,
 } from "@/content/question-labels";

@@ -5,8 +5,8 @@ import { BookmarkButton } from "@/components/bookmark-button";
 import { QuestionFilterMenu } from "@/components/question-filter-menu";
 import { QuestionPagination } from "@/components/question-pagination";
 import { RandomQuestionButton } from "@/components/random-question-button";
+import { categoryLabels, categoryOrder } from "@/content/question-config";
 import {
-  categoryLabels,
   difficultyLabels,
   questionTypeLabels,
 } from "@/content/question-labels";
@@ -84,9 +84,6 @@ function findOption<T extends string>(value: string | undefined, options: T[]) {
 const difficultyOrder = Object.keys(
   difficultyLabels,
 ) as QuestionFrontmatter["difficulty"][];
-const categoryOrder = Object.keys(
-  categoryLabels,
-) as QuestionFrontmatter["category"][];
 const questionTypeOrder = Object.keys(
   questionTypeLabels,
 ) as QuestionFrontmatter["questionType"][];

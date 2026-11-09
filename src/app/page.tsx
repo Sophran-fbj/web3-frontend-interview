@@ -1,28 +1,17 @@
 import Link from "next/link";
 
 import { StrokeHeading } from "@/components/stroke-heading";
+import { questionOverviewGroups } from "@/content/question-config";
 import { getVisibleQuestions } from "@/content/question-repository";
 
 export default async function Home() {
   const questions = await getVisibleQuestions();
-  const countByCategory = (categories: string[]) =>
-    questions.filter(({ frontmatter }) =>
+  const overview = questionOverviewGroups.map(({ label, categories }) => ({
+    label,
+    count: questions.filter(({ frontmatter }) =>
       categories.includes(frontmatter.category),
-    ).length;
-  const overview = [
-    ["钱包与签名", countByCategory(["wallet", "signing"])],
-    ["交易与合约", countByCategory(["transaction", "contract"])],
-    ["数据与安全", countByCategory(["data", "security"])],
-    [
-      "架构与体验",
-      countByCategory([
-        "web3-basics",
-        "performance-ux",
-        "architecture",
-        "business-scenario",
-      ]),
-    ],
-  ] as const;
+    ).length,
+  }));
 
   return (
     <main
@@ -58,7 +47,7 @@ export default async function Home() {
       </section>
 
       <aside className="border-y border-[var(--line-strong)] py-2">
-        {overview.map(([label, count]) => (
+        {overview.map(({ label, count }) => (
           <div
             key={label}
             className="flex items-center justify-between border-b border-[var(--line)] py-4 last:border-b-0"

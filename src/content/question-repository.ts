@@ -3,24 +3,14 @@ import path from "node:path";
 
 import matter from "gray-matter";
 
+import { categoryOrder } from "@/content/question-config";
+
 import {
   questionFrontmatterSchema,
   type QuestionFrontmatter,
 } from "./question-schema";
 
 const questionsDirectory = path.join(process.cwd(), "content", "questions");
-const categoryOrder: QuestionFrontmatter["category"][] = [
-  "web3-basics",
-  "wallet",
-  "signing",
-  "transaction",
-  "contract",
-  "data",
-  "security",
-  "performance-ux",
-  "architecture",
-  "business-scenario",
-];
 
 export type QuestionDocument = {
   frontmatter: QuestionFrontmatter;
