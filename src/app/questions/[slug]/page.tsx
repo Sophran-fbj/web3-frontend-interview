@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AnswerDisclosure } from "@/components/answer-disclosure";
 import { BookmarkButton } from "@/components/bookmark-button";
 import { LearningStatusControl } from "@/components/learning-status-control";
+import {
+  AdjacentQuestionNav,
+  BackToQuestionsLink,
+} from "@/components/question-detail-nav";
 import { QuestionBody } from "@/components/question-body";
 import { categoryLabels } from "@/content/question-config";
 import {
@@ -80,12 +83,7 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
       id="main-content"
       className="mx-auto w-full max-w-6xl px-5 py-10 sm:px-8 sm:py-14"
     >
-      <Link
-        href="/questions"
-        className="inline-flex text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
-      >
-        返回题库
-      </Link>
+      <BackToQuestionsLink />
 
       <header className="mt-10 max-w-4xl border-b border-[var(--line-strong)] pb-10">
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
@@ -146,59 +144,21 @@ export default async function QuestionPage({ params }: QuestionPageProps) {
         </aside>
       </div>
 
-      <nav
-        aria-label="题目导航"
-        className="mt-14 grid gap-px border-y border-[var(--line-strong)] bg-[var(--line)] sm:grid-cols-2"
-      >
-        <div className="bg-[var(--canvas)] py-5 sm:pr-6">
-          {previousQuestion ? (
-            <Link
-              href={`/questions/${previousQuestion.slug}`}
-              className="group block focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
-            >
-              <span className="block text-xs text-[var(--text-faint)]">
-                上一题
-              </span>
-              <span className="mt-2 block leading-6 font-medium text-[var(--text-muted)] group-hover:text-[var(--accent-bright)]">
-                {previousQuestion.title}
-              </span>
-            </Link>
-          ) : (
-            <div aria-disabled="true" className="cursor-not-allowed opacity-55">
-              <span className="block text-xs text-[var(--text-faint)]">
-                上一题
-              </span>
-              <span className="mt-2 block leading-6 font-medium text-[var(--text-muted)]">
-                当前为第一题
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="bg-[var(--canvas)] py-5 sm:pl-6 sm:text-right">
-          {nextQuestion ? (
-            <Link
-              href={`/questions/${nextQuestion.slug}`}
-              className="group block focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
-            >
-              <span className="block text-xs text-[var(--text-faint)]">
-                下一题
-              </span>
-              <span className="mt-2 block leading-6 font-medium text-[var(--text-muted)] group-hover:text-[var(--accent-bright)]">
-                {nextQuestion.title}
-              </span>
-            </Link>
-          ) : (
-            <div aria-disabled="true" className="cursor-not-allowed opacity-55">
-              <span className="block text-xs text-[var(--text-faint)]">
-                下一题
-              </span>
-              <span className="mt-2 block leading-6 font-medium text-[var(--text-muted)]">
-                当前为最后一题
-              </span>
-            </div>
-          )}
-        </div>
-      </nav>
+      <AdjacentQuestionNav
+        previous={
+          previousQuestion
+            ? {
+                slug: previousQuestion.slug,
+                title: previousQuestion.title,
+              }
+            : null
+        }
+        next={
+          nextQuestion
+            ? { slug: nextQuestion.slug, title: nextQuestion.title }
+            : null
+        }
+      />
       <p className="mt-6 text-sm text-[var(--text-faint)]">
         发现这道题有问题？{" "}
         <a

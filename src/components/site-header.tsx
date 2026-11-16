@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { SiteNav } from "@/components/site-nav";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { readAuthConfiguration } from "@/lib/auth-config";
 
@@ -17,21 +18,7 @@ export function SiteHeader() {
           aria-label="个人工具"
           className="flex w-full flex-wrap items-center gap-4 sm:w-auto sm:gap-5"
         >
-          <Link href="/review" className="study-link whitespace-nowrap">
-            复习
-          </Link>
-          <Link href="/study-sets" className="study-link whitespace-nowrap">
-            题单
-          </Link>
-          <Link href="/interview" className="study-link whitespace-nowrap">
-            模拟面试
-          </Link>
-          <Link
-            href="/bookmarks"
-            className="text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
-          >
-            我的收藏
-          </Link>
+          <SiteNav />
           <Link
             href="/contribute"
             className="hidden text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)] sm:inline"

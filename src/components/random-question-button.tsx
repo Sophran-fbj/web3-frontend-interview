@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
+import { appendQuestionBackParam } from "@/content/question-list-url";
 import {
   pickRandomQuestion,
   type RandomQuestionCandidate,
@@ -11,8 +12,10 @@ const lastRandomQuestionKey = "web3-interview-last-random-question";
 
 export function RandomQuestionButton({
   candidates,
+  backQuery,
 }: {
   candidates: RandomQuestionCandidate[];
+  backQuery?: string;
 }) {
   const router = useRouter();
 
@@ -34,7 +37,9 @@ export function RandomQuestionButton({
       // 导航不依赖本地存储写入成功。
     }
 
-    router.push(`/questions/${question.slug}`);
+    router.push(
+      appendQuestionBackParam(`/questions/${question.slug}`, backQuery),
+    );
   }
 
   return (
