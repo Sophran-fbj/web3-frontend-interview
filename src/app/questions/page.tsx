@@ -14,7 +14,12 @@ import {
   filterQuestions,
   type QuestionFilters,
 } from "@/content/question-filter";
-import { createQuestionsHref } from "@/content/question-list-url";
+import {
+  createQuestionDetailHref,
+  createQuestionListBackQuery,
+  createQuestionsHref,
+  type QuestionListState,
+} from "@/content/question-list-url";
 import {
   paginateQuestions,
   questionsPerPage,
@@ -136,6 +141,8 @@ export default async function QuestionsPage({
   );
   const filterHref = (changes: Partial<QuestionFilters>) =>
     createQuestionsHref({ ...filters, ...changes, page: undefined });
+  const listState: QuestionListState = { ...filters, page: currentPage };
+  const backQuery = createQuestionListBackQuery(listState);
 
   return (
     <main
@@ -285,6 +292,7 @@ export default async function QuestionsPage({
                 id: frontmatter.id,
                 slug: frontmatter.slug,
               }))}
+              backQuery={backQuery}
             />
           )}
           <p className="font-mono text-sm text-[var(--text-faint)] tabular-nums">
@@ -337,7 +345,10 @@ export default async function QuestionsPage({
                 <div className="min-w-0">
                   <h3>
                     <Link
-                      href={`/questions/${frontmatter.slug}`}
+                      href={createQuestionDetailHref(
+                        frontmatter.slug,
+                        listState,
+                      )}
                       className="text-lg leading-7 font-medium tracking-[-0.015em] text-[var(--text-strong)] hover:text-[var(--accent-bright)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)] sm:text-xl"
                     >
                       {frontmatter.title}
