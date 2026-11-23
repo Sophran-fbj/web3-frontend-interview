@@ -13,7 +13,7 @@ type QuestionPaginationProps = {
 };
 
 const linkClassName =
-  "inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[var(--line-strong)] px-3 text-sm font-medium text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]";
+  "inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-[var(--line-strong)] bg-[var(--canvas-raised)] px-3 text-sm font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]";
 const disabledClassName =
   "inline-flex min-h-11 min-w-11 cursor-not-allowed items-center justify-center rounded-lg border border-[var(--line)] px-3 text-sm text-[var(--text-faint)] opacity-55";
 
@@ -57,7 +57,7 @@ export function QuestionPagination({
           {page === currentPage ? (
             <span
               aria-current="page"
-              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-[var(--accent)] px-3 text-sm font-semibold text-[var(--on-accent)]"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-[var(--accent)] px-3 text-sm font-semibold text-[var(--on-accent)] shadow-[0_8px_20px_-6px_var(--shadow)]"
             >
               {page}
             </span>
@@ -103,6 +103,9 @@ export function QuestionPagination({
         )}
         {state.stack && (
           <input type="hidden" name="stack" value={state.stack} />
+        )}
+        {state.progress && state.progress !== "all" && (
+          <input type="hidden" name="progress" value={state.progress} />
         )}
         <label htmlFor="jump-to-page">跳至</label>
         <input

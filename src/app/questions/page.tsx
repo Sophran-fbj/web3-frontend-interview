@@ -1,31 +1,25 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
-import { BookmarkButton } from "@/components/bookmark-button";
-import { QuestionFilterMenu } from "@/components/question-filter-menu";
-import { QuestionPagination } from "@/components/question-pagination";
-import { RandomQuestionButton } from "@/components/random-question-button";
-import { categoryLabels, categoryOrder } from "@/content/question-config";
+import { QuestionFilterBar } from "@/components/question-filter-bar";
 import {
-  difficultyLabels,
-  questionTypeLabels,
-} from "@/content/question-labels";
+  QuestionListClient,
+  type QuestionListItem,
+} from "@/components/question-list-client";
+import { PageHeader } from "@/components/ui/page-header";
+import { categoryOrder } from "@/content/question-config";
 import {
   filterQuestions,
   type QuestionFilters,
 } from "@/content/question-filter";
 import {
-  createQuestionDetailHref,
-  createQuestionListBackQuery,
-  createQuestionsHref,
-  type QuestionListState,
-} from "@/content/question-list-url";
-import {
-  paginateQuestions,
-  questionsPerPage,
-} from "@/content/question-pagination";
+  difficultyLabels,
+  questionTypeLabels,
+} from "@/content/question-labels";
+import { parseProgressFilter } from "@/content/question-list-url";
+import { paginateQuestions } from "@/content/question-pagination";
 import { getVisibleQuestions } from "@/content/question-repository";
 import type { QuestionFrontmatter } from "@/content/question-schema";
+import { toQuestionSummary } from "@/content/question-summary";
 import { getAbsoluteUrl } from "@/lib/site-url";
 
 type QuestionsPageProps = {
@@ -46,6 +40,7 @@ export async function generateMetadata({
     "category",
     "type",
     "stack",
+    "progress",
   ].some((key) => Boolean(firstParam(params[key])?.trim()));
   const questions = await getVisibleQuestions();
   const requestedPage = Number.parseInt(firstParam(params.page) ?? "1", 10);
@@ -118,6 +113,7 @@ export default async function QuestionsPage({
       ),
     ),
   ).sort((left, right) => left.localeCompare(right, "en"));
+
   const filters: QuestionFilters = {
     query: firstParam(params.q)?.trim(),
     difficulty: findOption(firstParam(params.difficulty), difficulties),
@@ -125,263 +121,44 @@ export default async function QuestionsPage({
     questionType: findOption(firstParam(params.type), questionTypes),
     stack: findOption(firstParam(params.stack), stacks),
   };
+  const progressFilter = parseProgressFilter(firstParam(params.progress));
   const filteredQuestions = filterQuestions(allQuestions, filters);
   const requestedPage = Number.parseInt(firstParam(params.page) ?? "1", 10);
-  const {
-    currentPage,
-    totalPages,
-    items: pageQuestions,
-  } = paginateQuestions(filteredQuestions, requestedPage);
-  const hasActiveFilters = Boolean(
-    filters.query ||
-    filters.difficulty ||
-    filters.category ||
-    filters.questionType ||
-    filters.stack,
-  );
-  const filterHref = (changes: Partial<QuestionFilters>) =>
-    createQuestionsHref({ ...filters, ...changes, page: undefined });
-  const listState: QuestionListState = { ...filters, page: currentPage };
-  const backQuery = createQuestionListBackQuery(listState);
+
+  const listItems: QuestionListItem[] = filteredQuestions.map((doc) => ({
+    ...toQuestionSummary(doc),
+    stacks: Object.keys(doc.frontmatter.stacks),
+  }));
 
   return (
     <main
       id="main-content"
-      className="mx-auto w-full max-w-6xl px-5 py-14 sm:px-8 sm:py-20"
+      className="mx-auto w-full max-w-6xl px-5 py-12 sm:px-8 sm:py-16"
     >
-      <header className="max-w-3xl border-l-2 border-[var(--accent)] pl-5 sm:pl-7">
-        <h1 className="text-3xl font-semibold tracking-[-0.035em] text-[var(--text-strong)] sm:text-5xl">
-          Web3 前端面试题库
-        </h1>
-        <p className="mt-5 max-w-2xl text-base leading-7 text-[var(--text-muted)] sm:text-lg">
-          从单一知识点到完整业务场景。先尝试口述答案，再进入详情对照思路、常见错误和评分标准。
-        </p>
-      </header>
+      <PageHeader
+        eyebrow="QUESTION BANK"
+        title="Web3 前端面试题库"
+        description="从单一知识点到完整业务场景。先尝试口述答案，再进入详情对照思路、常见错误和评分标准。"
+      />
 
       {allQuestions.length > 0 && (
-        <section
-          aria-label="题目筛选"
-          className="mt-12 rounded-2xl border border-[var(--line)] bg-[var(--canvas-raised)] p-4 shadow-[0_18px_48px_var(--shadow)] sm:p-5"
-        >
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(14rem,1.35fr)_repeat(4,minmax(0,0.85fr))] lg:items-end">
-            <form action="/questions" method="get" className="min-w-0">
-              {filters.difficulty && (
-                <input
-                  type="hidden"
-                  name="difficulty"
-                  value={filters.difficulty}
-                />
-              )}
-              {filters.category && (
-                <input type="hidden" name="category" value={filters.category} />
-              )}
-              {filters.questionType && (
-                <input type="hidden" name="type" value={filters.questionType} />
-              )}
-              {filters.stack && (
-                <input type="hidden" name="stack" value={filters.stack} />
-              )}
-              <label className="block">
-                <span className="mb-2 block text-xs font-medium text-[var(--text-muted)]">
-                  搜索题目
-                </span>
-                <span className="relative block">
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 20 20"
-                    className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-[var(--text-faint)]"
-                  >
-                    <circle
-                      cx="8.5"
-                      cy="8.5"
-                      r="5.25"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                    />
-                    <path
-                      d="m12.5 12.5 4 4"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeWidth="1.5"
-                    />
-                  </svg>
-                  <input
-                    type="search"
-                    name="q"
-                    defaultValue={filters.query}
-                    placeholder="例如：钱包连接…"
-                    autoComplete="off"
-                    className="min-h-11 w-full rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] pr-3.5 pl-10 text-sm text-[var(--text-strong)] shadow-[inset_0_1px_0_var(--control-highlight)] placeholder:text-[var(--text-faint)] hover:border-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-                  />
-                </span>
-              </label>
-            </form>
-
-            <QuestionFilterMenu
-              label="难度"
-              value={filters.difficulty}
-              allLabel="全部难度"
-              allHref={filterHref({ difficulty: undefined })}
-              options={difficulties.map((difficulty) => ({
-                value: difficulty,
-                label: difficultyLabels[difficulty],
-                href: filterHref({ difficulty }),
-              }))}
-            />
-
-            <QuestionFilterMenu
-              label="分类"
-              value={filters.category}
-              allLabel="全部分类"
-              allHref={filterHref({ category: undefined })}
-              options={categories.map((category) => ({
-                value: category,
-                label: categoryLabels[category],
-                href: filterHref({ category }),
-              }))}
-            />
-
-            <QuestionFilterMenu
-              label="题型"
-              value={filters.questionType}
-              allLabel="全部题型"
-              allHref={filterHref({ questionType: undefined })}
-              options={questionTypes.map((questionType) => ({
-                value: questionType,
-                label: questionTypeLabels[questionType],
-                href: filterHref({ questionType }),
-              }))}
-            />
-
-            <QuestionFilterMenu
-              label="技术栈"
-              value={filters.stack}
-              allLabel="全部技术栈"
-              allHref={filterHref({ stack: undefined })}
-              options={stacks.map((stack) => ({
-                value: stack,
-                label: stack,
-                href: filterHref({ stack }),
-              }))}
-            />
-          </div>
-
-          {hasActiveFilters && (
-            <div className="mt-3 flex justify-end text-xs">
-              <Link
-                href="/questions"
-                className="text-[var(--text-muted)] underline decoration-[var(--line-strong)] underline-offset-4 hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
-              >
-                清除全部
-              </Link>
-            </div>
-          )}
-        </section>
+        <QuestionFilterBar
+          filters={filters}
+          progressFilter={progressFilter}
+          difficulties={difficulties}
+          categories={categories}
+          questionTypes={questionTypes}
+          stacks={stacks}
+        />
       )}
 
-      <div className="mt-14 flex flex-wrap items-center justify-between gap-4 border-b border-[var(--line-strong)] pb-4">
-        <h2 className="text-base font-semibold text-[var(--text-strong)]">
-          {hasActiveFilters ? "筛选结果" : "全部题目"}
-        </h2>
-        <div className="flex items-center gap-4">
-          {filteredQuestions.length > 0 && (
-            <RandomQuestionButton
-              candidates={filteredQuestions.map(({ frontmatter }) => ({
-                id: frontmatter.id,
-                slug: frontmatter.slug,
-              }))}
-              backQuery={backQuery}
-            />
-          )}
-          <p className="font-mono text-sm text-[var(--text-faint)] tabular-nums">
-            {hasActiveFilters
-              ? `${filteredQuestions.length} / ${allQuestions.length} 题`
-              : `共 ${filteredQuestions.length} 题`}
-            {totalPages > 1 && ` · 第 ${currentPage} / ${totalPages} 页`}
-          </p>
-        </div>
-      </div>
-
-      {allQuestions.length === 0 ? (
-        <div className="border-b border-[var(--line)] py-14">
-          <p className="text-lg font-medium text-[var(--text-strong)]">
-            暂无可公开题目
-          </p>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--text-muted)]">
-            内容完整的题目会在这里公开。当前可以先了解项目目标，稍后再回来查看。
-          </p>
-        </div>
-      ) : filteredQuestions.length === 0 ? (
-        <div className="border-b border-[var(--line)] py-14">
-          <p className="text-lg font-medium text-[var(--text-strong)]">
-            没有匹配的题目
-          </p>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--text-muted)]">
-            尝试缩短关键词或减少筛选条件，也可以
-            <Link
-              href="/questions"
-              className="ml-1 text-[var(--accent-bright)] underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
-            >
-              查看全部题目
-            </Link>
-            。
-          </p>
-        </div>
-      ) : (
-        <>
-          <ol className="divide-y divide-[var(--line)]">
-            {pageQuestions.map(({ frontmatter }, index) => (
-              <li
-                key={frontmatter.id}
-                className="grid grid-cols-[2rem_minmax(0,1fr)_2.75rem] items-start gap-x-3 gap-y-3 py-7 sm:grid-cols-[3.5rem_minmax(0,1fr)_11rem_2.75rem] sm:gap-5"
-              >
-                <span className="font-mono text-sm text-[var(--text-faint)] tabular-nums">
-                  {String(
-                    (currentPage - 1) * questionsPerPage + index + 1,
-                  ).padStart(2, "0")}
-                </span>
-                <div className="min-w-0">
-                  <h3>
-                    <Link
-                      href={createQuestionDetailHref(
-                        frontmatter.slug,
-                        listState,
-                      )}
-                      className="text-lg leading-7 font-medium tracking-[-0.015em] text-[var(--text-strong)] hover:text-[var(--accent-bright)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)] sm:text-xl"
-                    >
-                      {frontmatter.title}
-                    </Link>
-                  </h3>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
-                    {frontmatter.summary}
-                  </p>
-                </div>
-                <div className="col-start-2 row-start-2 flex flex-wrap gap-x-3 gap-y-1 text-sm sm:col-start-3 sm:row-start-1 sm:flex-col sm:items-end sm:gap-1">
-                  <span className="font-medium text-[var(--accent-bright)]">
-                    {difficultyLabels[frontmatter.difficulty]}
-                  </span>
-                  <span className="text-[var(--text-faint)]">
-                    {categoryLabels[frontmatter.category]}
-                  </span>
-                  <span className="text-[var(--text-faint)]">
-                    {questionTypeLabels[frontmatter.questionType]}
-                  </span>
-                </div>
-                <div className="col-start-3 row-span-2 row-start-1 self-center sm:col-start-4 sm:row-span-1">
-                  <BookmarkButton questionId={frontmatter.id} />
-                </div>
-              </li>
-            ))}
-          </ol>
-          <QuestionPagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            state={filters}
-          />
-        </>
-      )}
+      <QuestionListClient
+        questions={listItems}
+        totalAllCount={allQuestions.length}
+        filters={filters}
+        requestedPage={requestedPage}
+        progressFilter={progressFilter}
+      />
     </main>
   );
 }

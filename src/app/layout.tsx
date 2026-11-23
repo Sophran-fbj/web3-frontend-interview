@@ -1,8 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 
-import { SiteHeader } from "@/components/site-header";
+import "@fontsource-variable/inter";
+import "@fontsource-variable/jetbrains-mono";
+
 import { LearningAccountProvider } from "@/components/learning-account-provider";
+import { NavigationProgress } from "@/components/navigation-progress";
+import { SiteHeader } from "@/components/site-header";
 import { readAuthConfiguration } from "@/lib/auth-config";
 import { getSiteUrl } from "@/lib/site-url";
 
@@ -60,24 +64,44 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>
-      <body>
+      <body className="flex min-h-screen flex-col antialiased">
+        <NavigationProgress />
         <a
           href="#main-content"
-          className="fixed top-3 left-3 z-50 -translate-y-20 bg-[var(--text-strong)] px-4 py-2 text-sm font-semibold text-[var(--canvas)] focus:translate-y-0 focus:outline-2 focus:outline-offset-2 focus:outline-[var(--accent-bright)]"
+          className="fixed top-3 left-3 z-50 -translate-y-24 rounded-lg bg-[var(--text-strong)] px-4 py-2 text-sm font-semibold text-[var(--canvas)] shadow-lg transition-transform focus:translate-y-0 focus:outline-2 focus:outline-offset-2 focus:outline-[var(--accent-bright)]"
         >
           跳到主要内容
         </a>
         <LearningAccountProvider enabled={readAuthConfiguration().available}>
           <SiteHeader />
-          {children}
+          <div className="flex-1">{children}</div>
         </LearningAccountProvider>
-        <footer className="border-t border-[var(--line)] px-5 py-6 text-center text-sm text-[var(--text-faint)] sm:px-8">
-          <Link
-            href="/contribute"
-            className="hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
-          >
-            反馈与投稿
-          </Link>
+        <footer className="mt-auto border-t border-[var(--line)] bg-[var(--canvas-raised)]/40 px-5 py-7 text-sm text-[var(--text-faint)] sm:px-8">
+          <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 sm:flex-row">
+            <p className="text-xs tracking-wide text-[var(--text-faint)]">
+              Web3 前端面试题库 · 本地优先 · 内容遵循 CC BY-SA 4.0
+            </p>
+            <div className="flex items-center gap-5 text-xs">
+              <Link
+                href="/questions"
+                className="transition-colors hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+              >
+                全部题目
+              </Link>
+              <Link
+                href="/interview"
+                className="transition-colors hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+              >
+                模拟面试
+              </Link>
+              <Link
+                href="/contribute"
+                className="transition-colors hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+              >
+                反馈与投稿
+              </Link>
+            </div>
+          </div>
         </footer>
       </body>
     </html>

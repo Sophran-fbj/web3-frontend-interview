@@ -2,20 +2,14 @@
 
 import { useState, useSyncExternalStore } from "react";
 
-const themes = ["cold-white", "graphite", "warm-sand"] as const;
-type Theme = (typeof themes)[number];
-
-const themeLabels: Record<Theme, string> = {
-  "cold-white": "冷白",
-  graphite: "石墨",
-  "warm-sand": "暖砂",
-};
-
-const themeColors: Record<Theme, string> = {
-  "cold-white": "#f6f8fc",
-  graphite: "#080b16",
-  "warm-sand": "#f4eee2",
-};
+import {
+  applyTheme,
+  getServerThemeSnapshot,
+  getThemeSnapshot,
+  subscribeToTheme,
+  themeLabels,
+  type Theme,
+} from "@/lib/theme";
 
 const sectors: Array<{
   theme: Theme;
@@ -53,44 +47,6 @@ const sectors: Array<{
   },
 ];
 
-const storageKey = "web3-interview-theme";
-const themeChangeEvent = "web3-interview-theme-change";
-
-function isTheme(value: string | undefined): value is Theme {
-  return themes.some((theme) => theme === value);
-}
-
-function applyTheme(theme: Theme) {
-  document.documentElement.dataset.theme = theme;
-
-  const themeColor = document.querySelector<HTMLMetaElement>(
-    'meta[name="theme-color"]',
-  );
-  themeColor?.setAttribute("content", themeColors[theme]);
-
-  try {
-    localStorage.setItem(storageKey, theme);
-  } catch {
-    // 本地存储不可用时，主题仍在当前页面生效。
-  }
-
-  window.dispatchEvent(new Event(themeChangeEvent));
-}
-
-function subscribeToTheme(onStoreChange: () => void) {
-  window.addEventListener(themeChangeEvent, onStoreChange);
-  return () => window.removeEventListener(themeChangeEvent, onStoreChange);
-}
-
-function getThemeSnapshot(): Theme {
-  const theme = document.documentElement.dataset.theme;
-  return isTheme(theme) ? theme : "graphite";
-}
-
-function getServerThemeSnapshot(): Theme {
-  return "graphite";
-}
-
 export function ThemeSwitcher() {
   const [showLabel, setShowLabel] = useState(false);
   const theme = useSyncExternalStore(
@@ -115,7 +71,7 @@ export function ThemeSwitcher() {
       <svg
         aria-hidden="true"
         viewBox="0 0 48 48"
-        className="absolute inset-0 m-auto size-10"
+        className="absolute inset-0 m-auto size-10 transition-transform duration-150 hover:scale-105 motion-reduce:transform-none"
       >
         {sectors.map((sector) => {
           const active = sector.theme === theme;
@@ -143,7 +99,7 @@ export function ThemeSwitcher() {
         )}
       </svg>
 
-      <div className="absolute inset-0 m-auto size-10 overflow-hidden rounded-full">
+      <div className="absolute inset-0 m-auto size-10 overflow-hidden rounded-full ring-1 ring-[var(--line)]">
         {sectors.map((sector) => {
           const active = sector.theme === theme;
           const sectorLabel = themeLabels[sector.theme];
@@ -166,7 +122,7 @@ export function ThemeSwitcher() {
       </div>
 
       {showLabel && (
-        <span className="pointer-events-none absolute top-[calc(100%+0.35rem)] right-0 z-40 rounded-md border border-[var(--line)] bg-[var(--canvas-raised)] px-2 py-1 text-xs whitespace-nowrap text-[var(--text-muted)] shadow-[0_8px_24px_var(--shadow)]">
+        <span className="popover-panel pointer-events-none absolute top-[calc(100%+0.35rem)] right-0 z-40 rounded-md border border-[var(--line-strong)] bg-[var(--canvas-raised)] px-2.5 py-1 text-xs font-medium whitespace-nowrap text-[var(--text-strong)] shadow-[0_8px_24px_var(--shadow)]">
           {label}
         </span>
       )}

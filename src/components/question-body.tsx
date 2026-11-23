@@ -3,6 +3,11 @@ import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { evaluate } from "@mdx-js/mdx";
 import type { MDXComponents } from "mdx/types";
 import * as runtime from "react/jsx-runtime";
+import remarkGfm from "remark-gfm";
+
+import { CodeBlock } from "@/components/ui/code-block";
+import { createHeadingId } from "@/content/question-headings";
+import { rehypeShiki } from "@/lib/highlight-code";
 
 function getTextContent(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -12,30 +17,8 @@ function getTextContent(node: ReactNode): string {
   return "";
 }
 
-const headingAliases: Record<string, string> = {
-  题目: "question",
-  考察目标: "goals",
-  "30 秒回答": "short-answer",
-  深入回答: "deep-answer",
-  示例代码: "example",
-  常见错误: "common-mistakes",
-  面试官追问: "follow-ups",
-  评分标准: "scoring",
-  参考资料: "references",
-  初级回答: "beginner-answer",
-  中级回答: "intermediate-answer",
-  高级回答: "advanced-answer",
-};
-
 function headingId(children: ReactNode) {
-  const text = getTextContent(children).trim();
-  return (
-    headingAliases[text] ??
-    text
-      .toLocaleLowerCase()
-      .replace(/\s+/g, "-")
-      .replace(/[^\p{L}\p{N}-]/gu, "")
-  );
+  return createHeadingId(getTextContent(children));
 }
 
 function ProseLink({ href = "", ...props }: ComponentPropsWithoutRef<"a">) {
@@ -50,6 +33,11 @@ function ProseLink({ href = "", ...props }: ComponentPropsWithoutRef<"a">) {
   );
 }
 
+type CodePreProps = ComponentPropsWithoutRef<"pre"> & {
+  "data-raw-code"?: string;
+  "data-lang"?: string;
+};
+
 const components: MDXComponents = {
   h2: ({ children, ...props }) => (
     <h2 id={headingId(children)} {...props}>
@@ -63,12 +51,37 @@ const components: MDXComponents = {
   ),
   a: ProseLink,
   code: (props) => <code translate="no" {...props} />,
+  pre: ({
+    "data-raw-code": rawCodeProp,
+    "data-lang": langProp,
+    children,
+    ...props
+  }: CodePreProps) => {
+    const code =
+      typeof rawCodeProp === "string" ? rawCodeProp : getTextContent(children);
+    const language = typeof langProp === "string" ? langProp : undefined;
+
+    return (
+      <CodeBlock code={code} language={language}>
+        <pre data-lang={language} {...props}>
+          {children}
+        </pre>
+      </CodeBlock>
+    );
+  },
+  table: (props: ComponentPropsWithoutRef<"table">) => (
+    <div className="table-scroll">
+      <table {...props} />
+    </div>
+  ),
 };
 
 export async function QuestionBody({ source }: { source: string }) {
   const { default: Content } = await evaluate(source, {
     ...runtime,
     development: false,
+    remarkPlugins: [remarkGfm],
+    rehypePlugins: [rehypeShiki],
     useMDXComponents: () => components,
   });
 

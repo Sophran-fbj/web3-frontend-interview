@@ -19,8 +19,9 @@ import { emptyLearningSnapshot } from "@/lib/learning-snapshot";
 import { useProgressStore } from "@/stores/use-progress-store";
 
 function LearningView() {
-  const { owner } = useAccountLearning();
+  const { owner, ready } = useAccountLearning();
   const progress = useProgressStore((state) => state.progress);
+  if (!ready) return <p>正在读取学习记录…</p>;
   return (
     <p>
       当前数据：{owner ?? "游客"}，{Object.keys(progress).join("、")}
@@ -101,13 +102,15 @@ describe("learning account lifecycle", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("does not render learning controls while the first session is unresolved", async () => {
+  it("renders public content immediately while keeping learning controls gated during unresolved session", async () => {
     auth.isPending = true;
     render(
       <LearningAccountProvider enabled>
+        <div>公开题库内容</div>
         <LearningView />
       </LearningAccountProvider>,
     );
+    expect(screen.getByText("公开题库内容")).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByText("正在读取学习记录…")).toBeInTheDocument(),
     );

@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import {
   InterviewApp,
   type InterviewQuestionContent,
 } from "@/components/interview-app";
-import { QuestionBody } from "@/components/question-body";
 import { LearningStorageNotice } from "@/components/learning-storage-notice";
+import { QuestionBody } from "@/components/question-body";
+import { PageHeader } from "@/components/ui/page-header";
 import { getVisibleQuestions } from "@/content/question-repository";
 import { splitQuestionSections } from "@/content/question-sections";
 import { toQuestionSummary } from "@/content/question-summary";
@@ -49,20 +49,15 @@ export default async function InterviewPage({
   return (
     <main
       id="main-content"
-      className="mx-auto w-full max-w-4xl px-5 py-14 sm:px-8 sm:py-20"
+      className="mx-auto w-full max-w-4xl px-5 py-12 sm:px-8 sm:py-16"
     >
-      <Link href="/questions" className="study-link">
-        返回题库
-      </Link>
-      <h1 className="mt-8 text-3xl font-semibold tracking-[-0.035em] text-[var(--text-strong)] sm:text-5xl">
-        模拟面试
-      </h1>
-      <p className="mt-4 text-sm leading-7">
-        逐题限时作答，结束后对照参考答案自评。草稿随输入保存，可从练习记录继续。
-      </p>
-      <p className="mt-3 text-xs leading-6">
-        <LearningStorageNotice />
-      </p>
+      <PageHeader
+        backLink={{ href: "/questions", label: "返回题库" }}
+        eyebrow="MOCK INTERVIEW"
+        title="模拟面试"
+        description="逐题限时作答，结束后对照参考答案自评。草稿随输入保存，可从练习记录继续。"
+        meta={<LearningStorageNotice />}
+      />
       <InterviewApp
         questions={questions.map(toQuestionSummary)}
         sessionId={sessionId}

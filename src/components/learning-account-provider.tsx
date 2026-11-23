@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -26,8 +27,11 @@ import { LearningSyncController, type SyncState } from "@/lib/learning-sync";
 const AccountLearningContext = createContext<{
   owner: string | null;
   controller: LearningSyncController | null;
-}>({ owner: null, controller: null });
+  ready: boolean;
+}>({ owner: null, controller: null, ready: true });
+
 export const useAccountLearning = () => useContext(AccountLearningContext);
+export const useLearningReady = () => useContext(AccountLearningContext).ready;
 
 const initialSyncState: SyncState = {
   phase: "loading",
@@ -119,27 +123,41 @@ function EnabledLearningAccountProvider({ children }: { children: ReactNode }) {
     };
   }, [userId, isPending, hasError]);
 
-  if (scopeError)
-    return (
-      <div role="alert" className="mx-auto max-w-4xl px-5 py-12">
-        <p>{scopeError}</p>
-        <button
-          type="button"
-          className="study-button mt-4"
-          onClick={() => window.location.reload()}
-        >
-          重新读取
-        </button>
-      </div>
-    );
-  if (!runtime || runtime.owner !== userId || (isPending && !runtime))
-    return (
-      <p role="status" className="px-5 py-12 text-center">
-        正在读取学习记录…
-      </p>
-    );
+  const ready = Boolean(
+    !scopeError &&
+    runtime &&
+    runtime.owner === userId &&
+    !(isPending && !runtime),
+  );
+
+  const value = useMemo(
+    () => ({
+      owner: runtime?.owner ?? null,
+      controller: runtime?.controller ?? null,
+      ready,
+    }),
+    [ready, runtime],
+  );
+
   return (
-    <AccountLearningContext.Provider value={runtime}>
+    <AccountLearningContext.Provider value={value}>
+      {scopeError && (
+        <div
+          role="alert"
+          className="border-b border-[var(--danger-border)] bg-[var(--danger-soft)] px-5 py-3 text-sm text-[var(--text-strong)] sm:px-8"
+        >
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
+            <p>{scopeError}</p>
+            <button
+              type="button"
+              className="study-button min-h-9 px-3 text-xs"
+              onClick={() => window.location.reload()}
+            >
+              重新读取
+            </button>
+          </div>
+        </div>
+      )}
       {children}
     </AccountLearningContext.Provider>
   );

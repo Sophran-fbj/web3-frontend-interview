@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
+import { PageHeader } from "@/components/ui/page-header";
+import { SpotlightCard } from "@/components/ui/spotlight-card";
 import {
   correctionIssueLink,
   interviewExperienceLink,
@@ -17,18 +18,21 @@ export const metadata: Metadata = {
 
 const options = [
   {
+    index: "01",
     title: "内容纠错",
     description: "发现答案、版本或参考资料有误，告诉我们具体位置和依据。",
     href: correctionIssueLink(),
     action: "反馈问题",
   },
   {
+    index: "02",
     title: "题目投稿",
     description: "推荐与 Web3 前端工作直接相关、值得练习的面试题。",
     href: questionSuggestionLink,
     action: "题目投稿",
   },
   {
+    index: "03",
     title: "面经分享",
     description: "分享自己亲历且可以公开的面试问题与追问。请先去除敏感信息。",
     href: interviewExperienceLink,
@@ -41,43 +45,44 @@ export default function ContributePage() {
     <main
       id="main-content"
       data-page="contribute"
-      className="mx-auto w-full max-w-4xl px-5 py-14 sm:px-8 sm:py-20"
+      className="mx-auto w-full max-w-4xl px-5 py-12 sm:px-8 sm:py-16"
     >
-      <Link
-        href="/questions"
-        className="text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
-      >
-        返回题库
-      </Link>
-      <h1 className="mt-8 text-3xl font-semibold tracking-[-0.035em] text-[var(--text-strong)] sm:text-5xl">
-        参与共建
-      </h1>
-      <p className="mt-5 max-w-2xl leading-7 text-[var(--text-muted)]">
-        发现题目有误、想到值得收录的新题，或愿意分享真实面经？欢迎一起把题库做得更准确、更贴近实际面试。
-      </p>
-      <div className="mt-10 divide-y divide-[var(--line)] border-y border-[var(--line-strong)]">
+      <PageHeader
+        backLink={{ href: "/questions", label: "返回题库" }}
+        eyebrow="CONTRIBUTE"
+        title="参与共建"
+        description="发现题目有误、想到值得收录的新题，或愿意分享真实面经？欢迎一起把题库做得更准确、更贴近实际面试。"
+      />
+
+      <div className="mt-10 grid gap-4">
         {options.map((option) => (
-          <section
-            key={option.title}
-            className="py-7 sm:flex sm:items-center sm:justify-between sm:gap-8"
-          >
-            <div>
-              <h2 className="text-xl font-medium text-[var(--text-strong)]">
-                {option.title}
-              </h2>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--text-muted)]">
-                {option.description}
-              </p>
+          <SpotlightCard key={option.title} className="p-5 sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+              <div>
+                <span className="font-mono text-xs font-medium text-[var(--accent-bright)]">
+                  {option.index}
+                </span>
+                <h2 className="mt-1.5 text-xl font-semibold text-[var(--text-strong)]">
+                  {option.title}
+                </h2>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--text-muted)]">
+                  {option.description}
+                </p>
+              </div>
+              <a
+                href={option.href}
+                target="_blank"
+                rel="noreferrer"
+                className="study-button shrink-0"
+              >
+                <span>{option.action}</span>
+                <span aria-hidden="true">↗</span>
+              </a>
             </div>
-            <a
-              href={option.href}
-              className="mt-4 inline-flex min-h-11 shrink-0 items-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] px-4 text-sm font-medium text-[var(--text-strong)] hover:border-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] sm:mt-0"
-            >
-              {option.action}
-            </a>
-          </section>
+          </SpotlightCard>
         ))}
       </div>
+
       <p className="mt-7 text-sm leading-6 text-[var(--text-faint)]">
         请勿提交个人隐私、公司内部资料、受保密协议约束的内容，或来源不明的题库文字。
       </p>

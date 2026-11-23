@@ -2,23 +2,28 @@
 
 import { useState } from "react";
 
+import { useLearningReady } from "@/components/learning-account-provider";
 import { useBookmarkStore } from "@/stores/use-bookmark-store";
 
 export function BookmarkButton({ questionId }: { questionId: string }) {
   const [animationKey, setAnimationKey] = useState(0);
+  const learningReady = useLearningReady();
   const hasHydrated = useBookmarkStore((state) => state.hasHydrated);
   const bookmarked = useBookmarkStore((state) =>
     Boolean(state.bookmarks[questionId]),
   );
   const toggleBookmark = useBookmarkStore((state) => state.toggleBookmark);
 
+  const ready = hasHydrated && learningReady;
+  const isBookmarked = ready && bookmarked;
+
   return (
     <button
       type="button"
-      aria-label={bookmarked ? "取消收藏" : "收藏题目"}
-      aria-pressed={bookmarked}
-      title={bookmarked ? "取消收藏" : "收藏题目"}
-      disabled={!hasHydrated}
+      aria-label={isBookmarked ? "取消收藏" : "收藏题目"}
+      aria-pressed={isBookmarked}
+      title={isBookmarked ? "取消收藏" : "收藏题目"}
+      disabled={!ready}
       onClick={() => {
         toggleBookmark(questionId);
         setAnimationKey((key) => key + 1);
@@ -30,7 +35,7 @@ export function BookmarkButton({ questionId }: { questionId: string }) {
         aria-hidden="true"
         viewBox="0 0 24 24"
         className={`size-6 ${animationKey > 0 ? "bookmark-heart-pulse" : ""}`}
-        fill={bookmarked ? "currentColor" : "none"}
+        fill={isBookmarked ? "currentColor" : "none"}
         stroke="currentColor"
         strokeWidth="1.7"
         strokeLinecap="round"

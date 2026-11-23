@@ -20,7 +20,8 @@ export function getDb() {
     connectionString,
     max: 5,
     connectionTimeoutMillis: 10000,
-    idleTimeoutMillis: 5000,
+    idleTimeoutMillis: 60000,
+    keepAlive: true,
     allowExitOnIdle: true,
   });
   return drizzle({ client: pool, schema });

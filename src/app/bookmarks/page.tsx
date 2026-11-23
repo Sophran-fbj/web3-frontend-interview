@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import { BookmarkList } from "@/components/bookmark-list";
 import { LearningStorageNotice } from "@/components/learning-storage-notice";
+import { PageHeader } from "@/components/ui/page-header";
 import { getVisibleQuestions } from "@/content/question-repository";
 
 export const metadata: Metadata = {
@@ -16,25 +16,23 @@ export default async function BookmarksPage() {
     slug: frontmatter.slug,
     title: frontmatter.title,
     summary: frontmatter.summary,
+    difficulty: frontmatter.difficulty,
+    category: frontmatter.category,
+    questionType: frontmatter.questionType,
   }));
 
   return (
     <main
       id="main-content"
-      className="mx-auto w-full max-w-4xl px-5 py-14 sm:px-8 sm:py-20"
+      className="mx-auto w-full max-w-4xl px-5 py-12 sm:px-8 sm:py-16"
     >
-      <Link
-        href="/questions"
-        className="text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
-      >
-        返回题库
-      </Link>
-      <h1 className="mt-8 text-3xl font-semibold tracking-[-0.035em] text-[var(--text-strong)] sm:text-5xl">
-        我的收藏
-      </h1>
-      <p className="mt-4 text-sm text-[var(--text-muted)]">
-        <LearningStorageNotice />
-      </p>
+      <PageHeader
+        backLink={{ href: "/questions", label: "返回题库" }}
+        eyebrow="BOOKMARKS"
+        title="我的收藏"
+        description="集中整理个人重点关注的题目，方便面试前快速复盘。"
+        meta={<LearningStorageNotice />}
+      />
       <BookmarkList questions={questions} />
     </main>
   );

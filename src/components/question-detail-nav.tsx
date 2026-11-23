@@ -42,8 +42,18 @@ function BackToQuestionsLinkContent({
   return (
     <Link
       href={createQuestionsHrefFromBack(backQuery)}
-      className="inline-flex text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+      className="study-link inline-flex items-center gap-1.5"
     >
+      <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 shrink-0">
+        <path
+          d="M10 3.5 5.5 8 10 12.5"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.5"
+        />
+      </svg>
       返回题库
     </Link>
   );
@@ -59,7 +69,9 @@ export function AdjacentQuestionNav({
   next,
 }: AdjacentQuestionNavProps) {
   return (
-    <Suspense fallback={<AdjacentQuestionNavContent previous={previous} next={next} />}>
+    <Suspense
+      fallback={<AdjacentQuestionNavContent previous={previous} next={next} />}
+    >
       <AdjacentQuestionNavWithParams previous={previous} next={next} />
     </Suspense>
   );
@@ -88,11 +100,8 @@ function AdjacentQuestionNavContent({
   backQuery?: string | null;
 }) {
   return (
-    <nav
-      aria-label="题目导航"
-      className="mt-14 grid gap-px border-y border-[var(--line-strong)] bg-[var(--line)] sm:grid-cols-2"
-    >
-      <div className="bg-[var(--canvas)] py-5 sm:pr-6">
+    <nav aria-label="题目导航" className="mt-14 grid gap-4 sm:grid-cols-2">
+      <div className="rounded-xl border border-[var(--line)] bg-[var(--canvas-raised)] p-5 transition-colors hover:border-[var(--accent)]">
         {previous ? (
           <Link
             href={appendQuestionBackParam(
@@ -101,10 +110,11 @@ function AdjacentQuestionNavContent({
             )}
             className="group block focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
           >
-            <span className="block text-xs text-[var(--text-faint)]">
+            <span className="inline-flex items-center gap-1 text-xs text-[var(--text-faint)]">
+              <span aria-hidden="true">←</span>
               上一题
             </span>
-            <span className="mt-2 block leading-6 font-medium text-[var(--text-muted)] group-hover:text-[var(--accent-bright)]">
+            <span className="mt-2 block leading-6 font-medium text-[var(--text-strong)] transition-colors group-hover:text-[var(--accent-bright)]">
               {previous.title}
             </span>
           </Link>
@@ -119,19 +129,17 @@ function AdjacentQuestionNavContent({
           </div>
         )}
       </div>
-      <div className="bg-[var(--canvas)] py-5 sm:pl-6 sm:text-right">
+      <div className="rounded-xl border border-[var(--line)] bg-[var(--canvas-raised)] p-5 transition-colors hover:border-[var(--accent)] sm:text-right">
         {next ? (
           <Link
-            href={appendQuestionBackParam(
-              `/questions/${next.slug}`,
-              backQuery,
-            )}
+            href={appendQuestionBackParam(`/questions/${next.slug}`, backQuery)}
             className="group block focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
           >
-            <span className="block text-xs text-[var(--text-faint)]">
+            <span className="inline-flex items-center gap-1 text-xs text-[var(--text-faint)]">
               下一题
+              <span aria-hidden="true">→</span>
             </span>
-            <span className="mt-2 block leading-6 font-medium text-[var(--text-muted)] group-hover:text-[var(--accent-bright)]">
+            <span className="mt-2 block leading-6 font-medium text-[var(--text-strong)] transition-colors group-hover:text-[var(--accent-bright)]">
               {next.title}
             </span>
           </Link>

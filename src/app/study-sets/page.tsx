@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
-import { StudySetManager } from "@/components/study-set-manager";
 import { LearningStorageNotice } from "@/components/learning-storage-notice";
+import { StudySetManager } from "@/components/study-set-manager";
+import { PageHeader } from "@/components/ui/page-header";
 import { getVisibleQuestions } from "@/content/question-repository";
 import { toQuestionSummary } from "@/content/question-summary";
 
@@ -16,18 +16,15 @@ export default async function StudySetsPage() {
   return (
     <main
       id="main-content"
-      className="mx-auto w-full max-w-6xl px-5 py-14 sm:px-8 sm:py-20"
+      className="mx-auto w-full max-w-6xl px-5 py-12 sm:px-8 sm:py-16"
     >
-      <Link href="/questions" className="study-link">
-        返回题库
-      </Link>
-      <h1 className="mt-8 text-3xl font-semibold tracking-[-0.035em] text-[var(--text-strong)] sm:text-5xl">
-        我的题单
-      </h1>
-      <p className="mt-4 text-sm leading-7">从现有题目中安排自己的练习顺序。</p>
-      <p className="mt-3 text-xs leading-6">
-        <LearningStorageNotice />
-      </p>
+      <PageHeader
+        backLink={{ href: "/questions", label: "返回题库" }}
+        eyebrow="STUDY SETS"
+        title="我的题单"
+        description="从现有题目中编排自己的专项练习顺序，追踪掌握进度并一键发起模拟面试。"
+        meta={<LearningStorageNotice />}
+      />
       <StudySetManager questions={questions} />
     </main>
   );

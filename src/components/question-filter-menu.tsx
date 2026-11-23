@@ -30,6 +30,7 @@ export function QuestionFilterMenu({
   const listId = useId();
   const selectedLabel =
     options.find((option) => option.value === value)?.label ?? allLabel;
+  const isFiltered = Boolean(value);
 
   useEffect(() => {
     if (!open) return;
@@ -65,7 +66,11 @@ export function QuestionFilterMenu({
         aria-expanded={open}
         aria-controls={listId}
         onClick={() => setOpen((current) => !current)}
-        className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] px-3.5 text-left text-sm font-medium text-[var(--text-strong)] shadow-[inset_0_1px_0_var(--control-highlight)] hover:border-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+        className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border px-3.5 text-left text-sm font-medium shadow-[inset_0_1px_0_var(--control-highlight)] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
+          isFiltered
+            ? "border-[var(--accent)] bg-[var(--surface-hover)] text-[var(--text-strong)]"
+            : "border-[var(--line-strong)] bg-[var(--surface)] text-[var(--text-strong)] hover:border-[var(--accent)]"
+        }`}
       >
         <span className="truncate">{selectedLabel}</span>
         <svg
@@ -87,14 +92,14 @@ export function QuestionFilterMenu({
       {open && (
         <ul
           id={listId}
-          className="filter-options absolute top-[calc(100%+0.5rem)] right-0 left-0 z-30 max-h-72 overflow-y-auto rounded-xl border border-[var(--line-strong)] bg-[var(--canvas-raised)] p-1.5 shadow-[0_18px_48px_var(--shadow)]"
+          className="filter-options popover-panel absolute top-[calc(100%+0.5rem)] right-0 left-0 z-30 max-h-72 overflow-y-auto rounded-xl border border-[var(--line-strong)] bg-[var(--canvas-raised)] p-1.5 shadow-[0_18px_48px_var(--shadow)]"
         >
           <li>
             <Link
               href={allHref}
               aria-current={value ? undefined : "true"}
               onClick={() => setOpen(false)}
-              className="flex min-h-10 items-center justify-between rounded-lg px-3 text-sm text-[var(--text-muted)] hover:bg-[var(--surface)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+              className="flex min-h-10 items-center justify-between rounded-lg px-3 text-sm text-[var(--text-muted)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
             >
               {allLabel}
               {!value && <ActiveMark />}
@@ -109,7 +114,11 @@ export function QuestionFilterMenu({
                   href={option.href}
                   aria-current={selected ? "true" : undefined}
                   onClick={() => setOpen(false)}
-                  className="flex min-h-10 items-center justify-between rounded-lg px-3 text-sm text-[var(--text-muted)] hover:bg-[var(--surface)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+                  className={`flex min-h-10 items-center justify-between rounded-lg px-3 text-sm transition-colors hover:bg-[var(--surface)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
+                    selected
+                      ? "bg-[var(--surface)]/75 font-medium text-[var(--text-strong)]"
+                      : "text-[var(--text-muted)]"
+                  }`}
                 >
                   <span className="truncate">{option.label}</span>
                   {selected && <ActiveMark />}

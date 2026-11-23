@@ -1,7 +1,17 @@
 import type { QuestionFilters } from "./question-filter";
 
+export type ProgressFilter = "all" | "unmastered" | "review" | "mastered";
+
+export function parseProgressFilter(value: string | undefined): ProgressFilter {
+  if (value === "unmastered" || value === "review" || value === "mastered") {
+    return value;
+  }
+  return "all";
+}
+
 export type QuestionListState = QuestionFilters & {
   page?: number;
+  progress?: ProgressFilter;
 };
 
 export function createQuestionsHref(state: QuestionListState) {
@@ -12,6 +22,9 @@ export function createQuestionsHref(state: QuestionListState) {
   if (state.category) params.set("category", state.category);
   if (state.questionType) params.set("type", state.questionType);
   if (state.stack) params.set("stack", state.stack);
+  if (state.progress && state.progress !== "all") {
+    params.set("progress", state.progress);
+  }
   if (state.page && state.page > 1) params.set("page", String(state.page));
 
   const query = params.toString();

@@ -9,6 +9,7 @@ import {
   InterviewAnswering,
   InterviewReview,
 } from "@/components/interview-workspace";
+import { useLearningReady } from "@/components/learning-account-provider";
 import type { QuestionSummary } from "@/content/question-summary";
 import { interviewHref } from "@/lib/interviews";
 import { useInterviewStore } from "@/stores/use-interview-store";
@@ -33,10 +34,11 @@ export function InterviewApp({
   content: InterviewQuestionContent | null;
 }) {
   const router = useRouter();
+  const learningReady = useLearningReady();
   const sessions = useInterviewStore((state) => state.sessions);
   const hydrated = useInterviewStore((state) => state.hasHydrated);
 
-  if (!hydrated)
+  if (!hydrated || !learningReady)
     return (
       <p role="status" className="mt-10">
         正在读取本地面试记录…

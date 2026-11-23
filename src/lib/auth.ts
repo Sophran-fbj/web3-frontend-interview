@@ -35,7 +35,10 @@ export function createAuth(
       storage: "database",
       window: 60,
       max: 120,
-      customRules: { "/sign-in/social": { window: 60, max: 10 } },
+      customRules: {
+        "/get-session": false,
+        "/sign-in/social": { window: 60, max: 10 },
+      },
     },
     session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
   });
